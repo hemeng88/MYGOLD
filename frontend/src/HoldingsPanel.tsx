@@ -77,7 +77,7 @@ export function HoldingsPanel({
   };
 
   return (
-    <Paper className="glass" p="lg">
+    <Paper className="glass" p={{ base: "md", sm: "lg" }}>
       <Group justify="space-between" mb="md" wrap="wrap">
         <div>
           <Text fw={600}>我的持仓</Text>
@@ -113,15 +113,15 @@ export function HoldingsPanel({
         </Paper>
       </SimpleGrid>
 
-      <Group align="flex-end" gap="sm" mb="md" wrap="wrap">
-        <NumberInput label="克数" placeholder="例如 2.5" min={0.0001} decimalScale={4} value={grams} onChange={setGrams} w={120} />
-        <NumberInput label="买入价" placeholder="元/克" min={0.01} decimalScale={2} value={buyPrice} onChange={setBuyPrice} w={140} />
-        <TextInput label="买入日期" type="date" value={boughtAt} onChange={(e) => setBoughtAt(e.currentTarget.value)} w={160} />
-        <TextInput label="备注" placeholder="可选" value={note} onChange={(e) => setNote(e.currentTarget.value)} style={{ flex: 1, minWidth: 140 }} />
-        <Button color="gold" loading={saving} onClick={submit}>
-          记一笔
-        </Button>
-      </Group>
+      <SimpleGrid cols={{ base: 1, sm: 2 }} mb="md" spacing="sm">
+        <NumberInput label="克数" placeholder="例如 2.5" min={0.0001} decimalScale={4} value={grams} onChange={setGrams} />
+        <NumberInput label="买入价" placeholder="元/克" min={0.01} decimalScale={2} value={buyPrice} onChange={setBuyPrice} />
+        <TextInput label="买入日期" type="date" value={boughtAt} onChange={(e) => setBoughtAt(e.currentTarget.value)} />
+        <TextInput label="备注" placeholder="可选" value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+      </SimpleGrid>
+      <Button color="gold" fullWidth loading={saving} onClick={submit} mb="md">
+        记一笔
+      </Button>
 
       <Stack gap={8}>
         {(holdings?.lots || []).length === 0 && (

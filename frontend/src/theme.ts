@@ -41,5 +41,14 @@ export const theme = createTheme({
     Button: {
       defaultProps: { radius: "xl" },
     },
+    NumberInput: {
+      defaultProps: { size: "md" },
+    },
+    TextInput: {
+      defaultProps: { size: "md" },
+    },
+    Select: {
+      defaultProps: { size: "md" },
+    },
   },
 });

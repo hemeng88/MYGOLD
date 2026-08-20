@@ -68,6 +68,8 @@ body {
   background: rgba(255, 255, 255, 0.02) !important;
   border-color: transparent !important;
   transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .day-card:hover {
@@ -80,12 +82,81 @@ body {
   border-color: rgba(212, 175, 55, 0.35) !important;
 }
 
-@media (max-width: 48em) {
-  .app-shell {
+.app-shell-mobile {
+  max-width: 100%;
+  padding: calc(12px + env(safe-area-inset-top)) 14px calc(88px + env(safe-area-inset-bottom));
+}
+
+.app-shell-mobile .brand {
+  font-size: 28px !important;
+}
+
+.app-shell-mobile .hero .price {
+  font-size: clamp(40px, 12vw, 64px);
+}
+
+.day-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.day-row-inner {
+  padding-bottom: 4px;
+}
+
+.day-chip {
+  min-width: 112px;
+  flex-shrink: 0;
+}
+
+.mobile-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: rgba(12, 10, 7, 0.92);
+  border-top: 1px solid rgba(212, 175, 55, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+.mobile-tabbar button {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: #8c8170;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.mobile-tabbar button.tab-on {
+  color: #f6edd4;
+  background: rgba(212, 175, 55, 0.12);
+}
+
+@media (max-width: 52em) {
+  .app-shell:not(.app-shell-mobile) {
     padding: 18px 14px 32px;
   }
 
   .brand {
     font-size: 34px !important;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
   }
 }

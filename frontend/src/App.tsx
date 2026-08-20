@@ -16,8 +16,8 @@ import {
   Text,
   ThemeIcon,
   Title,
-  Tooltip,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowDownRight,
@@ -28,6 +28,7 @@ import {
   IconNews,
   IconRefresh,
   IconSparkles,
+  IconWallet,
 } from "@tabler/icons-react";
 import { api } from "./api";
 import { HoldingsPanel } from "./HoldingsPanel";
@@ -66,6 +67,8 @@ export default function App() {
   const [rule, setRule] = useState<FeeRule | null>(null);
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
+  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events">("market");
+  const isMobile = useMediaQuery("(max-width: 52em)") ?? true;
 
   const loadAll = useCallback(async (date?: string) => {
     const [dayList, latestQuote, feeRule, nextHoldings] = await Promise.all([
@@ -193,7 +196,7 @@ export default function App() {
         textStyle: { color: "#f4ead6" },
       },
       legend: { show: Boolean(compareCurve), top: 4, textStyle: { color: "#c9b896" } },
-      grid: { left: 52, right: 16, top: compareCurve ? 40 : 20, bottom: 32 },
+      grid: { left: isMobile ? 36 : 52, right: 8, top: compareCurve ? 40 : 16, bottom: 28 },
       xAxis: {
         type: "category",
         boundaryGap: false,
@@ -213,7 +216,7 @@ export default function App() {
               ...item,
               markPoint: {
                 symbol: "pin",
-                symbolSize: 36,
+                symbolSize: isMobile ? 22 : 36,
                 data: events.map((event) => {
                   const clock = event.triggered_at.slice(11, 19);
                   const target = clockToSec(clock);
@@ -237,230 +240,294 @@ export default function App() {
           : item,
       ),
     };
-  }, [compareCurve, compareDate, curve, events, selectedDate]);
+  }, [compareCurve, compareDate, curve, events, isMobile, selectedDate]);
+
+  const daysPanel = (
+    <Paper className="glass" p="md">
+      <Group justify="space-between" mb="sm">
+        <Text fw={600}>历史交易日</Text>
+        <Badge variant="light" color="gold">
+          {days.length} 天
+        </Badge>
+      </Group>
+      <ScrollArea type="auto" offsetScrollbars className={isMobile ? "day-scroll-x" : undefined} h={isMobile ? undefined : 640}>
+        {isMobile ? (
+          <Group gap={8} wrap="nowrap" className="day-row-inner">
+            {loading && days.length === 0
+              ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={64} width={120} radius="lg" />)
+              : days.map((day) => {
+                  const active = day.date === selectedDate;
+                  return (
+                    <Paper
+                      key={day.date}
+                      className={active ? "day-card day-card-active day-chip" : "day-card day-chip"}
+                      p="sm"
+                      onClick={() => onSelectDay(day.date)}
+                    >
+                      <Text fw={600}>{day.date.slice(5)}</Text>
+                      <Text size="xs" c="dimmed">
+                        {fmt(day.close)}
+                      </Text>
+                      <Badge mt={6} variant="light" color={tone(day.change_amt)}>
+                        {signed(day.change_amt)}
+                      </Badge>
+                    </Paper>
+                  );
+                })}
+          </Group>
+        ) : (
+          <Stack gap={8}>
+            {loading && days.length === 0
+              ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={64} radius="lg" />)
+              : days.map((day) => {
+                  const active = day.date === selectedDate;
+                  return (
+                    <Paper
+                      key={day.date}
+                      className={active ? "day-card day-card-active" : "day-card"}
+                      p="sm"
+                      onClick={() => onSelectDay(day.date)}
+                    >
+                      <Group justify="space-between" align="flex-start" wrap="nowrap">
+                        <div>
+                          <Text fw={600}>{day.date}</Text>
+                          <Text size="xs" c="dimmed">
+                            {fmt(day.close)}
+                          </Text>
+                        </div>
+                        <Badge variant="light" color={tone(day.change_amt)}>
+                          {signed(day.change_amt)}
+                        </Badge>
+                      </Group>
+                    </Paper>
+                  );
+                })}
+            {!loading && days.length === 0 && (
+              <Text ta="center" c="dimmed" py="xl">
+                还没有归档日期
+              </Text>
+            )}
+          </Stack>
+        )}
+      </ScrollArea>
+    </Paper>
+  );
+
+  const heroPanel = (
+    <Paper className="glass hero" p={isMobile ? "md" : "xl"}>
+      <Group justify="space-between" mb={8} wrap="wrap">
+        <Text className="eyebrow">{selectedDate || "今日"} · 元 / 克</Text>
+        {rule ? (
+          <Badge variant="light" color="gold">
+            卖出 {(rule.sell_fee_rate * 100).toFixed(1)}% · 保本 {rule.breakeven_rate_pct.toFixed(2)}%
+          </Badge>
+        ) : (
+          <Badge leftSection={<IconChartCandle size={12} />} variant="outline" color="gold">
+            浙商积存金
+          </Badge>
+        )}
+      </Group>
+      <Group align="flex-end" justify="space-between" wrap="wrap" gap="xs">
+        <Text className="price">{fmt(displayPrice)}</Text>
+        <Group gap={8}>
+          <ThemeIcon size={isMobile ? 36 : 42} radius="xl" color={tone(displayChange)} variant="light">
+            <ChangeIcon size={20} />
+          </ThemeIcon>
+          <div>
+            <Text fw={700} c={tone(displayChange)} size={isMobile ? "md" : "lg"}>
+              {signed(displayChange)}
+              {displayRate === null || displayRate === undefined ? "" : `  (${signed(displayRate)}%)`}
+            </Text>
+            <Text size="xs" c="dimmed">
+              较昨日 {fmt(summary?.prev_close ?? latest?.yesterday_price)}
+            </Text>
+          </div>
+        </Group>
+      </Group>
+      <SimpleGrid cols={2} mt="lg" spacing="sm">
+        {[
+          ["开盘", summary?.open],
+          ["最高", summary?.high],
+          ["最低", summary?.low],
+          ["点数", summary?.point_count],
+        ].map(([label, value]) => (
+          <Paper key={String(label)} className="stat-tile" p="md">
+            <Text size="xs" c="dimmed">
+              {label}
+            </Text>
+            <Text className="stat-value">{typeof value === "number" && label !== "点数" ? fmt(value) : value ?? "—"}</Text>
+          </Paper>
+        ))}
+      </SimpleGrid>
+    </Paper>
+  );
+
+  const chartPanel = (
+    <Paper className="glass" p={isMobile ? "md" : "lg"}>
+      <Group justify="space-between" mb="md" wrap="wrap">
+        <Text fw={600}>当日价格曲线</Text>
+        <Select
+          placeholder="对比"
+          clearable
+          w={isMobile ? "100%" : 180}
+          value={compareDate}
+          onChange={setCompareDate}
+          data={days.filter((d) => d.date !== selectedDate).map((d) => d.date)}
+        />
+      </Group>
+      {curve && curve.points.length > 0 ? (
+        <ReactECharts option={option} style={{ height: isMobile ? 280 : 420 }} notMerge />
+      ) : (
+        <Skeleton height={isMobile ? 280 : 420} radius="lg" visible={loading}>
+          <Text ta="center" c="dimmed" py={80}>
+            这一天还没有曲线，先点右上角采集一次。
+          </Text>
+        </Skeleton>
+      )}
+    </Paper>
+  );
+
+  const eventsPanel = (
+    <Paper className="glass" p={isMobile ? "md" : "lg"}>
+      <Group justify="space-between" mb="md" wrap="wrap">
+        <div>
+          <Group gap={8}>
+            <IconNews size={16} />
+            <Text fw={600}>行情事件</Text>
+          </Group>
+          <Text size="xs" c="dimmed" mt={4}>
+            涨跌持续超过保本幅度时自动记录
+          </Text>
+        </div>
+        <Group gap={8}>
+          {isMobile ? (
+            <Select
+              placeholder="日期"
+              w={140}
+              value={selectedDate || null}
+              onChange={(value) => value && onSelectDay(value)}
+              data={days.map((d) => d.date)}
+            />
+          ) : null}
+          <Badge variant="light" color="gray">
+            {events.length} 条
+          </Badge>
+        </Group>
+      </Group>
+      <Stack gap="sm">
+        {events.length === 0 && (
+          <Text ta="center" c="dimmed" py="md">
+            这一天还没有触发记录。
+          </Text>
+        )}
+        {events.map((event) => (
+          <Paper key={event.id} className="stat-tile" p="md">
+            <Group justify="space-between" align="flex-start" wrap="wrap">
+              <div>
+                <Group gap={8} mb={6}>
+                  <Badge variant="light" color={event.direction === "up" ? "red" : "teal"}>
+                    {event.direction === "up" ? "上涨" : "下跌"} {signed(event.change_rate)}%
+                  </Badge>
+                  <Text size="xs" c="dimmed">
+                    {event.triggered_at.replace("T", " ")}
+                  </Text>
+                </Group>
+                <Text fw={600}>{event.headline}</Text>
+                <Text size="xs" c="dimmed" mt={4}>
+                  {fmt(event.start_price)} → {fmt(event.end_price)}
+                </Text>
+              </div>
+              {event.url ? (
+                <Button
+                  component="a"
+                  href={event.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  variant="subtle"
+                  color="gold"
+                  size="xs"
+                  rightSection={<IconExternalLink size={14} />}
+                >
+                  原文
+                </Button>
+              ) : null}
+            </Group>
+          </Paper>
+        ))}
+      </Stack>
+    </Paper>
+  );
 
   return (
-    <Box className="app-shell">
-      <Group justify="space-between" align="flex-end" mb={28} wrap="wrap" gap="md">
+    <Box className={isMobile ? "app-shell app-shell-mobile" : "app-shell"}>
+      <Group justify="space-between" align="center" mb={isMobile ? 16 : 28} wrap="nowrap" gap="sm">
         <div>
-          <Text className="eyebrow" mb={6}>
-            Zhejiang Gold Archive
+          <Text className="eyebrow" mb={4}>
+            Zhejiang Gold
           </Text>
           <Title order={1} className="brand">
             MYGOLD
           </Title>
-          <Text c="dimmed" size="sm" mt={4}>
-            浙商积存金每日曲线 · 今天看见昨天，以后也能看见今天
-          </Text>
+          {!isMobile ? (
+            <Text c="dimmed" size="sm" mt={4}>
+              浙商积存金每日曲线 · {status}
+            </Text>
+          ) : null}
         </div>
-        <Group gap="sm">
-          <Text size="xs" c="dimmed" visibleFrom="sm">
-            {status}
-          </Text>
-          <Tooltip label="重新读取本地档案">
-            <ActionIcon variant="default" size={38} radius="xl" onClick={() => loadAll(selectedDate)} loading={loading}>
-              <IconRefresh size={18} />
-            </ActionIcon>
-          </Tooltip>
-          <Button
-            color="gold"
-            leftSection={<IconSparkles size={16} />}
-            loading={collecting}
-            onClick={onCollect}
-          >
-            立即采集
+        <Group gap={8}>
+          <ActionIcon variant="default" size={40} radius="xl" onClick={() => loadAll(selectedDate)} loading={loading}>
+            <IconRefresh size={18} />
+          </ActionIcon>
+          <Button color="gold" size={isMobile ? "sm" : "md"} leftSection={!isMobile ? <IconSparkles size={16} /> : undefined} loading={collecting} onClick={onCollect}>
+            {isMobile ? "采集" : "立即采集"}
           </Button>
         </Group>
       </Group>
 
-      <Grid gutter="lg">
-        <Grid.Col span={{ base: 12, md: 4 }}>
-        <Paper className="glass" p="md">
-          <Group justify="space-between" mb="sm">
-            <Text fw={600}>历史交易日</Text>
-            <Badge variant="light" color="gold">
-              {days.length} 天
-            </Badge>
-          </Group>
-          <ScrollArea h={{ base: 240, md: 640 }} offsetScrollbars>
-            <Stack gap={8}>
-              {loading && days.length === 0
-                ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={64} radius="lg" />)
-                : days.map((day) => {
-                    const active = day.date === selectedDate;
-                    return (
-                      <Paper
-                        key={day.date}
-                        className={active ? "day-card day-card-active" : "day-card"}
-                        p="sm"
-                        onClick={() => onSelectDay(day.date)}
-                      >
-                        <Group justify="space-between" align="flex-start">
-                          <div>
-                            <Text fw={600}>{day.date}</Text>
-                            <Text size="xs" c="dimmed">
-                              收盘 {fmt(day.close)}
-                            </Text>
-                          </div>
-                          <Badge variant="light" color={tone(day.change_amt)}>
-                            {signed(day.change_amt)}
-                          </Badge>
-                        </Group>
-                      </Paper>
-                    );
-                  })}
-              {!loading && days.length === 0 && (
-                <Text ta="center" c="dimmed" py="xl">
-                  还没有归档日期
-                </Text>
-              )}
-            </Stack>
-          </ScrollArea>
-        </Paper>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 8 }}>
-        <Stack gap="lg">
-          <Paper className="glass hero" p={{ base: "lg", sm: "xl" }}>
-            <Group justify="space-between" mb={8}>
-              <Text className="eyebrow">{selectedDate || "今日"} · 元 / 克</Text>
-              <Group gap={8}>
-                {rule ? (
-                  <Badge variant="light" color="gold">
-                    卖出 { (rule.sell_fee_rate * 100).toFixed(1) }% · 保本涨幅 {rule.breakeven_rate_pct.toFixed(2)}%
-                    {rule.example_needed_rise ? ` · 约 ${rule.example_needed_rise.toFixed(2)} 元/克` : ""}
-                  </Badge>
-                ) : null}
-                <Badge leftSection={<IconChartCandle size={12} />} variant="outline" color="gold">
-                  浙商积存金
-                </Badge>
-              </Group>
-            </Group>
-            <Group align="flex-end" justify="space-between" wrap="wrap">
-              <Text className="price">{fmt(displayPrice)}</Text>
-              <Group gap={8}>
-                <ThemeIcon size={42} radius="xl" color={tone(displayChange)} variant="light">
-                  <ChangeIcon size={22} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={700} c={tone(displayChange)} size="lg">
-                    {signed(displayChange)}
-                    {displayRate === null || displayRate === undefined ? "" : `  (${signed(displayRate)}%)`}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    较昨日 {fmt(summary?.prev_close ?? latest?.yesterday_price)}
-                  </Text>
-                </div>
-              </Group>
-            </Group>
-            <SimpleGrid cols={{ base: 2, sm: 4 }} mt="xl" spacing="sm">
-              {[
-                ["开盘", summary?.open],
-                ["最高", summary?.high],
-                ["最低", summary?.low],
-                ["点数", summary?.point_count],
-              ].map(([label, value]) => (
-                <Paper key={String(label)} className="stat-tile" p="md">
-                  <Text size="xs" c="dimmed">
-                    {label}
-                  </Text>
-                  <Text className="stat-value">{typeof value === "number" && label !== "点数" ? fmt(value) : value ?? "—"}</Text>
-                </Paper>
-              ))}
-            </SimpleGrid>
-          </Paper>
-
-          <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
-
-          <Paper className="glass" p="lg">
-            <Group justify="space-between" mb="md" wrap="wrap">
-              <div>
-                <Text fw={600}>当日价格曲线</Text>
-                <Text size="xs" c="dimmed">
-                  可叠加另一天，方便对照高低点
-                </Text>
-              </div>
-              <Select
-                placeholder="叠加对比日"
-                clearable
-                w={180}
-                value={compareDate}
-                onChange={setCompareDate}
-                data={days.filter((d) => d.date !== selectedDate).map((d) => d.date)}
-              />
-            </Group>
-            {curve && curve.points.length > 0 ? (
-              <ReactECharts option={option} style={{ height: 420 }} notMerge />
-            ) : (
-              <Skeleton height={420} radius="lg" visible={loading}>
-                <Text ta="center" c="dimmed" py={180}>
-                  这一天还没有曲线，先点右上角采集一次。
-                </Text>
-              </Skeleton>
-            )}
-          </Paper>
-
-          <Paper className="glass" p="lg">
-            <Group justify="space-between" mb="md">
-              <div>
-                <Group gap={8}>
-                  <IconNews size={16} />
-                  <Text fw={600}>超过手续费阈值的行情事件</Text>
-                </Group>
-                <Text size="xs" c="dimmed" mt={4}>
-                  近 {rule ? Math.round(rule.watch_window_seconds / 60) : 15} 分钟涨跌持续超过保本幅度时，自动记录当时最主要的相关新闻
-                </Text>
-              </div>
-              <Badge variant="light" color="gray">
-                {events.length} 条
-              </Badge>
-            </Group>
-            <Stack gap="sm">
-              {events.length === 0 && (
-                <Text ta="center" c="dimmed" py="md">
-                  这一天还没有触发记录。金价持续波动超过保本幅度后会出现在这里。
-                </Text>
-              )}
-              {events.map((event) => (
-                <Paper key={event.id} className="stat-tile" p="md">
-                  <Group justify="space-between" align="flex-start" wrap="wrap">
-                    <div>
-                      <Group gap={8} mb={6}>
-                        <Badge variant="light" color={event.direction === "up" ? "red" : "teal"}>
-                          {event.direction === "up" ? "上涨" : "下跌"} {signed(event.change_rate)}%
-                        </Badge>
-                        <Text size="xs" c="dimmed">
-                          {event.triggered_at.replace("T", " ")} · {event.source || "monitor"}
-                        </Text>
-                      </Group>
-                      <Text fw={600}>{event.headline}</Text>
-                      <Text size="xs" c="dimmed" mt={4}>
-                        {fmt(event.start_price)} → {fmt(event.end_price)}（{signed(event.change_amt)} 元/克）
-                        ，阈值 {event.threshold_rate.toFixed(2)}%
-                      </Text>
-                    </div>
-                    {event.url ? (
-                      <Button
-                        component="a"
-                        href={event.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        variant="subtle"
-                        color="gold"
-                        size="xs"
-                        rightSection={<IconExternalLink size={14} />}
-                      >
-                        原文
-                      </Button>
-                    ) : null}
-                  </Group>
-                </Paper>
-              ))}
-            </Stack>
-          </Paper>
+      {isMobile ? (
+        <Stack gap="md" pb={88}>
+          {mobileTab === "market" && (
+            <>
+              {heroPanel}
+              {daysPanel}
+              {chartPanel}
+            </>
+          )}
+          {mobileTab === "holdings" && (
+            <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+          )}
+          {mobileTab === "events" && eventsPanel}
         </Stack>
-        </Grid.Col>
-      </Grid>
+      ) : (
+        <Grid gutter="lg">
+          <Grid.Col span={4}>{daysPanel}</Grid.Col>
+          <Grid.Col span={8}>
+            <Stack gap="lg">
+              {heroPanel}
+              <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+              {chartPanel}
+              {eventsPanel}
+            </Stack>
+          </Grid.Col>
+        </Grid>
+      )}
+
+      {isMobile ? (
+        <nav className="mobile-tabbar">
+          <button className={mobileTab === "market" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("market")}>
+            <IconChartCandle size={18} />
+            行情
+          </button>
+          <button className={mobileTab === "holdings" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("holdings")}>
+            <IconWallet size={18} />
+            持仓
+          </button>
+          <button className={mobileTab === "events" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("events")}>
+            <IconNews size={18} />
+            事件
+          </button>
+        </nav>
+      ) : null}
     </Box>
   );
 }
