@@ -12,7 +12,11 @@ REMOTE_DIR="${2:-/opt/mygold}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 ssh "$HOST" "mkdir -p '$REMOTE_DIR'"
+# data 和 .env 只存在于服务器上，--delete 会把它们连数据库一起清掉，必须排除
 rsync -az --delete \
+  --exclude 'data' \
+  --exclude 'backend/data' \
+  --exclude '.env' \
   --exclude '.git' \
   --exclude '.venv' \
   --exclude 'backend/.venv' \
