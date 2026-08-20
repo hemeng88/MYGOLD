@@ -1,0 +1,25 @@
+services:
+  mygold:
+    build: .
+    container_name: mygold
+    restart: unless-stopped
+    ports:
+      - "${MYGOLD_PORT:-8000}:8000"
+    environment:
+      TZ: Asia/Shanghai
+      TICK_INTERVAL_SECONDS: "60"
+      CURVE_SNAPSHOT_INTERVAL_SECONDS: "300"
+    volumes:
+      - ./data:/app/backend/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=8)",
+        ]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
