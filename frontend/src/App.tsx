@@ -1,5 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
+import {
+  ActionIcon,
+  Badge,
+  Box,
+  Button,
+  Grid,
+  Group,
+  Paper,
+  ScrollArea,
+  Select,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Text,
+  ThemeIcon,
+  Title,
+  Tooltip,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import {
+  IconArrowDownRight,
+  IconArrowUpRight,
+  IconChartCandle,
+  IconMinus,
+  IconRefresh,
+  IconSparkles,
+} from "@tabler/icons-react";
 import { api } from "./api";
 import type { CurveResponse, DaySummary, LatestQuote } from "./types";
 
@@ -8,31 +35,28 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n.toFixed(digits);
 }
 
-function changeClass(value: number | null | undefined) {
-  if (value === null || value === undefined || value === 0) return "flat";
-  return value > 0 ? "up" : "down";
-}
-
 function signed(value: number | null | undefined) {
   if (value === null || value === undefined) return "—";
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${value.toFixed(2)}`;
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function tone(value: number | null | undefined) {
+  if (value === null || value === undefined || value === 0) return "gray";
+  return value > 0 ? "red" : "teal";
 }
 
 export default function App() {
   const [days, setDays] = useState<DaySummary[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>("");
-  const [compareDate, setCompareDate] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [compareDate, setCompareDate] = useState<string | null>(null);
   const [curve, setCurve] = useState<CurveResponse | null>(null);
   const [compareCurve, setCompareCurve] = useState<CurveResponse | null>(null);
   const [latest, setLatest] = useState<LatestQuote | null>(null);
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
-  const [error, setError] = useState("");
   const [status, setStatus] = useState("正在读取已归档曲线…");
 
   const loadAll = useCallback(async (date?: string) => {
-    setError("");
     const [dayList, latestQuote] = await Promise.all([
       api.days(),
       api.latest().catch(() => null),
@@ -41,15 +65,15 @@ export default function App() {
     setLatest(latestQuote);
     const nextDate = date || dayList[0]?.date || latestQuote?.trade_date || "";
     setSelectedDate(nextDate);
-    if (nextDate) {
-      setCurve(await api.curve(nextDate));
-    }
+    if (nextDate) setCurve(await api.curve(nextDate));
     setStatus(latestQuote?.collected_at ? `最近采集 ${latestQuote.collected_at.replace("T", " ")}` : "等待首次采集");
   }, []);
 
   useEffect(() => {
     loadAll()
-      .catch((err: Error) => setError(err.message))
+      .catch((err: Error) => {
+        notifications.show({ color: "red", title: "加载失败", message: err.message });
+      })
       .finally(() => setLoading(false));
   }, [loadAll]);
 
@@ -58,7 +82,9 @@ export default function App() {
       setCompareCurve(null);
       return;
     }
-    api.curve(compareDate).then(setCompareCurve).catch((err: Error) => setError(err.message));
+    api.curve(compareDate).then(setCompareCurve).catch((err: Error) => {
+      notifications.show({ color: "red", title: "对比日加载失败", message: err.message });
+    });
   }, [compareDate]);
 
   const onSelectDay = async (date: string) => {
@@ -68,13 +94,17 @@ export default function App() {
 
   const onCollect = async () => {
     setCollecting(true);
-    setError("");
     try {
       const result = await api.collect();
       setStatus(result.message);
       await loadAll(selectedDate || result.tick?.trade_date);
+      notifications.show({ color: "gold", title: "采集完成", message: result.message });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "采集失败");
+      notifications.show({
+        color: "red",
+        title: "采集失败",
+        message: err instanceof Error ? err.message : "请稍后重试",
+      });
     } finally {
       setCollecting(false);
     }
@@ -84,6 +114,7 @@ export default function App() {
   const displayPrice = selectedDate === latest?.trade_date ? latest?.price ?? summary?.close : summary?.close;
   const displayChange = summary?.change_amt ?? latest?.change_amt;
   const displayRate = summary?.change_rate;
+  const ChangeIcon = !displayChange ? IconMinus : displayChange > 0 ? IconArrowUpRight : IconArrowDownRight;
 
   const option = useMemo(() => {
     const series = [
@@ -91,9 +122,9 @@ export default function App() {
         name: selectedDate || "当日",
         type: "line",
         showSymbol: false,
-        smooth: 0.15,
+        smooth: 0.18,
         data: (curve?.points || []).map((p) => [p.time, p.p]),
-        lineStyle: { width: 2.2, color: "#d4af37" },
+        lineStyle: { width: 2.4, color: "#e0c25c" },
         areaStyle: {
           color: {
             type: "linear",
@@ -102,22 +133,21 @@ export default function App() {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: "rgba(212,175,55,0.28)" },
-              { offset: 1, color: "rgba(212,175,55,0.02)" },
+              { offset: 0, color: "rgba(212,175,55,0.32)" },
+              { offset: 1, color: "rgba(212,175,55,0)" },
             ],
           },
         },
       },
     ];
-
     if (compareCurve) {
       series.push({
-        name: compareDate,
+        name: compareDate || "对比",
         type: "line",
         showSymbol: false,
-        smooth: 0.15,
+        smooth: 0.18,
         data: compareCurve.points.map((p) => [p.time, p.p]),
-        lineStyle: { width: 1.6, color: "#8cb4d4" },
+        lineStyle: { width: 1.8, color: "#7eb6d4" },
         areaStyle: {
           color: {
             type: "linear",
@@ -126,32 +156,27 @@ export default function App() {
             x2: 0,
             y2: 1,
             colorStops: [
-              { offset: 0, color: "rgba(140,180,212,0.16)" },
-              { offset: 1, color: "rgba(140,180,212,0.01)" },
+              { offset: 0, color: "rgba(126,182,212,0.18)" },
+              { offset: 1, color: "rgba(126,182,212,0)" },
             ],
           },
         },
       });
     }
-
     return {
       backgroundColor: "transparent",
       tooltip: {
         trigger: "axis",
-        backgroundColor: "#1b160f",
+        backgroundColor: "rgba(20,17,12,0.92)",
         borderColor: "rgba(212,175,55,0.25)",
         textStyle: { color: "#f4ead6" },
       },
-      legend: {
-        show: Boolean(compareCurve),
-        top: 0,
-        textStyle: { color: "#c9b896" },
-      },
-      grid: { left: 48, right: 18, top: compareCurve ? 36 : 18, bottom: 36 },
+      legend: { show: Boolean(compareCurve), top: 4, textStyle: { color: "#c9b896" } },
+      grid: { left: 52, right: 16, top: compareCurve ? 40 : 20, bottom: 32 },
       xAxis: {
         type: "category",
         boundaryGap: false,
-        axisLine: { lineStyle: { color: "rgba(212,175,55,0.2)" } },
+        axisLine: { lineStyle: { color: "rgba(212,175,55,0.16)" } },
         axisLabel: { color: "#8c8170" },
         splitLine: { show: false },
       },
@@ -159,115 +184,165 @@ export default function App() {
         type: "value",
         scale: true,
         axisLabel: { color: "#8c8170" },
-        splitLine: { lineStyle: { color: "rgba(212,175,55,0.08)" } },
+        splitLine: { lineStyle: { color: "rgba(255,255,255,0.04)" } },
       },
       series,
     };
   }, [compareCurve, compareDate, curve, selectedDate]);
 
   return (
-    <div className="app">
-      <header className="topbar">
+    <Box className="app-shell">
+      <Group justify="space-between" align="flex-end" mb={28} wrap="wrap" gap="md">
         <div>
-          <div className="brand-mark">FOR THE DAYS THAT MATTER</div>
-          <h1 className="brand-title">MYGOLD</h1>
-          <p className="brand-sub">浙商积存金每日价格曲线档案 · 今天看见昨天，以后也能看见今天</p>
+          <Text className="eyebrow" mb={6}>
+            Zhejiang Gold Archive
+          </Text>
+          <Title order={1} className="brand">
+            MYGOLD
+          </Title>
+          <Text c="dimmed" size="sm" mt={4}>
+            浙商积存金每日曲线 · 今天看见昨天，以后也能看见今天
+          </Text>
         </div>
-        <div className="top-actions">
-          <div className="status">{status}</div>
-          <button className="ghost-btn" onClick={() => loadAll(selectedDate)} disabled={loading}>
-            刷新
-          </button>
-          <button className="gold-btn" onClick={onCollect} disabled={collecting}>
-            {collecting ? "采集中…" : "立即采集"}
-          </button>
-        </div>
-      </header>
+        <Group gap="sm">
+          <Text size="xs" c="dimmed" visibleFrom="sm">
+            {status}
+          </Text>
+          <Tooltip label="重新读取本地档案">
+            <ActionIcon variant="default" size={38} radius="xl" onClick={() => loadAll(selectedDate)} loading={loading}>
+              <IconRefresh size={18} />
+            </ActionIcon>
+          </Tooltip>
+          <Button
+            color="gold"
+            leftSection={<IconSparkles size={16} />}
+            loading={collecting}
+            onClick={onCollect}
+          >
+            立即采集
+          </Button>
+        </Group>
+      </Group>
 
-      {error ? <div className="error">{error}</div> : null}
+      <Grid gutter="lg">
+        <Grid.Col span={{ base: 12, md: 4 }}>
+        <Paper className="glass" p="md">
+          <Group justify="space-between" mb="sm">
+            <Text fw={600}>历史交易日</Text>
+            <Badge variant="light" color="gold">
+              {days.length} 天
+            </Badge>
+          </Group>
+          <ScrollArea h={{ base: 240, md: 640 }} offsetScrollbars>
+            <Stack gap={8}>
+              {loading && days.length === 0
+                ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={64} radius="lg" />)
+                : days.map((day) => {
+                    const active = day.date === selectedDate;
+                    return (
+                      <Paper
+                        key={day.date}
+                        className={active ? "day-card day-card-active" : "day-card"}
+                        p="sm"
+                        onClick={() => onSelectDay(day.date)}
+                      >
+                        <Group justify="space-between" align="flex-start">
+                          <div>
+                            <Text fw={600}>{day.date}</Text>
+                            <Text size="xs" c="dimmed">
+                              收盘 {fmt(day.close)}
+                            </Text>
+                          </div>
+                          <Badge variant="light" color={tone(day.change_amt)}>
+                            {signed(day.change_amt)}
+                          </Badge>
+                        </Group>
+                      </Paper>
+                    );
+                  })}
+              {!loading && days.length === 0 && (
+                <Text ta="center" c="dimmed" py="xl">
+                  还没有归档日期
+                </Text>
+              )}
+            </Stack>
+          </ScrollArea>
+        </Paper>
+        </Grid.Col>
 
-      <div className="layout">
-        <aside className="panel sidebar">
-          <h2>历史交易日</h2>
-          <div className="day-list">
-            {days.length === 0 && <div className="empty">还没有归档日期</div>}
-            {days.map((day) => (
-              <button
-                key={day.date}
-                className={`day-item ${day.date === selectedDate ? "active" : ""}`}
-                onClick={() => onSelectDay(day.date)}
-              >
-                <span className="date">{day.date}</span>
-                <span className="meta">
-                  <span>{fmt(day.close)}</span>
-                  <span className={`change ${changeClass(day.change_amt)}`}>{signed(day.change_amt)}</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="main">
-          <div className="panel hero">
-            <div className="hero-kicker">{selectedDate || "今日"} · 元 / 克</div>
-            <div className="price-row">
-              <div className="price">{fmt(displayPrice)}</div>
-              <div className={`change ${changeClass(displayChange)}`}>
-                <div className="change-main">
-                  {signed(displayChange)}{" "}
-                  {displayRate === null || displayRate === undefined ? "" : `(${signed(displayRate)}%)`}
+        <Grid.Col span={{ base: 12, md: 8 }}>
+        <Stack gap="lg">
+          <Paper className="glass hero" p={{ base: "lg", sm: "xl" }}>
+            <Group justify="space-between" mb={8}>
+              <Text className="eyebrow">{selectedDate || "今日"} · 元 / 克</Text>
+              <Badge leftSection={<IconChartCandle size={12} />} variant="outline" color="gold">
+                浙商积存金
+              </Badge>
+            </Group>
+            <Group align="flex-end" justify="space-between" wrap="wrap">
+              <Text className="price">{fmt(displayPrice)}</Text>
+              <Group gap={8}>
+                <ThemeIcon size={42} radius="xl" color={tone(displayChange)} variant="light">
+                  <ChangeIcon size={22} />
+                </ThemeIcon>
+                <div>
+                  <Text fw={700} c={tone(displayChange)} size="lg">
+                    {signed(displayChange)}
+                    {displayRate === null || displayRate === undefined ? "" : `  (${signed(displayRate)}%)`}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    较昨日 {fmt(summary?.prev_close ?? latest?.yesterday_price)}
+                  </Text>
                 </div>
-                <div className="change-sub">较昨日收盘 {fmt(summary?.prev_close ?? latest?.yesterday_price)}</div>
-              </div>
-            </div>
-            <div className="stats">
-              <div className="stat">
-                <span>开盘</span>
-                <strong>{fmt(summary?.open)}</strong>
-              </div>
-              <div className="stat">
-                <span>最高</span>
-                <strong>{fmt(summary?.high)}</strong>
-              </div>
-              <div className="stat">
-                <span>最低</span>
-                <strong>{fmt(summary?.low)}</strong>
-              </div>
-              <div className="stat">
-                <span>点数</span>
-                <strong>{summary?.point_count ?? 0}</strong>
-              </div>
-            </div>
-          </div>
+              </Group>
+            </Group>
+            <SimpleGrid cols={{ base: 2, sm: 4 }} mt="xl" spacing="sm">
+              {[
+                ["开盘", summary?.open],
+                ["最高", summary?.high],
+                ["最低", summary?.low],
+                ["点数", summary?.point_count],
+              ].map(([label, value]) => (
+                <Paper key={String(label)} className="stat-tile" p="md">
+                  <Text size="xs" c="dimmed">
+                    {label}
+                  </Text>
+                  <Text className="stat-value">{typeof value === "number" && label !== "点数" ? fmt(value) : value ?? "—"}</Text>
+                </Paper>
+              ))}
+            </SimpleGrid>
+          </Paper>
 
-          <div className="panel chart-panel">
-            <div className="chart-head">
-              <h2>当日价格曲线</h2>
-              <label className="compare">
-                叠加对比
-                <select value={compareDate} onChange={(e) => setCompareDate(e.target.value)}>
-                  <option value="">不对比</option>
-                  {days
-                    .filter((d) => d.date !== selectedDate)
-                    .map((d) => (
-                      <option key={d.date} value={d.date}>
-                        {d.date}
-                      </option>
-                    ))}
-                </select>
-              </label>
-            </div>
+          <Paper className="glass" p="lg">
+            <Group justify="space-between" mb="md" wrap="wrap">
+              <div>
+                <Text fw={600}>当日价格曲线</Text>
+                <Text size="xs" c="dimmed">
+                  可叠加另一天，方便对照高低点
+                </Text>
+              </div>
+              <Select
+                placeholder="叠加对比日"
+                clearable
+                w={180}
+                value={compareDate}
+                onChange={setCompareDate}
+                data={days.filter((d) => d.date !== selectedDate).map((d) => d.date)}
+              />
+            </Group>
             {curve && curve.points.length > 0 ? (
               <ReactECharts option={option} style={{ height: 420 }} notMerge />
             ) : (
-              <div className="empty">{loading ? "加载中…" : "这一天还没有曲线，先点右上角采集一次。"}</div>
+              <Skeleton height={420} radius="lg" visible={loading}>
+                <Text ta="center" c="dimmed" py={180}>
+                  这一天还没有曲线，先点右上角采集一次。
+                </Text>
+              </Skeleton>
             )}
-            <p className="hero-note">
-              数据来自京东金融浙商积存金报价，并归档当日走势。请保持后端运行，跨天后即可回看历史曲线。
-            </p>
-          </div>
-        </section>
-      </div>
-    </div>
+          </Paper>
+        </Stack>
+        </Grid.Col>
+      </Grid>
+    </Box>
   );
 }

@@ -1,16 +1,19 @@
-FROM node:20-alpine AS frontend
+ARG REGISTRY_PREFIX=docker.m.daocloud.io/library/
+FROM ${REGISTRY_PREFIX}node:20-alpine AS frontend
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN npm ci --registry=https://registry.npmmirror.com
 COPY frontend/ ./
 RUN npm run build
 
-FROM python:3.11-slim
+FROM ${REGISTRY_PREFIX}python:3.11-slim
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    TZ=Asia/Shanghai
+    TZ=Asia/Shanghai \
+    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends tzdata \

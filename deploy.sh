@@ -27,8 +27,22 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
+if [ ! -f /etc/docker/daemon.json ]; then
+  echo "正在配置国内 Docker 镜像加速…"
+  sudo mkdir -p /etc/docker
+  sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
+{
+  "registry-mirrors": [
+    "https://mirror.ccs.tencentyun.com",
+    "https://docker.m.daocloud.io"
+  ]
+}
+EOF
+  sudo systemctl restart docker
+fi
+
 docker compose up -d --build
 echo
-echo "部署完成。浏览器访问：http://服务器IP:${MYGOLD_PORT:-8000}"
-echo "健康检查：http://服务器IP:${MYGOLD_PORT:-8000}/api/health"
+echo "部署完成。任意手机/电脑浏览器访问：http://服务器公网IP"
+echo "健康检查：http://服务器公网IP/api/health"
 echo "容器会开机自启，并持续按分钟采集、按天归档曲线。"

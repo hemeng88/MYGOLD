@@ -4,7 +4,7 @@ services:
     container_name: mygold
     restart: unless-stopped
     ports:
-      - "${MYGOLD_PORT:-8000}:8000"
+      - "${MYGOLD_PORT:-80}:8000"
     environment:
       TZ: Asia/Shanghai
       TICK_INTERVAL_SECONDS: "60"

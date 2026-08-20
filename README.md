@@ -85,14 +85,9 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-默认访问：`http://服务器IP:8000`
+任意手机或电脑访问：`http://服务器公网IP`（默认 80 端口）。
 
-阿里云 / 腾讯云请在安全组放行 **8000**（或你在 `.env` 里改的 `MYGOLD_PORT`）。若要走 80 端口：
-
-```bash
-echo 'MYGOLD_PORT=80' > .env
-docker compose up -d
-```
+腾讯云轻量请在 **防火墙** 放行 TCP **80**。若 80 被系统自带网页占用，先停掉它，或改用 `MYGOLD_PORT=8000` 并放行 8000。
 
 ### 数据保存在哪
 
