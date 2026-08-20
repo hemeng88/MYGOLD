@@ -20,6 +20,7 @@ from ..formula import breakeven_sell_price
 from ..holdings import list_holdings
 from ..models import DailySummary, NewsFlash
 from ..timeutil import now_local
+from .regime import measure
 
 # 位置用 ATR 的倍数衡量：偏离一个 ATR 以上才算真的偏离
 LOW_ZONE = -1.0
@@ -67,22 +68,64 @@ def _recent_drivers(db: Session, days: int = 5) -> List[Dict]:
     return [{"tag": tag, "share_pct": round(score / total * 100, 1)} for tag, score in ranked]
 
 
-def build_advice(db: Session) -> Dict:
-    quote = get_latest_quote(db)
-    if not quote:
-        return {"ready": False, "message": "还没有采集到价格，先点一次采集"}
+def _factor(name: str, label: str, detail: str, stats: Optional[Dict]) -> Optional[Dict]:
+    """把一个分区的历史胜率折成 [-1, 1] 的分数，样本越薄权重压得越低。"""
+    if not stats:
+        return None
+    days = stats["days"]
+    raw = (stats["win_rate"] - 50) / 50
+    shrink = days / (days + 20)
+    return {
+        "name": name,
+        "label": label,
+        "detail": detail,
+        "score": round(raw * shrink, 3),
+        "win_rate": stats["win_rate"],
+        "mean_next": stats["mean_next"],
+        "days": days,
+    }
 
-    price = float(quote.price)
-    today = now_local().date()
-    bars = load_bars(db, today - timedelta(days=200), today)
-    if len(bars) < 25:
-        return {
-            "ready": False,
-            "message": "历史日线不足，先在归因页点一次更新",
-            "price": price,
-        }
 
-    basis = _basis_scale(db, bars, price)
+def _direction_score(z: float, regime: Optional[Dict]) -> Dict:
+    """位置和事件方向各占一半。两者都用实测胜率，而不是拍出来的系数。"""
+    factors: List[Dict] = []
+    if z <= -1.0:
+        zone, zone_label = "low", "低于均线一个 ATR 以上"
+    elif z >= 1.5:
+        zone, zone_label = "high", "高于均线 1.5 个 ATR 以上"
+    else:
+        zone, zone_label = "mid", "在均线附近"
+
+    if regime and regime.get("ready"):
+        factors.append(
+            _factor("position", "价格位置", zone_label, regime["position_zones"].get(zone))
+        )
+        factors.append(
+            _factor(
+                "events",
+                "事件方向",
+                "最近两个交易日的新闻%s（升级分 %+.2f）"
+                % (regime["mood_label"], regime["polarity"]),
+                regime["polarity_zones"].get(regime["mood"]),
+            )
+        )
+    factors = [item for item in factors if item]
+    if not factors:
+        return {"score": 0.0, "factors": []}
+    return {
+        "score": round(sum(item["score"] for item in factors) / len(factors), 3),
+        "factors": factors,
+    }
+
+
+def evaluate(
+    price: float,
+    bars: List[Dict],
+    basis: Dict,
+    position: Dict,
+    regime: Optional[Dict] = None,
+) -> Dict:
+    """给定价格、日线、持仓和事件环境算出档位。不碰数据库，方便回算历史某一天。"""
     scale = basis["scale"]
 
     def to_quote(value: Optional[float]) -> Optional[float]:
@@ -112,24 +155,37 @@ def build_advice(db: Session) -> Dict:
     swing_low = to_quote(min(lows)) if lows else None
 
     z = (price - ma20) / atr
-    holdings = list_holdings(db)
-    breakeven = holdings.breakeven_sell
-    has_position = bool(holdings.total_grams)
+    breakeven = position.get("breakeven")
+    has_position = bool(position.get("total_grams"))
     in_profit = bool(breakeven and price > breakeven)
 
-    if z <= LOW_ZONE:
+    direction = _direction_score(z, regime)
+    score = direction["score"]
+    high_side = z >= HIGH_ZONE
+
+    # 门槛定在 ±0.10：样本外检验里 0.03~0.10 那一档没有优势，并进观望
+    if score >= 0.10:
         stance = "accumulate"
-        headline = "价格低于均线一个波动区间，偏向分批买入"
-    elif z >= HIGH_ZONE:
+        headline = (
+            "位置偏高，但事件环境站在多头一侧，可以顺势买，别一次买满"
+            if high_side
+            else "位置和事件都偏向多头，适合分批买入"
+        )
+    elif score > -0.10:
+        stance = "hold"
+        headline = "优势不明显，观望；真想买就挂在下面第一档等回落"
+    else:
         stance = "reduce" if in_profit else "wait"
         headline = (
-            "价格高于均线较多，持仓已过保本线，可考虑分批止盈"
+            "环境转差且持仓已过保本线，可以分批减一些"
             if in_profit
-            else "价格偏高，追买性价比低，等回踩"
+            else "环境偏差，别加仓；现价卖出还不够保本，先等"
         )
+    if high_side and stance == "accumulate":
+        # 数据不支持「偏高就该等回踩」，但也没理由在高位重仓
+        notes_extra = "价格已高于均线 %.1f 个 ATR，档位都设在现价下方，等回落再接。" % z
     else:
-        stance = "hold"
-        headline = "价格在均线附近震荡，没有明显边缘，观望或小额定投"
+        notes_extra = None
 
     def ladder(candidates, below: bool, limit: int = 3, bound: Optional[float] = None) -> List[Dict]:
         """挑出方向正确的档位，太靠近的合并掉，只留最有代表性的几档。"""
@@ -195,21 +251,29 @@ def build_advice(db: Session) -> Dict:
     elif breakeven:
         notes.append(
             "现价已高于保本线 %.2f，全卖净赚 %.2f 元。"
-            % (breakeven, holdings.net_if_sell_now or 0)
+            % (breakeven, position.get("net_if_sell_now") or 0)
+        )
+    if notes_extra:
+        notes.append(notes_extra)
+    if regime and regime.get("volume_rank_pct") is not None:
+        notes.append(
+            "事件声量处在近半年的第 %d 百分位，声量高的日子次日振幅通常更大。"
+            % regime["volume_rank_pct"]
         )
     notes.append(
         "价位由沪金日线换算而来，基差取%s，比例 %.4f。" % (basis["source"], scale)
     )
     notes.append("ATR14 为 %.2f 元，代表最近一天的正常波动幅度。" % atr)
+    notes.append("事件只影响方向倾向和档位宽度，胜率都是实测值，样本不大，别当准确率看。")
     notes.append("这是按规则算出的参考位，不是投资建议。")
 
     return {
         "ready": True,
-        "as_of": quote.collected_at,
         "price": price,
-        "trade_date": quote.trade_date,
         "stance": stance,
         "headline": headline,
+        "score": score,
+        "factors": direction["factors"],
         "z_score": _round(z),
         "ma20": _round(ma20),
         "ma60": _round(ma60),
@@ -217,11 +281,53 @@ def build_advice(db: Session) -> Dict:
         "swing_high": _round(swing_high),
         "swing_low": _round(swing_low),
         "breakeven": _round(breakeven),
-        "avg_cost": _round(holdings.avg_cost),
-        "total_grams": holdings.total_grams,
-        "net_if_sell_now": holdings.net_if_sell_now,
+        "avg_cost": _round(position.get("avg_cost")),
+        "total_grams": position.get("total_grams"),
+        "net_if_sell_now": position.get("net_if_sell_now"),
         "buy_levels": buy_levels,
         "sell_levels": sell_levels,
-        "drivers": _recent_drivers(db),
         "notes": notes,
     }
+
+
+def build_advice(db: Session) -> Dict:
+    quote = get_latest_quote(db)
+    if not quote:
+        return {"ready": False, "message": "还没有采集到价格，先点一次采集"}
+
+    price = float(quote.price)
+    today = now_local().date()
+    bars = load_bars(db, today - timedelta(days=200), today)
+    if len(bars) < 25:
+        return {
+            "ready": False,
+            "message": "历史日线不足，先在归因页点一次更新",
+            "price": price,
+        }
+
+    holdings = list_holdings(db)
+    conditions = measure(db)
+    result = evaluate(
+        price,
+        bars,
+        _basis_scale(db, bars, price),
+        {
+            "breakeven": holdings.breakeven_sell,
+            "avg_cost": holdings.avg_cost,
+            "total_grams": holdings.total_grams,
+            "net_if_sell_now": holdings.net_if_sell_now,
+        },
+        regime=conditions,
+    )
+    if not result.get("ready"):
+        return result
+    result["as_of"] = quote.collected_at
+    result["trade_date"] = quote.trade_date
+    if conditions.get("ready"):
+        result["drivers"] = conditions["drivers"]
+        result["mood_label"] = conditions["mood_label"]
+        result["polarity"] = conditions["polarity"]
+        result["volume_rank_pct"] = conditions["volume_rank_pct"]
+    else:
+        result["drivers"] = _recent_drivers(db)
+    return result

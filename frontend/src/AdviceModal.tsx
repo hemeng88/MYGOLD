@@ -15,7 +15,7 @@ const STANCE: Record<string, { label: string; color: string }> = {
   accumulate: { label: "偏向买入", color: "teal" },
   hold: { label: "观望", color: "gray" },
   reduce: { label: "可分批止盈", color: "red" },
-  wait: { label: "等回踩", color: "yellow" },
+  wait: { label: "别加仓", color: "yellow" },
 };
 
 function LevelRow({ level, color }: { level: AdviceLevel; color: string }) {
@@ -84,6 +84,39 @@ export function AdviceModal({
           </Group>
 
           <Text size="sm">{advice.headline}</Text>
+
+          {advice.factors.length ? (
+            <Paper className="stat-tile" p="sm">
+              <Group justify="space-between" mb={8}>
+                <Text size="xs" c="dimmed">
+                  判断依据（各占一半，样本越薄权重越低）
+                </Text>
+                <Text size="xs" fw={600} c={(advice.score ?? 0) > 0 ? "teal.4" : "red.4"}>
+                  合计 {signed(advice.score, 2)}
+                </Text>
+              </Group>
+              <Stack gap="xs">
+                {advice.factors.map((factor) => (
+                  <div key={factor.name}>
+                    <Group justify="space-between" gap="xs" wrap="nowrap">
+                      <Text size="sm" fw={600}>
+                        {factor.label}
+                      </Text>
+                      <Text size="sm" fw={600} c={factor.score > 0 ? "teal.4" : "red.4"}>
+                        {signed(factor.score, 2)}
+                      </Text>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      {factor.detail}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      历史 {factor.days} 天：次日上涨 {factor.win_rate}%，平均 {signed(factor.mean_next)}%
+                    </Text>
+                  </div>
+                ))}
+              </Stack>
+            </Paper>
+          ) : null}
 
           <SimpleGrid cols={3} spacing="xs">
             <Paper className="stat-tile" p="xs">
@@ -164,7 +197,9 @@ export function AdviceModal({
           {advice.drivers.length ? (
             <div>
               <Text size="xs" c="dimmed" mb={6}>
-                最近五天的盘面驱动
+                最近两天的盘面驱动
+                {advice.mood_label ? ` · 新闻${advice.mood_label}` : ""}
+                {advice.volume_rank_pct !== null ? ` · 声量第 ${advice.volume_rank_pct} 百分位` : ""}
               </Text>
               <Group gap={6}>
                 {advice.drivers.map((driver) => (

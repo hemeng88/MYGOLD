@@ -27,7 +27,7 @@ def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
     return None if value is None else round(value, digits)
 
 
-def _next_trading_day(day: str, trading_days: set) -> Optional[str]:
+def next_trading_day(day: str, trading_days: set) -> Optional[str]:
     """周末与假期的快讯顺延到下一个交易日。"""
     if day in trading_days:
         return day
@@ -121,7 +121,7 @@ def compute_attribution(
     # 快讯按交易日归堆
     by_day: Dict[str, List] = defaultdict(list)
     for flash in flashes:
-        day = _next_trading_day(flash.session_date, set(trading_days))
+        day = next_trading_day(flash.session_date, set(trading_days))
         if day:
             by_day[day].append(flash)
 

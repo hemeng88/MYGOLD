@@ -166,6 +166,16 @@ class AdviceDriver(BaseModel):
     share_pct: float
 
 
+class AdviceFactor(BaseModel):
+    name: str
+    label: str
+    detail: str
+    score: float
+    win_rate: int
+    mean_next: float
+    days: int
+
+
 class AdviceResponse(BaseModel):
     ready: bool
     message: Optional[str] = None
@@ -174,6 +184,11 @@ class AdviceResponse(BaseModel):
     trade_date: Optional[str] = None
     stance: Optional[str] = None
     headline: Optional[str] = None
+    score: Optional[float] = None
+    factors: List[AdviceFactor] = Field(default_factory=list)
+    mood_label: Optional[str] = None
+    polarity: Optional[float] = None
+    volume_rank_pct: Optional[int] = None
     z_score: Optional[float] = None
     ma20: Optional[float] = None
     ma60: Optional[float] = None

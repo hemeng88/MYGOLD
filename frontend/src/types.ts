@@ -85,6 +85,16 @@ export interface AdviceLevel {
   kind: string | null;
 }
 
+export interface AdviceFactor {
+  name: string;
+  label: string;
+  detail: string;
+  score: number;
+  win_rate: number;
+  mean_next: number;
+  days: number;
+}
+
 export interface Advice {
   ready: boolean;
   message: string | null;
@@ -93,6 +103,11 @@ export interface Advice {
   trade_date: string | null;
   stance: "accumulate" | "hold" | "reduce" | "wait" | null;
   headline: string | null;
+  score: number | null;
+  factors: AdviceFactor[];
+  mood_label: string | null;
+  polarity: number | null;
+  volume_rank_pct: number | null;
   z_score: number | null;
   ma20: number | null;
   ma60: number | null;
