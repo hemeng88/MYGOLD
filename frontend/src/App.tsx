@@ -29,12 +29,14 @@ import {
   IconNews,
   IconRefresh,
   IconSparkles,
+  IconTargetArrow,
   IconWallet,
 } from "@tabler/icons-react";
 import { api } from "./api";
+import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
-import type { CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent } from "./types";
+import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -96,6 +98,9 @@ export default function App() {
   const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
   const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events" | "weights">("market");
   const [eventTag, setEventTag] = useState<string | null>(null);
+  const [advice, setAdvice] = useState<Advice | null>(null);
+  const [adviceOpen, setAdviceOpen] = useState(false);
+  const [advising, setAdvising] = useState(false);
   const isMobile = useMediaQuery("(max-width: 52em)") ?? true;
 
   const loadAll = useCallback(async (date?: string) => {
@@ -159,6 +164,24 @@ export default function App() {
       });
     } finally {
       setCollecting(false);
+    }
+  };
+
+  const onAdvise = async () => {
+    setAdvising(true);
+    setAdvice(null);
+    setAdviceOpen(true);
+    try {
+      setAdvice(await api.advice());
+    } catch (err) {
+      setAdviceOpen(false);
+      notifications.show({
+        color: "red",
+        title: "算不出来",
+        message: err instanceof Error ? err.message : "稍后重试",
+      });
+    } finally {
+      setAdvising(false);
     }
   };
 
@@ -387,6 +410,18 @@ export default function App() {
           </Paper>
         ))}
       </SimpleGrid>
+      <Button
+        fullWidth
+        mt="md"
+        color="gold"
+        variant="light"
+        size={isMobile ? "md" : "sm"}
+        loading={advising}
+        onClick={onAdvise}
+        leftSection={<IconTargetArrow size={16} />}
+      >
+        算一下该买还是该卖
+      </Button>
     </Paper>
   );
 
@@ -571,6 +606,8 @@ export default function App() {
           </Grid.Col>
         </Grid>
       )}
+
+      <AdviceModal advice={advice} opened={adviceOpen} onClose={() => setAdviceOpen(false)} />
 
       {isMobile ? (
         <nav className="mobile-tabbar">

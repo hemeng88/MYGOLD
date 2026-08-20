@@ -78,6 +78,37 @@ export interface MarketEvent {
   tags: string[];
 }
 
+export interface AdviceLevel {
+  price: number;
+  note: string;
+  gap_pct: number | null;
+  kind: string | null;
+}
+
+export interface Advice {
+  ready: boolean;
+  message: string | null;
+  as_of: string | null;
+  price: number | null;
+  trade_date: string | null;
+  stance: "accumulate" | "hold" | "reduce" | "wait" | null;
+  headline: string | null;
+  z_score: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  atr: number | null;
+  swing_high: number | null;
+  swing_low: number | null;
+  breakeven: number | null;
+  avg_cost: number | null;
+  total_grams: number | null;
+  net_if_sell_now: number | null;
+  buy_levels: AdviceLevel[];
+  sell_levels: AdviceLevel[];
+  drivers: { tag: string; share_pct: number }[];
+  notes: string[];
+}
+
 export interface AttributionType {
   tag: string;
   weight_pct: number;

@@ -154,6 +154,42 @@ class AttributionResponse(BaseModel):
     volatility: Optional[VolatilitySnapshot] = None
 
 
+class AdviceLevel(BaseModel):
+    price: float
+    note: str
+    gap_pct: Optional[float] = None
+    kind: Optional[str] = None
+
+
+class AdviceDriver(BaseModel):
+    tag: str
+    share_pct: float
+
+
+class AdviceResponse(BaseModel):
+    ready: bool
+    message: Optional[str] = None
+    as_of: Optional[datetime] = None
+    price: Optional[float] = None
+    trade_date: Optional[str] = None
+    stance: Optional[str] = None
+    headline: Optional[str] = None
+    z_score: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+    atr: Optional[float] = None
+    swing_high: Optional[float] = None
+    swing_low: Optional[float] = None
+    breakeven: Optional[float] = None
+    avg_cost: Optional[float] = None
+    total_grams: Optional[float] = None
+    net_if_sell_now: Optional[float] = None
+    buy_levels: List[AdviceLevel] = Field(default_factory=list)
+    sell_levels: List[AdviceLevel] = Field(default_factory=list)
+    drivers: List[AdviceDriver] = Field(default_factory=list)
+    notes: List[str] = Field(default_factory=list)
+
+
 class RefreshResult(BaseModel):
     ok: bool
     bars_written: int = 0

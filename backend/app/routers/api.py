@@ -3,6 +3,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from ..analysis.advice import build_advice
 from ..analysis.attribution import compute_attribution
 from ..analysis.refresh import refresh_attribution_data
 from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
@@ -10,6 +11,7 @@ from ..database import get_db
 from ..formula import rule_payload
 from ..holdings import add_lot, delete_lot, list_holdings
 from ..schemas import (
+    AdviceResponse,
     AttributionResponse,
     CollectResult,
     CurveResponse,
@@ -75,6 +77,11 @@ def events(
     db: Session = Depends(get_db),
 ):
     return list_events(db, date, limit)
+
+
+@router.get("/advice", response_model=AdviceResponse)
+def advice(db: Session = Depends(get_db)):
+    return build_advice(db)
 
 
 @router.get("/analysis/weights", response_model=AttributionResponse)
