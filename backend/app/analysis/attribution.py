@@ -279,10 +279,13 @@ def compute_attribution(
 
 
 def days_needing_narrative(db: Session, window_days: Optional[int] = None) -> List[str]:
-    """显著波动日里还缺叙事快讯的日子，交给采集器去补。"""
+    """需要补叙事快讯的交易日。
+
+    必须是每一个交易日，不能只挑显著波动日：声量占比和升级分都要和「平常的一天」比，
+    只覆盖大波动日的话基准会被抬高，分区统计跟着失真。采集器会跳过已经抓过的日子。
+    """
     window = window_days or settings.attribution_window_days
     end = now_local().date()
     start = end - timedelta(days=window)
     bars = load_bars(db, start - timedelta(days=20), end)
-    bars = [bar for bar in bars if bar["trade_date"] >= start.isoformat()]
-    return [bar["trade_date"] for bar in significant_days(bars)]
+    return [bar["trade_date"] for bar in bars if bar["trade_date"] >= start.isoformat()]
