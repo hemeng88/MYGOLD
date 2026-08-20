@@ -6,10 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import CurvePoint, DailySummary, PriceTick
-from ..schemas import CollectResult, CurvePointOut, CurveResponse, DaySummary, LatestQuote
+from ..models import CurvePoint, DailySummary, MarketEvent, PriceTick
+from ..schemas import CollectResult, CurvePointOut, CurveResponse, DaySummary, LatestQuote, MarketEventOut
 from ..timeutil import format_clock, from_unix_seconds, now_local, trade_date_of, trade_date_today
 from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_today_chart
+from .watch import evaluate_move
 
 
 def _quote_to_schema(quote: Quote) -> LatestQuote:
@@ -128,6 +129,7 @@ async def collect_once(db: Session, include_chart: bool = True) -> CollectResult
             upserted += _upsert_points(db, day, pts, "goldmonitor")
             rebuild_daily_summary(db, day)
     rebuild_daily_summary(db, quote.trade_date)
+    event = await evaluate_move(db, quote)
 
     db.commit()
     return CollectResult(
@@ -135,6 +137,7 @@ async def collect_once(db: Session, include_chart: bool = True) -> CollectResult
         message="采集完成" if tick else "价格未变化，已同步当日曲线",
         tick=_quote_to_schema(quote),
         curve_points_upserted=upserted,
+        event_recorded=event is not None,
     )
 
 
@@ -191,3 +194,36 @@ def get_curve(db: Session, trade_date: Optional[str] = None) -> CurveResponse:
 def list_days(db: Session) -> List[DaySummary]:
     rows = db.scalars(select(DailySummary).order_by(DailySummary.trade_date.desc())).all()
     return [summary_to_schema(row) for row in rows]
+
+
+def list_events(db: Session, trade_date: Optional[str] = None, limit: int = 50) -> List[MarketEventOut]:
+    stmt = select(MarketEvent).order_by(MarketEvent.triggered_at.desc()).limit(limit)
+    if trade_date:
+        stmt = (
+            select(MarketEvent)
+            .where(MarketEvent.trade_date == trade_date)
+            .order_by(MarketEvent.triggered_at.desc())
+            .limit(limit)
+        )
+    rows = db.scalars(stmt).all()
+    return [
+        MarketEventOut(
+            id=row.id,
+            trade_date=row.trade_date,
+            triggered_at=row.triggered_at,
+            direction=row.direction,
+            start_price=row.start_price,
+            end_price=row.end_price,
+            change_amt=row.change_amt,
+            change_rate=row.change_rate,
+            threshold_rate=row.threshold_rate,
+            window_seconds=row.window_seconds,
+            window_started_at=row.window_started_at,
+            ts=row.ts,
+            headline=row.headline,
+            source=row.source,
+            url=row.url,
+            summary=row.summary,
+        )
+        for row in rows
+    ]

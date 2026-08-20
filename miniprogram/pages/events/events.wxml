@@ -1,0 +1,23 @@
+<view class="page">
+  <view class="nav">
+    <navigator url="/pages/index/index" hover-class="none">行情</navigator>
+    <navigator url="/pages/holdings/holdings" hover-class="none">持仓</navigator>
+    <text class="nav-on">事件</text>
+  </view>
+
+  <view class="card" wx:if="{{error}}">
+    <text class="up">{{error}}</text>
+  </view>
+
+  <view class="card" wx:if="{{!events.length}}">
+    <view class="muted">还没有超过手续费阈值的持续波动记录。</view>
+  </view>
+
+  <view class="card" wx:for="{{events}}" wx:key="id">
+    <view class="tag">{{item.direction === "up" ? "上涨" : "下跌"}} {{item.change_rate}}%</view>
+    <view class="title">{{item.headline}}</view>
+    <view class="muted">{{item.triggered_at}} · {{item.source || "monitor"}}</view>
+    <view class="muted">{{item.start_price}} → {{item.end_price}}</view>
+    <text wx:if="{{item.url}}" class="link" bindtap="openUrl" data-url="{{item.url}}">复制原文链接</text>
+  </view>
+</view>

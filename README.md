@@ -100,6 +100,16 @@ crontab -e
 10 0 * * * cp /opt/mygold/data/mygold.db /opt/mygold/data/backup/mygold-$(date +\%F).db
 ```
 
+## 微信小程序
+
+目录：`miniprogram/`。用[微信开发者工具](https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html)导入该文件夹即可预览。
+
+1. 开发者工具里关闭「校验合法域名、web-view、TLS」以便先连 `http://49.232.222.121`
+2. 真机预览必须换成 **HTTPS 域名**，并在小程序后台配置 request 合法域名
+3. 接口地址在 `miniprogram/app.js` 的 `apiBase`
+
+小程序含三个页：行情曲线、手动持仓、超过手续费阈值的事件。
+
 常用运维：
 
 ```bash

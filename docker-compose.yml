@@ -7,8 +7,12 @@ services:
       - "${MYGOLD_PORT:-80}:8000"
     environment:
       TZ: Asia/Shanghai
-      TICK_INTERVAL_SECONDS: "60"
-      CURVE_SNAPSHOT_INTERVAL_SECONDS: "300"
+      TICK_INTERVAL_SECONDS: "20"
+      CURVE_SNAPSHOT_INTERVAL_SECONDS: "180"
+      SELL_FEE_RATE: "0.004"
+      MOVE_WINDOW_SECONDS: "900"
+      MOVE_PERSIST_CHECKS: "3"
+      EVENT_COOLDOWN_SECONDS: "1800"
     volumes:
       - ./data:/app/backend/data
     healthcheck:

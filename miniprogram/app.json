@@ -1,0 +1,16 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/holdings/holdings",
+    "pages/events/events"
+  ],
+  "window": {
+    "navigationBarTitleText": "MYGOLD",
+    "navigationBarBackgroundColor": "#100d09",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#090806",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

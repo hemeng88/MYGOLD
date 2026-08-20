@@ -1,0 +1,57 @@
+<view class="page">
+  <view class="nav">
+    <navigator url="/pages/index/index" hover-class="none">行情</navigator>
+    <text class="nav-on">持仓</text>
+    <navigator url="/pages/events/events" hover-class="none">事件</navigator>
+  </view>
+
+  <view class="card">
+    <view class="eyebrow">汇总</view>
+    <view class="stats">
+      <view class="stat">
+        <view class="stat-label">总持仓</view>
+        <view class="stat-value">{{gramsText}} 克</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">买入均价</view>
+        <view class="stat-value">{{avgText}}</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">现价市值</view>
+        <view class="stat-value">{{valueText}}</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">卖出到手盈亏</view>
+        <view class="stat-value {{pnlClass}}">{{pnlText}}</view>
+      </view>
+    </view>
+    <view class="muted" wx:if="{{beText}}">{{beText}}</view>
+  </view>
+
+  <view class="card">
+    <view class="eyebrow">记一笔</view>
+    <view class="field">克数</view>
+    <input class="input" type="digit" placeholder="例如 2.5" value="{{grams}}" bindinput="onGrams" />
+    <view class="field">买入价（元/克）</view>
+    <input class="input" type="digit" placeholder="例如 960.20" value="{{buyPrice}}" bindinput="onPrice" />
+    <view class="field">买入日期</view>
+    <picker mode="date" value="{{boughtAt}}" bindchange="onDate">
+      <view class="input">{{boughtAt}}</view>
+    </picker>
+    <view class="field">备注</view>
+    <input class="input" placeholder="可选" value="{{note}}" bindinput="onNote" />
+    <button class="btn" loading="{{saving}}" bindtap="submit">记一笔</button>
+  </view>
+
+  <view class="card">
+    <view class="eyebrow">明细</view>
+    <view class="muted" wx:if="{{!lots.length}}">还没有持仓，把京东金融里的成交记下来即可。</view>
+    <view class="row" wx:for="{{lots}}" wx:key="id">
+      <view>
+        <view>{{item.grams}} 克 · {{item.buy_price}} 元/克</view>
+        <view class="muted">{{item.bought_at}} · 成本 {{item.cost}}</view>
+      </view>
+      <text class="del" data-id="{{item.id}}" bindtap="remove">删除</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,41 @@
+<view class="page">
+  <view class="nav">
+    <text class="nav-on">行情</text>
+    <navigator url="/pages/holdings/holdings" hover-class="none">持仓</navigator>
+    <navigator url="/pages/events/events" hover-class="none">事件</navigator>
+  </view>
+
+  <view class="card" wx:if="{{error}}">
+    <text class="up">{{error}}</text>
+  </view>
+
+  <view class="card">
+    <view class="eyebrow">{{quote.trade_date || "今日"}} · 元 / 克</view>
+    <view class="price">{{priceText}}</view>
+    <view class="{{changeClass}}">{{changeText}}</view>
+    <view class="muted" wx:if="{{rule}}">卖出 {{feeText}} · 保本涨幅 {{rule.breakeven_rate_pct}}%</view>
+    <view class="stats">
+      <view class="stat">
+        <view class="stat-label">开盘</view>
+        <view class="stat-value">{{openText}}</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">最高</view>
+        <view class="stat-value">{{highText}}</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">最低</view>
+        <view class="stat-value">{{lowText}}</view>
+      </view>
+      <view class="stat">
+        <view class="stat-label">点数</view>
+        <view class="stat-value">{{pointText}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="eyebrow">当日曲线</view>
+    <canvas canvas-id="curve" class="chart"></canvas>
+  </view>
+</view>

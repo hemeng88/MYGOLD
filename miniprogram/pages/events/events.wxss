@@ -1,0 +1,11 @@
+.nav {
+  display: flex;
+  gap: 28rpx;
+  margin-bottom: 24rpx;
+  color: #8c8170;
+  font-size: 28rpx;
+}
+.nav-on { color: #d4af37; font-weight: 600; }
+.title { font-size: 30rpx; font-weight: 600; margin: 12rpx 0; }
+.link { color: #d4af37; font-size: 24rpx; margin-top: 8rpx; display: block; }
+.tag { display: inline-block; }

@@ -1,0 +1,4 @@
+{
+  "desc": "MYGOLD sitemap",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

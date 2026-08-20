@@ -23,12 +23,15 @@ import {
   IconArrowDownRight,
   IconArrowUpRight,
   IconChartCandle,
+  IconExternalLink,
   IconMinus,
+  IconNews,
   IconRefresh,
   IconSparkles,
 } from "@tabler/icons-react";
 import { api } from "./api";
-import type { CurveResponse, DaySummary, LatestQuote } from "./types";
+import { HoldingsPanel } from "./HoldingsPanel";
+import type { CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -45,6 +48,11 @@ function tone(value: number | null | undefined) {
   return value > 0 ? "red" : "teal";
 }
 
+function clockToSec(value: string) {
+  const parts = value.split(":").map(Number);
+  return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+}
+
 export default function App() {
   const [days, setDays] = useState<DaySummary[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
@@ -55,17 +63,28 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [collecting, setCollecting] = useState(false);
   const [status, setStatus] = useState("正在读取已归档曲线…");
+  const [rule, setRule] = useState<FeeRule | null>(null);
+  const [events, setEvents] = useState<MarketEvent[]>([]);
+  const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
 
   const loadAll = useCallback(async (date?: string) => {
-    const [dayList, latestQuote] = await Promise.all([
+    const [dayList, latestQuote, feeRule, nextHoldings] = await Promise.all([
       api.days(),
       api.latest().catch(() => null),
+      api.rules().catch(() => null),
+      api.holdings().catch(() => null),
     ]);
     setDays(dayList);
     setLatest(latestQuote);
+    setRule(feeRule);
+    setHoldings(nextHoldings);
     const nextDate = date || dayList[0]?.date || latestQuote?.trade_date || "";
     setSelectedDate(nextDate);
-    if (nextDate) setCurve(await api.curve(nextDate));
+    if (nextDate) {
+      const [nextCurve, dayEvents] = await Promise.all([api.curve(nextDate), api.events(nextDate)]);
+      setCurve(nextCurve);
+      setEvents(dayEvents);
+    }
     setStatus(latestQuote?.collected_at ? `最近采集 ${latestQuote.collected_at.replace("T", " ")}` : "等待首次采集");
   }, []);
 
@@ -89,7 +108,9 @@ export default function App() {
 
   const onSelectDay = async (date: string) => {
     setSelectedDate(date);
-    setCurve(await api.curve(date));
+    const [nextCurve, dayEvents] = await Promise.all([api.curve(date), api.events(date)]);
+    setCurve(nextCurve);
+    setEvents(dayEvents);
   };
 
   const onCollect = async () => {
@@ -186,9 +207,37 @@ export default function App() {
         axisLabel: { color: "#8c8170" },
         splitLine: { lineStyle: { color: "rgba(255,255,255,0.04)" } },
       },
-      series,
+      series: series.map((item, idx) =>
+        idx === 0
+          ? {
+              ...item,
+              markPoint: {
+                symbol: "pin",
+                symbolSize: 36,
+                data: events.map((event) => {
+                  const clock = event.triggered_at.slice(11, 19);
+                  const target = clockToSec(clock);
+                  const nearest = (curve?.points || []).reduce(
+                    (best, point) =>
+                      Math.abs(clockToSec(point.time) - target) < Math.abs(clockToSec(best.time) - target)
+                        ? point
+                        : best,
+                    curve?.points[0] || { time: clock, p: event.end_price },
+                  );
+                  return {
+                    name: event.headline.slice(0, 18),
+                    coord: [nearest.time, event.end_price],
+                    value: `${event.change_rate > 0 ? "+" : ""}${event.change_rate.toFixed(2)}%`,
+                    itemStyle: { color: event.direction === "up" ? "#d24b3a" : "#2f9b6a" },
+                  };
+                }),
+                label: { color: "#f4ead6", fontSize: 10 },
+              },
+            }
+          : item,
+      ),
     };
-  }, [compareCurve, compareDate, curve, selectedDate]);
+  }, [compareCurve, compareDate, curve, events, selectedDate]);
 
   return (
     <Box className="app-shell">
@@ -275,9 +324,17 @@ export default function App() {
           <Paper className="glass hero" p={{ base: "lg", sm: "xl" }}>
             <Group justify="space-between" mb={8}>
               <Text className="eyebrow">{selectedDate || "今日"} · 元 / 克</Text>
-              <Badge leftSection={<IconChartCandle size={12} />} variant="outline" color="gold">
-                浙商积存金
-              </Badge>
+              <Group gap={8}>
+                {rule ? (
+                  <Badge variant="light" color="gold">
+                    卖出 { (rule.sell_fee_rate * 100).toFixed(1) }% · 保本涨幅 {rule.breakeven_rate_pct.toFixed(2)}%
+                    {rule.example_needed_rise ? ` · 约 ${rule.example_needed_rise.toFixed(2)} 元/克` : ""}
+                  </Badge>
+                ) : null}
+                <Badge leftSection={<IconChartCandle size={12} />} variant="outline" color="gold">
+                  浙商积存金
+                </Badge>
+              </Group>
             </Group>
             <Group align="flex-end" justify="space-between" wrap="wrap">
               <Text className="price">{fmt(displayPrice)}</Text>
@@ -313,6 +370,8 @@ export default function App() {
             </SimpleGrid>
           </Paper>
 
+          <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+
           <Paper className="glass" p="lg">
             <Group justify="space-between" mb="md" wrap="wrap">
               <div>
@@ -339,6 +398,65 @@ export default function App() {
                 </Text>
               </Skeleton>
             )}
+          </Paper>
+
+          <Paper className="glass" p="lg">
+            <Group justify="space-between" mb="md">
+              <div>
+                <Group gap={8}>
+                  <IconNews size={16} />
+                  <Text fw={600}>超过手续费阈值的行情事件</Text>
+                </Group>
+                <Text size="xs" c="dimmed" mt={4}>
+                  近 {rule ? Math.round(rule.watch_window_seconds / 60) : 15} 分钟涨跌持续超过保本幅度时，自动记录当时最主要的相关新闻
+                </Text>
+              </div>
+              <Badge variant="light" color="gray">
+                {events.length} 条
+              </Badge>
+            </Group>
+            <Stack gap="sm">
+              {events.length === 0 && (
+                <Text ta="center" c="dimmed" py="md">
+                  这一天还没有触发记录。金价持续波动超过保本幅度后会出现在这里。
+                </Text>
+              )}
+              {events.map((event) => (
+                <Paper key={event.id} className="stat-tile" p="md">
+                  <Group justify="space-between" align="flex-start" wrap="wrap">
+                    <div>
+                      <Group gap={8} mb={6}>
+                        <Badge variant="light" color={event.direction === "up" ? "red" : "teal"}>
+                          {event.direction === "up" ? "上涨" : "下跌"} {signed(event.change_rate)}%
+                        </Badge>
+                        <Text size="xs" c="dimmed">
+                          {event.triggered_at.replace("T", " ")} · {event.source || "monitor"}
+                        </Text>
+                      </Group>
+                      <Text fw={600}>{event.headline}</Text>
+                      <Text size="xs" c="dimmed" mt={4}>
+                        {fmt(event.start_price)} → {fmt(event.end_price)}（{signed(event.change_amt)} 元/克）
+                        ，阈值 {event.threshold_rate.toFixed(2)}%
+                      </Text>
+                    </div>
+                    {event.url ? (
+                      <Button
+                        component="a"
+                        href={event.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        variant="subtle"
+                        color="gold"
+                        size="xs"
+                        rightSection={<IconExternalLink size={14} />}
+                      >
+                        原文
+                      </Button>
+                    ) : null}
+                  </Group>
+                </Paper>
+              ))}
+            </Stack>
           </Paper>
         </Stack>
         </Grid.Col>

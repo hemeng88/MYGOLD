@@ -47,3 +47,35 @@ class DailySummary(Base):
     first_ts: Mapped[int] = mapped_column(Integer, nullable=True)
     last_ts: Mapped[int] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class MarketEvent(Base):
+    __tablename__ = "market_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    triggered_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    start_price: Mapped[float] = mapped_column(Float, nullable=False)
+    end_price: Mapped[float] = mapped_column(Float, nullable=False)
+    change_amt: Mapped[float] = mapped_column(Float, nullable=False)
+    change_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    threshold_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    window_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    ts: Mapped[int] = mapped_column(Integer, nullable=True)
+    headline: Mapped[str] = mapped_column(String(300), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=True)
+    url: Mapped[str] = mapped_column(String(500), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class GoldLot(Base):
+    __tablename__ = "gold_lots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grams: Mapped[float] = mapped_column(Float, nullable=False)
+    buy_price: Mapped[float] = mapped_column(Float, nullable=False)
+    bought_at: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    note: Mapped[str] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
