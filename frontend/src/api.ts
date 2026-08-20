@@ -1,4 +1,4 @@
-import type { CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent } from "./types";
+import type { Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -20,6 +20,12 @@ export const api = {
   rules: () => request<FeeRule>("/api/rules"),
   events: (date?: string) =>
     request<MarketEvent[]>(date ? `/api/events?date=${date}` : "/api/events"),
+  attribution: (windowDays = 180) =>
+    request<Attribution>(`/api/analysis/weights?window_days=${windowDays}`),
+  refreshAttribution: (windowDays = 180) =>
+    request<{ ok: boolean; message: string }>(`/api/analysis/refresh?window_days=${windowDays}`, {
+      method: "POST",
+    }),
   holdings: () => request<HoldingSummary>("/api/holdings"),
   addLot: (payload: { grams: number; buy_price: number; bought_at: string; note?: string }) =>
     request<GoldLot>("/api/holdings/lots", {

@@ -23,6 +23,7 @@ import {
   IconArrowDownRight,
   IconArrowUpRight,
   IconChartCandle,
+  IconChartPie,
   IconExternalLink,
   IconMinus,
   IconNews,
@@ -31,6 +32,7 @@ import {
   IconWallet,
 } from "@tabler/icons-react";
 import { api } from "./api";
+import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import type { CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent } from "./types";
 
@@ -54,6 +56,31 @@ function clockToSec(value: string) {
   return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
 }
 
+function tagColor(tag: string) {
+  switch (tag) {
+    case "美联储":
+      return "gold";
+    case "汇率":
+      return "cyan";
+    case "石油":
+      return "orange";
+    case "通胀":
+      return "pink";
+    case "就业":
+      return "teal";
+    case "地缘":
+      return "grape";
+    case "央行":
+      return "violet";
+    case "利率":
+      return "yellow";
+    case "金市":
+      return "gold";
+    default:
+      return "gray";
+  }
+}
+
 export default function App() {
   const [days, setDays] = useState<DaySummary[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
@@ -67,7 +94,8 @@ export default function App() {
   const [rule, setRule] = useState<FeeRule | null>(null);
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
-  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events">("market");
+  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events" | "weights">("market");
+  const [eventTag, setEventTag] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 52em)") ?? true;
 
   const loadAll = useCallback(async (date?: string) => {
@@ -420,7 +448,32 @@ export default function App() {
             这一天还没有触发记录。
           </Text>
         )}
-        {events.map((event) => (
+        {Array.from(new Set(events.flatMap((event) => event.tags || []))).length > 1 ? (
+          <Group gap={6}>
+            <Badge
+              variant={eventTag ? "outline" : "filled"}
+              color="gray"
+              style={{ cursor: "pointer" }}
+              onClick={() => setEventTag(null)}
+            >
+              全部
+            </Badge>
+            {Array.from(new Set(events.flatMap((event) => event.tags || []))).map((tag) => (
+              <Badge
+                key={tag}
+                variant={eventTag === tag ? "filled" : "light"}
+                color={tagColor(tag)}
+                style={{ cursor: "pointer" }}
+                onClick={() => setEventTag(eventTag === tag ? null : tag)}
+              >
+                {tag}
+              </Badge>
+            ))}
+          </Group>
+        ) : null}
+        {events
+          .filter((event) => !eventTag || (event.tags || []).includes(eventTag))
+          .map((event) => (
           <Paper key={event.id} className="stat-tile" p="md">
             <Group justify="space-between" align="flex-start" wrap="wrap">
               <div>
@@ -428,6 +481,11 @@ export default function App() {
                   <Badge variant="light" color={event.direction === "up" ? "red" : "teal"}>
                     {event.direction === "up" ? "上涨" : "下跌"} {signed(event.change_rate)}%
                   </Badge>
+                  {(event.tags || []).map((tag) => (
+                    <Badge key={tag} variant="light" color={tagColor(tag)}>
+                      {tag}
+                    </Badge>
+                  ))}
                   <Text size="xs" c="dimmed">
                     {event.triggered_at.replace("T", " ")}
                   </Text>
@@ -497,6 +555,7 @@ export default function App() {
             <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
           )}
           {mobileTab === "events" && eventsPanel}
+          {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
         </Stack>
       ) : (
         <Grid gutter="lg">
@@ -506,6 +565,7 @@ export default function App() {
               {heroPanel}
               <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
               {chartPanel}
+              <AttributionPanel tagColor={tagColor} />
               {eventsPanel}
             </Stack>
           </Grid.Col>
@@ -525,6 +585,10 @@ export default function App() {
           <button className={mobileTab === "events" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("events")}>
             <IconNews size={18} />
             事件
+          </button>
+          <button className={mobileTab === "weights" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("weights")}>
+            <IconChartPie size={18} />
+            归因
           </button>
         </nav>
       ) : null}

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..models import CurvePoint, DailySummary, MarketEvent, PriceTick
+from .news import classify_tags
 from ..schemas import CollectResult, CurvePointOut, CurveResponse, DaySummary, LatestQuote, MarketEventOut
 from ..timeutil import format_clock, from_unix_seconds, now_local, trade_date_of, trade_date_today
 from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_today_chart
@@ -196,6 +197,14 @@ def list_days(db: Session) -> List[DaySummary]:
     return [summary_to_schema(row) for row in rows]
 
 
+def _event_tags(row: MarketEvent) -> List[str]:
+    if row.tags:
+        return [item for item in row.tags.split(",") if item]
+    tags = classify_tags("%s %s" % (row.headline, row.summary or ""))
+    row.tags = ",".join(tags)
+    return tags
+
+
 def list_events(db: Session, trade_date: Optional[str] = None, limit: int = 50) -> List[MarketEventOut]:
     stmt = select(MarketEvent).order_by(MarketEvent.triggered_at.desc()).limit(limit)
     if trade_date:
@@ -206,7 +215,8 @@ def list_events(db: Session, trade_date: Optional[str] = None, limit: int = 50) 
             .limit(limit)
         )
     rows = db.scalars(stmt).all()
-    return [
+    dirty = any(not row.tags for row in rows)
+    payload = [
         MarketEventOut(
             id=row.id,
             trade_date=row.trade_date,
@@ -224,6 +234,10 @@ def list_events(db: Session, trade_date: Optional[str] = None, limit: int = 50) 
             source=row.source,
             url=row.url,
             summary=row.summary,
+            tags=_event_tags(row),
         )
         for row in rows
     ]
+    if dirty:
+        db.commit()
+    return payload

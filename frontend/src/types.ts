@@ -75,6 +75,71 @@ export interface MarketEvent {
   source: string | null;
   url: string | null;
   summary: string | null;
+  tags: string[];
+}
+
+export interface AttributionType {
+  tag: string;
+  weight_pct: number;
+  impact_points: number;
+  days: number;
+  avg_abs_move: number;
+  avg_move: number;
+  lift: number | null;
+  baseline_share_pct: number | null;
+  sample_headline: string;
+}
+
+export interface AttributionMove {
+  trade_date: string;
+  change_pct: number;
+  close: number;
+  tags: string[];
+  headline: string;
+}
+
+export interface VolatilityProjection {
+  label: string;
+  trading_days: number;
+  sigma_pct: number | null;
+  low: number | null;
+  high: number | null;
+}
+
+export interface VolatilitySnapshot {
+  daily_sd_20: number | null;
+  daily_sd_60: number | null;
+  mean_abs_move: number | null;
+  atr14: number | null;
+  atr14_pct: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  window_high: number | null;
+  window_low: number | null;
+  projections: VolatilityProjection[];
+}
+
+export interface Attribution {
+  ready: boolean;
+  message: string | null;
+  window_days: number;
+  start_date: string | null;
+  end_date: string | null;
+  proxy_symbol: string | null;
+  threshold_pct: number | null;
+  bar_count: number;
+  flash_count: number;
+  significant_days: number;
+  start_close: number | null;
+  end_close: number | null;
+  total_change_pct: number | null;
+  baseline_abs_move: number | null;
+  attributed_points: number | null;
+  unattributed_days: number;
+  types: AttributionType[];
+  monthly: { month: string; tags: Record<string, number> }[];
+  top_moves: AttributionMove[];
+  volatility: VolatilitySnapshot | null;
 }
 
 export interface GoldLot {

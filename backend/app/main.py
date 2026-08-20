@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .collectors.service import collect_once
 from .config import settings
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal, backfill_event_tags, ensure_schema
 from .routers.api import router as api_router
 from .scheduler import start_scheduler, stop_scheduler
 
@@ -18,7 +18,8 @@ logger = logging.getLogger("mygold")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
+    backfill_event_tags()
     if settings.startup_collect:
         db = SessionLocal()
         try:

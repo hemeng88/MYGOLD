@@ -68,6 +68,43 @@ class MarketEvent(Base):
     source: Mapped[str] = mapped_column(String(64), nullable=True)
     url: Mapped[str] = mapped_column(String(500), nullable=True)
     summary: Mapped[str] = mapped_column(Text, nullable=True)
+    tags: Mapped[str] = mapped_column(String(200), nullable=True)
+
+
+class DailyBar(Base):
+    """代理标的的历史日线，用来做长周期归因（当前用沪金连续 AU0）。"""
+
+    __tablename__ = "daily_bars"
+    __table_args__ = (UniqueConstraint("symbol", "trade_date", name="uq_bar_symbol_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    open_price: Mapped[float] = mapped_column(Float, nullable=True)
+    high_price: Mapped[float] = mapped_column(Float, nullable=True)
+    low_price: Mapped[float] = mapped_column(Float, nullable=True)
+    close_price: Mapped[float] = mapped_column(Float, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class NewsFlash(Base):
+    """带标签的财经快讯归档，只保留能对上事件类型的条目。"""
+
+    __tablename__ = "news_flashes"
+    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_flash_source_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    external_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    # 归属交易日：18:00 之后的快讯计入下一个交易日
+    session_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(32), nullable=True)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    tags: Mapped[str] = mapped_column(String(200), nullable=False)
+    weight: Mapped[float] = mapped_column(Float, default=1.0)
+    url: Mapped[str] = mapped_column(String(500), nullable=True)
 
 
 class GoldLot(Base):

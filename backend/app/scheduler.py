@@ -2,6 +2,7 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from .analysis.refresh import refresh_attribution_data
 from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
@@ -28,6 +29,18 @@ async def job_tick() -> None:
 
 async def job_curve() -> None:
     await _run_collect(include_chart=True)
+
+
+async def job_attribution() -> None:
+    db = SessionLocal()
+    try:
+        result = await refresh_attribution_data(db)
+        logger.info("归因数据刷新：%s", result["message"])
+    except Exception:
+        logger.exception("归因数据刷新失败")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def start_scheduler() -> None:
@@ -60,6 +73,17 @@ def start_scheduler() -> None:
         id="finalize-curve",
         replace_existing=True,
         max_instances=1,
+    )
+    # 收盘后更新一次归因数据：日线出完、当天快讯也齐了
+    scheduler.add_job(
+        job_attribution,
+        "cron",
+        hour=16,
+        minute=20,
+        id="attribution",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.start()
     logger.info(

@@ -3,11 +3,25 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from ..analysis.attribution import compute_attribution
+from ..analysis.refresh import refresh_attribution_data
 from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
 from ..database import get_db
 from ..formula import rule_payload
 from ..holdings import add_lot, delete_lot, list_holdings
-from ..schemas import CollectResult, CurveResponse, DaySummary, FeeRule, GoldLotIn, GoldLotOut, HoldingSummary, LatestQuote, MarketEventOut
+from ..schemas import (
+    AttributionResponse,
+    CollectResult,
+    CurveResponse,
+    DaySummary,
+    FeeRule,
+    GoldLotIn,
+    GoldLotOut,
+    HoldingSummary,
+    LatestQuote,
+    MarketEventOut,
+    RefreshResult,
+)
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -61,6 +75,28 @@ def events(
     db: Session = Depends(get_db),
 ):
     return list_events(db, date, limit)
+
+
+@router.get("/analysis/weights", response_model=AttributionResponse)
+def analysis_weights(
+    window_days: int = Query(default=180, ge=30, le=720, description="回看天数"),
+    threshold: Optional[float] = Query(default=None, ge=0.1, le=5.0, description="显著波动阈值 %"),
+    db: Session = Depends(get_db),
+):
+    return compute_attribution(db, window_days=window_days, threshold=threshold)
+
+
+@router.post("/analysis/refresh", response_model=RefreshResult)
+async def analysis_refresh(
+    window_days: int = Query(default=180, ge=30, le=720),
+    with_narrative: bool = Query(default=True, description="是否给显著波动日补叙事快讯"),
+    db: Session = Depends(get_db),
+):
+    try:
+        return await refresh_attribution_data(db, window_days=window_days, with_narrative=with_narrative)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail="归因数据刷新失败：%s" % exc) from exc
 
 
 @router.get("/holdings", response_model=HoldingSummary)

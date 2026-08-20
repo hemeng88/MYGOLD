@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LatestQuote(BaseModel):
@@ -81,6 +81,85 @@ class MarketEventOut(BaseModel):
     source: Optional[str] = None
     url: Optional[str] = None
     summary: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+
+
+class AttributionType(BaseModel):
+    tag: str
+    weight_pct: float
+    impact_points: float
+    days: int
+    avg_abs_move: float
+    avg_move: float
+    lift: Optional[float] = None
+    baseline_share_pct: Optional[float] = None
+    sample_headline: str = ""
+
+
+class AttributionMonth(BaseModel):
+    month: str
+    tags: Dict[str, float] = Field(default_factory=dict)
+
+
+class AttributionMove(BaseModel):
+    trade_date: str
+    change_pct: float
+    close: float
+    tags: List[str] = Field(default_factory=list)
+    headline: str = ""
+
+
+class VolatilityProjection(BaseModel):
+    label: str
+    trading_days: int
+    sigma_pct: Optional[float] = None
+    low: Optional[float] = None
+    high: Optional[float] = None
+
+
+class VolatilitySnapshot(BaseModel):
+    daily_sd_20: Optional[float] = None
+    daily_sd_60: Optional[float] = None
+    mean_abs_move: Optional[float] = None
+    atr14: Optional[float] = None
+    atr14_pct: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+    window_high: Optional[float] = None
+    window_low: Optional[float] = None
+    projections: List[VolatilityProjection] = Field(default_factory=list)
+
+
+class AttributionResponse(BaseModel):
+    ready: bool
+    message: Optional[str] = None
+    window_days: int
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    proxy_symbol: Optional[str] = None
+    threshold_pct: Optional[float] = None
+    bar_count: int = 0
+    flash_count: int = 0
+    significant_days: int = 0
+    start_close: Optional[float] = None
+    end_close: Optional[float] = None
+    total_change_pct: Optional[float] = None
+    baseline_abs_move: Optional[float] = None
+    attributed_points: Optional[float] = None
+    unattributed_days: int = 0
+    unattributed_points: Optional[float] = None
+    types: List[AttributionType] = Field(default_factory=list)
+    monthly: List[AttributionMonth] = Field(default_factory=list)
+    top_moves: List[AttributionMove] = Field(default_factory=list)
+    volatility: Optional[VolatilitySnapshot] = None
+
+
+class RefreshResult(BaseModel):
+    ok: bool
+    bars_written: int = 0
+    calendar_added: int = 0
+    narrative_added: int = 0
+    message: str
 
 
 class GoldLotIn(BaseModel):

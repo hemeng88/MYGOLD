@@ -33,6 +33,27 @@ class Settings(BaseSettings):
 
     request_timeout_seconds: float = 15.0
 
+    # 事件归因：用沪金连续做长周期代理标的，快讯来自华尔街见闻
+    proxy_symbol: str = "AU0"
+    proxy_daily_url: str = (
+        "https://stock2.finance.sina.com.cn/futures/api/jsonp.php/"
+        "var%20_bars=/InnerFuturesNewService.getDailyKLine?symbol=AU0"
+    )
+    flash_api_url: str = "https://api-one-wscn.awtmt.com/apiv1/content/lives"
+    flash_calendar_channel: str = "gold-channel"
+    flash_narrative_channel: str = "global-channel"
+    # 18:00 之后的快讯归到下一个交易日
+    session_cutoff_hour: int = 18
+    attribution_window_days: int = 180
+    # |日涨跌幅| 超过这个值才算显著波动日
+    significant_move_pct: float = 0.4
+    # 单日最多取几个主标签
+    max_tags_per_day: int = 2
+    # 主标签门槛：得分不低于当日最高分的这个比例
+    tag_score_ratio: float = 0.6
+    flash_page_size: int = 50
+    flash_max_pages: int = 90
+
 
 settings = Settings()
 DATA_DIR.mkdir(parents=True, exist_ok=True)

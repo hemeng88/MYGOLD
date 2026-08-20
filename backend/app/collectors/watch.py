@@ -9,7 +9,7 @@ from ..config import settings
 from ..formula import breakeven_rate, change_rate
 from ..models import MarketEvent, PriceTick
 from ..timeutil import now_local, to_unix_seconds
-from .news import fetch_leading_event
+from .news import classify_tags, fetch_leading_event
 from .sources import Quote
 
 logger = logging.getLogger("mygold.watch")
@@ -85,6 +85,8 @@ async def evaluate_move(db: Session, quote: Quote) -> Optional[MarketEvent]:
 
     news = await fetch_leading_event()
     now = now_local()
+    headline = (news or {}).get("headline") or "未检索到明确新闻，已记录超过手续费阈值的持续波动"
+    summary = (news or {}).get("summary") or ""
     event = MarketEvent(
         trade_date=quote.trade_date,
         triggered_at=now,
@@ -97,10 +99,11 @@ async def evaluate_move(db: Session, quote: Quote) -> Optional[MarketEvent]:
         window_seconds=settings.move_window_seconds,
         window_started_at=move["window_started_at"],
         ts=to_unix_seconds(quote.source_time or now),
-        headline=(news or {}).get("headline") or "未检索到明确新闻，已记录超过手续费阈值的持续波动",
+        headline=headline,
         source=(news or {}).get("source") or "monitor",
         url=(news or {}).get("url") or "",
-        summary=(news or {}).get("summary") or "",
+        summary=summary,
+        tags=",".join(classify_tags("%s %s" % (headline, summary))),
     )
     db.add(event)
     _persist["hits"] = 0
