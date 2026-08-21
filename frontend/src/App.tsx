@@ -447,12 +447,13 @@ export default function App() {
           </Badge>
         )}
       </Group>
-      <Group align="flex-end" justify="space-between" wrap="wrap" gap="lg">
+      <div className="price-pair">
         <div>
+          <Text className="eyebrow">浙商积存金 · 元 / 克</Text>
           <Text className="price">{fmt(displayPrice)}</Text>
-          <Group gap={8} mt={8}>
-            <ThemeIcon size={isMobile ? 32 : 38} radius="xl" color={tone(displayChange)} variant="light">
-              <ChangeIcon size={18} />
+          <Group gap={8} mt={8} wrap="nowrap">
+            <ThemeIcon size={isMobile ? 28 : 38} radius="xl" color={tone(displayChange)} variant="light">
+              <ChangeIcon size={16} />
             </ThemeIcon>
             <div>
               <Text fw={700} c={tone(displayChange)} size={isMobile ? "sm" : "md"}>
@@ -465,20 +466,18 @@ export default function App() {
             </div>
           </Group>
         </div>
-        {latest?.london_usd ? (
-          <div className="london-quote">
-            <Text className="eyebrow">伦敦金 · 美元 / 盎司</Text>
-            <Text className="london-price">{fmt(latest.london_usd)}</Text>
-            <Text fw={600} c={tone(latest.london_change_amt)} size={isMobile ? "sm" : "md"} mt={6}>
-              {signed(latest.london_change_amt)}
-              {latest.london_change_rate == null ? "" : `  (${signed(latest.london_change_rate)}%)`}
-            </Text>
-            <Text size="xs" c="dimmed">
-              较昨日 {fmt(latest.london_prev)}
-            </Text>
-          </div>
-        ) : null}
-      </Group>
+        <div className="london-quote">
+          <Text className="eyebrow">伦敦金 · 美元 / 盎司</Text>
+          <Text className="london-price">{fmt(latest?.london_usd)}</Text>
+          <Text fw={600} c={tone(latest?.london_change_amt)} size={isMobile ? "sm" : "md"} mt={6}>
+            {signed(latest?.london_change_amt)}
+            {latest?.london_change_rate == null ? "" : `  (${signed(latest.london_change_rate)}%)`}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {latest?.london_usd ? `较昨日 ${fmt(latest.london_prev)}` : "正在取现货价"}
+          </Text>
+        </div>
+      </div>
       <SimpleGrid cols={2} mt="lg" spacing="sm">
         {[
           ["开盘", summary?.open],
