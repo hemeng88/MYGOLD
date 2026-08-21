@@ -183,6 +183,9 @@ body {
 
 .session-chip {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid rgba(212, 175, 55, 0.16);
   background: rgba(255, 255, 255, 0.03);
   color: #f4ead6;
@@ -195,15 +198,39 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+.session-chip-time {
+  color: #c9b896;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-chip-hot {
+  color: #1a1610;
+  background: #d4af37;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .session-chip.is-open {
   border-color: var(--chip, #d4af37);
   color: var(--chip, #d4af37);
+}
+
+.session-chip.is-hot {
+  box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.45);
 }
 
 .session-chip.is-on,
 .session-chip:hover {
   background: rgba(212, 175, 55, 0.18);
   border-color: #d4af37;
+  color: #f6edd4;
+}
+
+.session-chip.is-on .session-chip-time,
+.session-chip:hover .session-chip-time {
   color: #f6edd4;
 }
 

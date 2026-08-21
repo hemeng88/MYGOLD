@@ -120,6 +120,57 @@ def _is_open(weekdays: Sequence[int], tz_name: str, sessions: Sequence[tuple], m
     return False
 
 
+def _open_sort_key(ranges: Sequence[Dict]) -> int:
+    if not ranges:
+        return 9999
+    wraps = any(item["start_min"] == 0 for item in ranges) and any(item["end_min"] >= 1440 for item in ranges)
+    if wraps:
+        return max(item["start_min"] for item in ranges)
+    return min(item["start_min"] for item in ranges)
+
+
+def _hours_of(ranges: Sequence[Dict]) -> List[int]:
+    hours = set()
+    for item in ranges:
+        start, end = item["start_min"], item["end_min"]
+        if end <= start:
+            continue
+        for hour in range(start // 60, (end - 1) // 60 + 1):
+            hours.add(hour % 24)
+    return sorted(hours)
+
+
+def _mark_hot(exchanges: List[Dict], profile: Sequence[Dict], top_n: int = 3) -> None:
+    by_hour = {row["hour"]: row for row in profile}
+    ranked: List[tuple] = []
+    for item in exchanges:
+        values = [
+            by_hour[hour]["abs_pct"]
+            for hour in _hours_of(item["ranges"])
+            if hour in by_hour and by_hour[hour].get("abs_pct") is not None
+        ]
+        score = round(sum(values) / len(values), 3) if values else None
+        start = _open_sort_key(item["ranges"])
+        item["start"] = _fmt(start) if start < 9999 else None
+        item["impact_abs_pct"] = score
+        item["hot"] = False
+        item["hot_rank"] = None
+        ranked.append((item, score, start))
+    eligible = [row for row in ranked if row[1] is not None]
+    eligible.sort(key=lambda row: (-row[1], row[2]))
+    used: List[int] = []
+    rank = 0
+    for item, _score, start in eligible:
+        if any(abs(start - seen) < 45 for seen in used):
+            continue
+        rank += 1
+        item["hot"] = True
+        item["hot_rank"] = rank
+        used.append(start)
+        if rank >= top_n:
+            break
+
+
 def _exchange_view(row: tuple, moment: datetime) -> Dict:
     ident, name, region, tz_name, weekdays, sessions, source = row
     # 钟面永远画出常规时段；周末只把「是否开盘」关掉，不然周五沙特、周六纽交所会整圈消失
@@ -133,6 +184,10 @@ def _exchange_view(row: tuple, moment: datetime) -> Dict:
         "open": _is_open(weekdays, tz_name, sessions, moment),
         "weekend": not _is_trading_day(weekdays, tz_name, moment),
         "ranges": [{"start": _fmt(a), "end": _fmt(b), "start_min": a, "end_min": b} for a, b in ranges],
+        "start": None,
+        "impact_abs_pct": None,
+        "hot": False,
+        "hot_rank": None,
     }
 
 
@@ -205,6 +260,9 @@ def snapshot(db: Optional[Session] = None, moment: Optional[datetime] = None) ->
     band = _band_of(item["region"] for item in open_now)
     band_meta = next(item for item in BANDS if item["id"] == band)
     profile, profile_days = _hour_profile(db, 180) if db is not None else ([], 0)
+    recent, recent_days = _hour_profile(db, 30) if db is not None else ([], 0)
+    impact_profile = recent if recent_days >= 8 else profile
+    _mark_hot(exchanges, impact_profile)
     current_hour = now.hour
     hour_row = next((row for row in profile if row["hour"] == current_hour), None)
     abs_values = [row["abs_pct"] for row in profile if row["abs_pct"] is not None]

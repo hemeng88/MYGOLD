@@ -237,6 +237,10 @@ class SessionExchange(BaseModel):
     open: bool
     weekend: bool
     ranges: List[SessionRange] = Field(default_factory=list)
+    start: Optional[str] = None
+    impact_abs_pct: Optional[float] = None
+    hot: bool = False
+    hot_rank: Optional[int] = None
 
 
 class SessionBand(BaseModel):

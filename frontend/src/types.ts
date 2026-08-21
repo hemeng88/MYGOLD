@@ -156,6 +156,10 @@ export interface SessionExchange {
   open: boolean;
   weekend: boolean;
   ranges: SessionRange[];
+  start?: string | null;
+  impact_abs_pct?: number | null;
+  hot?: boolean;
+  hot_rank?: number | null;
 }
 
 export interface SessionHour {

@@ -58,6 +58,13 @@ function openSortKey(exchange: SessionExchange) {
   return Math.min(...ranges.map((range) => range.start_min));
 }
 
+function startLabel(exchange: SessionExchange) {
+  if (exchange.start) return exchange.start;
+  const key = openSortKey(exchange);
+  if (key >= 9999) return "";
+  return `${String(Math.floor(key / 60)).padStart(2, "0")}:${String(key % 60).padStart(2, "0")}`;
+}
+
 function polar(cx: number, cy: number, r: number, minutes: number) {
   const rad = ((minutes / 1440) * 360 * Math.PI) / 180;
   return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
@@ -220,11 +227,13 @@ export function SessionClock({
             <button
               key={exchange.id}
               type="button"
-              className={`session-chip${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}`}
+              className={`session-chip${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}${exchange.hot ? " is-hot" : ""}`}
               style={{ "--chip": color } as CSSProperties}
               onClick={() => onHoverExchange(on ? null : exchange)}
             >
-              {SHORT_NAME[exchange.id] || exchange.name}
+              <span>{SHORT_NAME[exchange.id] || exchange.name}</span>
+              {startLabel(exchange) ? <span className="session-chip-time">{startLabel(exchange)}</span> : null}
+              {exchange.hot ? <span className="session-chip-hot">影响大</span> : null}
             </button>
           );
         })}
@@ -236,7 +245,7 @@ export function SessionClock({
         </Text>
       ) : (
         <Text size="xs" c="dimmed" ta="center" mt={8}>
-          点所名可对照圆盘和曲线，时间是北京时间
+          点所名可对照圆盘和曲线；金标是近一个月金价在该开盘时段波动最大的几家
         </Text>
       )}
     </div>
