@@ -1,0 +1,4 @@
+# 由 deploy.sh 按 .env 里的 MYGOLD_DOMAIN 生成。不要手改后指望会一直留着。
+:80 {
+	reverse_proxy mygold:8000
+}
