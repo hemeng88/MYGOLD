@@ -10,13 +10,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.analysis.advice import _direction_score
-from app.analysis.regime import POLARITY_EDGE, _series
+from app.analysis.advice import DIRECTION_EDGE, _direction_score
+from app.analysis.regime import MIN_ZONE_DAYS, POLARITY_EDGE, _series
 from app.database import SessionLocal
 
 
 def win_stats(values):
-    if len(values) < 5:
+    if len(values) < MIN_ZONE_DAYS:
         return None
     return {
         "days": len(values),
@@ -136,10 +136,13 @@ def main() -> None:
         )
     )
 
-    print("\n新规则（位置 + 事件方向，门槛 ±0.10）：")
-    report("说买入", [s for s in scored if s["score"] >= 0.10], all_next)
-    report("说观望", [s for s in scored if -0.10 < s["score"] < 0.10], all_next)
-    report("说别加仓", [s for s in scored if s["score"] <= -0.10], all_next)
+    print(
+        "\n新规则（位置 + 事件方向，门槛 ±%.2f，分区至少 %d 天）："
+        % (DIRECTION_EDGE, MIN_ZONE_DAYS)
+    )
+    report("说买入", [s for s in scored if s["score"] >= DIRECTION_EDGE], all_next)
+    report("说观望", [s for s in scored if -DIRECTION_EDGE < s["score"] < DIRECTION_EDGE], all_next)
+    report("说别加仓", [s for s in scored if s["score"] <= -DIRECTION_EDGE], all_next)
 
     print("\n旧规则（只看偏离均线）：")
     report("说买入", [s for s in test if s["z"] <= -1.0], all_next)

@@ -89,7 +89,9 @@ export function AdviceModal({
             <Paper className="stat-tile" p="sm">
               <Group justify="space-between" mb={8}>
                 <Text size="xs" c="dimmed">
-                  判断依据（各占一半，样本越薄权重越低）
+                  {advice.factors.length > 1
+                    ? "判断依据（等权平均，样本越薄权重越低）"
+                    : "判断依据（另一个因子样本不足，已排除）"}
                 </Text>
                 <Text size="xs" fw={600} c={(advice.score ?? 0) > 0 ? "teal.4" : "red.4"}>
                   合计 {signed(advice.score, 2)}

@@ -178,8 +178,12 @@ async def sync_narrative_window(db: Session, day: str) -> int:
     return _store(db, collected, source="wscn")
 
 
-async def sync_narrative_days(db: Session, days: Iterable[str]) -> int:
-    """给一批交易日补叙事快讯，跳过已经抓过的日子。"""
+async def sync_narrative_days(db: Session, days: Iterable[str], force: bool = False) -> int:
+    """给一批交易日补叙事快讯，跳过已经抓过的日子。
+
+    分类规则放宽之后必须用 force 重抓一遍：当初标不上的条目根本没进库，
+    retag_flashes 是就地重算，救不回来。
+    """
     total = 0
     for day in days:
         done = db.scalar(
@@ -190,7 +194,7 @@ async def sync_narrative_days(db: Session, days: Iterable[str]) -> int:
             )
             .limit(1)
         )
-        if done:
+        if done and not force:
             continue
         try:
             total += await sync_narrative_window(db, day)

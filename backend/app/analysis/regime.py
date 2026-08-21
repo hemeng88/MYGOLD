@@ -24,20 +24,34 @@ from .attribution import PRIMARY_TAGS, next_trading_day
 ESCALATE = (
     "袭击", "空袭", "打击", "开战", "升级", "制裁", "报复", "导弹", "无人机",
     "轰炸", "伤亡", "封锁", "威胁", "驱逐", "断交", "增兵", "冲突", "扣押",
+    # 兵力调动本身就是升级信号：8/20 的「航母已部署在中东」原先被判成中性。
+    # 只收明确的军事动词，「部署」「战争」这类在中文里歧义太大（会议也能部署工作），
+    # 实测加进来会把七成日子都判成偏升级，反而把分区做废。
+    "航母", "增派", "军演", "战机", "宣战", "入侵", "越境",
+    "交火", "遇袭", "击落", "击沉", "摧毁",
 )
 # 缓和类措辞：停火、谈判、豁免
 DEESCALATE = (
     "停火", "和谈", "谈判", "协议", "缓和", "撤军", "释放", "解除", "豁免",
     "对话", "会晤", "重启", "让步", "达成", "和平",
+    "休战", "停战", "妥协", "解禁", "撤销", "复交", "通行",
 )
+# 谈崩了要按升级算，否则「停火谈判破裂」会被记成缓和
+NEGATED = ("破裂", "失败", "无果", "搁置", "推迟", "中断", "拒绝")
 
 # 判定「偏升级 / 偏缓和」的门槛，正负对称
 POLARITY_EDGE = 0.15
+
+# 分区样本不到这个天数就不参与打分。一百来个交易日切成三档，十几天的胜率是噪音：
+# 8/19 那次买入就是被一个 10 天样本、70% 胜率的位置分区推出来的。
+MIN_ZONE_DAYS = 20
 
 
 def polarity_of(text: str) -> int:
     hit_up = any(word in text for word in ESCALATE)
     hit_down = any(word in text for word in DEESCALATE)
+    if hit_down and any(word in text for word in NEGATED):
+        hit_down, hit_up = False, True
     if hit_up and not hit_down:
         return 1
     if hit_down and not hit_up:
@@ -91,7 +105,7 @@ def _series(db: Session, window_days: int) -> Dict:
 
 
 def _win_stats(values: List[float]) -> Optional[Dict]:
-    if len(values) < 5:
+    if len(values) < MIN_ZONE_DAYS:
         return None
     return {
         "days": len(values),

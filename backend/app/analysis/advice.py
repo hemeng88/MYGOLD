@@ -20,11 +20,15 @@ from ..formula import breakeven_sell_price
 from ..holdings import list_holdings
 from ..models import DailySummary, NewsFlash
 from ..timeutil import now_local
-from .regime import measure
+from .regime import MIN_ZONE_DAYS, measure
 
 # 位置用 ATR 的倍数衡量：偏离一个 ATR 以上才算真的偏离
 LOW_ZONE = -1.0
 HIGH_ZONE = 1.5
+
+# 表态门槛。原来是 0.10，把消息采集补全之后那一档已经没有优势了，
+# 收窄到 0.15：宁可多说几次「看不出优势」，也别拿噪音当方向。
+DIRECTION_EDGE = 0.15
 
 
 def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
@@ -96,25 +100,35 @@ def _direction_score(z: float, regime: Optional[Dict]) -> Dict:
     else:
         zone, zone_label = "mid", "在均线附近"
 
+    candidates: List = []
     if regime and regime.get("ready"):
-        factors.append(
-            _factor("position", "价格位置", zone_label, regime["position_zones"].get(zone))
-        )
-        factors.append(
-            _factor(
-                "events",
-                "事件方向",
-                "最近两个交易日的新闻%s（升级分 %+.2f）"
-                % (regime["mood_label"], regime["polarity"]),
-                regime["polarity_zones"].get(regime["mood"]),
+        candidates.append(
+            (
+                "价格位置",
+                _factor("position", "价格位置", zone_label, regime["position_zones"].get(zone)),
             )
         )
-    factors = [item for item in factors if item]
+        candidates.append(
+            (
+                "事件方向",
+                _factor(
+                    "events",
+                    "事件方向",
+                    "最近两个交易日的新闻%s（升级分 %+.2f）"
+                    % (regime["mood_label"], regime["polarity"]),
+                    regime["polarity_zones"].get(regime["mood"]),
+                ),
+            )
+        )
+    # 样本不到 MIN_ZONE_DAYS 的分区拿不到胜率，直接不参与打分，并记下来告诉用户
+    skipped = [name for name, item in candidates if not item]
+    factors = [item for _, item in candidates if item]
     if not factors:
-        return {"score": 0.0, "factors": []}
+        return {"score": 0.0, "factors": [], "skipped": skipped}
     return {
         "score": round(sum(item["score"] for item in factors) / len(factors), 3),
         "factors": factors,
+        "skipped": skipped,
     }
 
 
@@ -163,15 +177,17 @@ def evaluate(
     score = direction["score"]
     high_side = z >= HIGH_ZONE
 
-    # 门槛定在 ±0.10：样本外检验里 0.03~0.10 那一档没有优势，并进观望
-    if score >= 0.10:
+    if not direction["factors"]:
+        stance = "hold"
+        headline = "历史样本不够，看不出方向优势，下面只给价位参考"
+    elif score >= DIRECTION_EDGE:
         stance = "accumulate"
         headline = (
             "位置偏高，但事件环境站在多头一侧，可以顺势买，别一次买满"
             if high_side
             else "位置和事件都偏向多头，适合分批买入"
         )
-    elif score > -0.10:
+    elif score > -DIRECTION_EDGE:
         stance = "hold"
         headline = "优势不明显，观望；真想买就挂在下面第一档等回落"
     else:
@@ -181,11 +197,12 @@ def evaluate(
             if in_profit
             else "环境偏差，别加仓；现价卖出还不够保本，先等"
         )
-    if high_side and stance == "accumulate":
-        # 数据不支持「偏高就该等回踩」，但也没理由在高位重仓
-        notes_extra = "价格已高于均线 %.1f 个 ATR，档位都设在现价下方，等回落再接。" % z
-    else:
-        notes_extra = None
+    # 数据不支持「偏高就该等回踩」，但价格离均线多远总该讲清楚
+    notes_extra = (
+        "价格已高于均线 %.1f 个 ATR，买入档都设在现价下方，等回落再接。" % z
+        if high_side
+        else None
+    )
 
     def ladder(candidates, below: bool, limit: int = 3, bound: Optional[float] = None) -> List[Dict]:
         """挑出方向正确的档位，太靠近的合并掉，只留最有代表性的几档。"""
@@ -255,16 +272,26 @@ def evaluate(
         )
     if notes_extra:
         notes.append(notes_extra)
-    if regime and regime.get("volume_rank_pct") is not None:
+    if direction.get("skipped"):
         notes.append(
-            "事件声量处在近半年的第 %d 百分位，声量高的日子次日振幅通常更大。"
+            "%s这个因子今天不参与打分：所处分区历史样本不足 %d 天，胜率算不准。"
+            % ("、".join(direction["skipped"]), MIN_ZONE_DAYS)
+        )
+    if regime and regime.get("volume_rank_pct") is not None:
+        # 原先这里写「声量高的日子次日振幅更大」，实测 r 只有 0.04 且分区不单调，
+        # 站不住，改成只报位置不下结论
+        notes.append(
+            "事件声量处在近半年的第 %d 百分位，仅供参考：实测声量高低和次日振幅没有稳定关系。"
             % regime["volume_rank_pct"]
         )
     notes.append(
         "价位由沪金日线换算而来，基差取%s，比例 %.4f。" % (basis["source"], scale)
     )
     notes.append("ATR14 为 %.2f 元，代表最近一天的正常波动幅度。" % atr)
-    notes.append("事件只影响方向倾向和档位宽度，胜率都是实测值，样本不大，别当准确率看。")
+    notes.append(
+        "事件只影响方向倾向和档位宽度。胜率都是实测值，只有一百来个交易日，"
+        "统计上还达不到显著，别当准确率看。"
+    )
     notes.append("这是按规则算出的参考位，不是投资建议。")
 
     return {
