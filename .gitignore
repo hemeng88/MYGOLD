@@ -14,6 +14,10 @@ backend/data/*.db-journal
 node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/ios/App/Pods/
+frontend/ios/App/build/
+frontend/ios/App/App/public/
+frontend/ios/DerivedData/
 
 .DS_Store
 *.log

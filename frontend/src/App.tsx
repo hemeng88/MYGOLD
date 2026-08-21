@@ -39,6 +39,8 @@ import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { SessionClock } from "./SessionClock";
 import { GoldConvert } from "./GoldConvert";
+import { InstallHint } from "./InstallHint";
+import { NativeServerBar } from "./NativeServerBar";
 import { StocksPanel } from "./StocksPanel";
 import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
@@ -746,8 +748,10 @@ export default function App() {
 
       {isMobile ? (
         <Stack gap="md" pb={88}>
+          <NativeServerBar />
           {mobileTab === "market" && (
             <>
+              <InstallHint />
               {heroPanel}
               {convertPanel}
               {daysPanel}

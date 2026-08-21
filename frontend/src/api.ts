@@ -1,7 +1,28 @@
+import { Capacitor } from "@capacitor/core";
 import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
 
+const STORAGE_KEY = "mygold-api-base";
+const NATIVE_DEFAULT = "https://ohmygold.icu";
+
+export function apiBase(): string {
+  if (typeof window !== "undefined") {
+    const saved = window.localStorage.getItem(STORAGE_KEY);
+    if (saved) return saved.replace(/\/$/, "");
+  }
+  const fromEnv = String(import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+  if (fromEnv) return fromEnv;
+  if (typeof window !== "undefined" && Capacitor.isNativePlatform()) return NATIVE_DEFAULT;
+  return "";
+}
+
+export function setApiBase(url: string) {
+  const next = url.trim().replace(/\/$/, "");
+  if (next) window.localStorage.setItem(STORAGE_KEY, next);
+  else window.localStorage.removeItem(STORAGE_KEY);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init);
+  const res = await fetch(`${apiBase()}${path}`, init);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `请求失败 ${res.status}`);
