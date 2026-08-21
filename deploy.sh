@@ -31,10 +31,14 @@ DOMAIN=""
 if [ -f .env ]; then
   DOMAIN="$(grep -E '^MYGOLD_DOMAIN=' .env | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
 fi
-if [ -z "$DOMAIN" ]; then
+if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "ohmygod.icu" ]; then
   DOMAIN="ohmygold.icu"
-  echo "MYGOLD_DOMAIN=$DOMAIN" >> .env
 fi
+if [ -f .env ]; then
+  grep -vE '^MYGOLD_DOMAIN=' .env > .env.tmp || true
+  mv .env.tmp .env
+fi
+echo "MYGOLD_DOMAIN=$DOMAIN" >> .env
 
 if [ -n "$DOMAIN" ]; then
   cat > Caddyfile <<EOF
@@ -42,7 +46,7 @@ http:// {
 	reverse_proxy mygold:8000
 }
 
-$DOMAIN, www.$DOMAIN {
+$DOMAIN {
 	reverse_proxy mygold:8000
 }
 EOF
@@ -70,7 +74,7 @@ EOF
   sudo systemctl restart docker
 fi
 
-docker compose up -d --build
+docker compose up -d --build --force-recreate
 echo
 if [ -n "$DOMAIN" ]; then
   echo "部署完成。用浏览器打开：https://$DOMAIN"
