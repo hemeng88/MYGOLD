@@ -37,7 +37,7 @@ import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { SessionClock } from "./SessionClock";
-import type { Advice, CurvePoint, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
+import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -54,21 +54,17 @@ function tone(value: number | null | undefined) {
   return value > 0 ? "red" : "teal";
 }
 
-function clockToSec(value: string) {
-  const parts = value.split(":").map(Number);
-  return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
-}
-
 function minutesOf(value: string) {
   const parts = value.split(":").map(Number);
   return (parts[0] || 0) * 60 + (parts[1] || 0);
 }
 
-function nearestClock(points: CurvePoint[], minutes: number) {
-  if (!points.length) return null;
-  return points.reduce((best, point) =>
-    Math.abs(minutesOf(point.time) - minutes) < Math.abs(minutesOf(best.time) - minutes) ? point : best,
-  );
+function clockLabel(minutes: number) {
+  const wrapped = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const hour = Math.floor(wrapped / 60);
+  const minute = wrapped % 60;
+  if (minutes >= 1440) return "24:00";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 function mergeRanges(exchanges: SessionExchange[], region?: string) {
@@ -249,7 +245,7 @@ export default function App() {
         type: "line",
         showSymbol: false,
         smooth: 0.18,
-        data: (curve?.points || []).map((p) => [p.time, p.p]),
+        data: (curve?.points || []).map((p) => [minutesOf(p.time), p.p]),
         lineStyle: { width: 2.4, color: "#e0c25c" },
         areaStyle: {
           color: {
@@ -272,7 +268,7 @@ export default function App() {
         type: "line",
         showSymbol: false,
         smooth: 0.18,
-        data: compareCurve.points.map((p) => [p.time, p.p]),
+        data: compareCurve.points.map((p) => [minutesOf(p.time), p.p]),
         lineStyle: { width: 1.8, color: "#7eb6d4" },
         areaStyle: {
           color: {
@@ -289,7 +285,6 @@ export default function App() {
         },
       });
     }
-    const points = curve?.points || [];
     const sessionBands = hoverExchange
       ? hoverExchange.ranges.map((range) => ({ ...range, color: "rgba(212,175,55,0.22)" }))
       : [
@@ -297,12 +292,10 @@ export default function App() {
           ...mergeRanges(sessions?.exchanges || [], "emea").map((range) => ({ ...range, color: "rgba(212,175,55,0.12)" })),
           ...mergeRanges(sessions?.exchanges || [], "americas").map((range) => ({ ...range, color: "rgba(210,75,58,0.12)" })),
         ];
-    const markAreas = sessionBands.flatMap((range) => {
-      const start = nearestClock(points, range.start_min);
-      const end = nearestClock(points, range.end_min);
-      if (!start || !end) return [];
-      return [[{ xAxis: start.time, itemStyle: { color: range.color } }, { xAxis: end.time }]];
-    });
+    const markAreas = sessionBands.map((range) => [
+      { xAxis: range.start_min, itemStyle: { color: range.color } },
+      { xAxis: range.end_min > range.start_min ? range.end_min : 1440 },
+    ]);
     return {
       backgroundColor: "transparent",
       tooltip: {
@@ -310,14 +303,27 @@ export default function App() {
         backgroundColor: "rgba(20,17,12,0.92)",
         borderColor: "rgba(212,175,55,0.25)",
         textStyle: { color: "#f4ead6" },
+        formatter: (items: { axisValue: number; seriesName: string; data: [number, number]; marker: string }[]) => {
+          if (!items?.length) return "";
+          const rows = items
+            .filter((item) => Array.isArray(item.data))
+            .map((item) => `${item.marker} ${item.seriesName}  ${fmt(item.data[1])}`);
+          return `${clockLabel(Number(items[0].axisValue))}<br/>${rows.join("<br/>")}`;
+        },
       },
       legend: { show: Boolean(compareCurve), top: 4, textStyle: { color: "#c9b896" } },
-      grid: { left: isMobile ? 36 : 52, right: 8, top: compareCurve ? 40 : 16, bottom: 28 },
+      grid: { left: isMobile ? 36 : 52, right: 12, top: compareCurve ? 40 : 16, bottom: 28 },
       xAxis: {
-        type: "category",
-        boundaryGap: false,
+        type: "value",
+        min: 0,
+        max: 1440,
+        interval: isMobile ? 240 : 120,
         axisLine: { lineStyle: { color: "rgba(212,175,55,0.16)" } },
-        axisLabel: { color: "#8c8170" },
+        axisLabel: {
+          color: "#8c8170",
+          hideOverlap: true,
+          formatter: (value: number) => (value >= 1440 ? "24:00" : clockLabel(value)),
+        },
         splitLine: { show: false },
       },
       yAxis: {
@@ -339,17 +345,9 @@ export default function App() {
                 symbolSize: isMobile ? 22 : 36,
                 data: events.map((event) => {
                   const clock = event.triggered_at.slice(11, 19);
-                  const target = clockToSec(clock);
-                  const nearest = (curve?.points || []).reduce(
-                    (best, point) =>
-                      Math.abs(clockToSec(point.time) - target) < Math.abs(clockToSec(best.time) - target)
-                        ? point
-                        : best,
-                    curve?.points[0] || { time: clock, p: event.end_price },
-                  );
                   return {
                     name: event.headline.slice(0, 18),
-                    coord: [nearest.time, event.end_price],
+                    coord: [minutesOf(clock), event.end_price],
                     value: `${event.change_rate > 0 ? "+" : ""}${event.change_rate.toFixed(2)}%`,
                     itemStyle: { color: event.direction === "up" ? "#d24b3a" : "#2f9b6a" },
                   };
@@ -537,8 +535,9 @@ export default function App() {
             style={{ height: isMobile ? 280 : 420, minWidth: 0 }}
             notMerge
             onEvents={{
-              updateAxisPointer: (event: { axesInfo?: { value?: string }[] }) => {
+              updateAxisPointer: (event: { axesInfo?: { value?: string | number }[] }) => {
                 const value = event.axesInfo?.[0]?.value;
+                if (typeof value === "number") setHoverClockMin(value);
                 if (typeof value === "string") setHoverClockMin(minutesOf(value));
               },
               globalout: () => setHoverClockMin(null),
