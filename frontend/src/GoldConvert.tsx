@@ -19,124 +19,183 @@ function tone(value: number | null | undefined) {
   return value > 0 ? "red" : "teal";
 }
 
-type Field = "grams" | "ounces" | "cny" | "usd";
+function toNum(value: number | string) {
+  const n = typeof value === "number" ? value : Number(String(value).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
 
 export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
-  const [field, setField] = useState<Field>("grams");
-  const [raw, setRaw] = useState<number | string>(1);
   const ounce = latest?.troy_ounce_grams || OZ;
   const zheshang = latest?.price ?? null;
   const london = latest?.london_usd ?? null;
   const fx = latest?.usdcny ?? null;
 
-  const amount = Number(raw);
-  const ready = Number.isFinite(amount) && amount > 0 && zheshang && london && fx;
+  const [priceSide, setPriceSide] = useState<"cnyg" | "usdoz">("cnyg");
+  const [priceRaw, setPriceRaw] = useState<number | string>("");
+  const [gramsRaw, setGramsRaw] = useState<number | string>(1);
+  const [gramSide, setGramSide] = useState<"g" | "oz">("g");
+  const [moneyRaw, setMoneyRaw] = useState<number | string>(10000);
+  const [moneySide, setMoneySide] = useState<"cny" | "usd">("cny");
 
-  const values = useMemo(() => {
-    if (!ready || !zheshang || !london || !fx) {
-      return { grams: null, ounces: null, cny: null, usd: null };
+  const priceIn = toNum(priceRaw);
+  const prices = useMemo(() => {
+    if (!fx) return { cnyg: null, usdoz: null };
+    if (priceIn == null || priceIn <= 0) {
+      return { cnyg: zheshang, usdoz: zheshang ? (zheshang * ounce) / fx : london };
     }
-    let grams = amount;
-    if (field === "ounces") grams = amount * ounce;
-    if (field === "cny") grams = amount / zheshang;
-    if (field === "usd") grams = (amount / london) * ounce;
-    return {
-      grams,
-      ounces: grams / ounce,
-      cny: grams * zheshang,
-      usd: (grams / ounce) * london,
-    };
-  }, [amount, field, fx, london, ounce, ready, zheshang]);
+    if (priceSide === "cnyg") {
+      return { cnyg: priceIn, usdoz: (priceIn * ounce) / fx };
+    }
+    return { cnyg: (priceIn / ounce) * fx, usdoz: priceIn };
+  }, [fx, london, ounce, priceIn, priceSide, zheshang]);
 
-  const set = (next: Field) => (value: number | string) => {
-    setField(next);
-    setRaw(value);
-  };
+  const weightIn = toNum(gramsRaw) ?? 1;
+  const grams = gramSide === "g" ? weightIn : weightIn * ounce;
+  const ounces = grams / ounce;
+
+  const moneyIn = toNum(moneyRaw) ?? 0;
+  const moneyCny = !fx ? null : moneySide === "cny" ? moneyIn : moneyIn * fx;
+  const moneyUsd = !fx ? null : moneySide === "usd" ? moneyIn : moneyIn / fx;
 
   return (
     <Paper className="glass" p="md">
       <Text fw={600}>浙商 ↔ 伦敦金</Text>
       <Text size="xs" c="dimmed" mt={4}>
-        用实时{latest?.usdcny_source || "人民币"}汇率换算。1 金衡盎司 = {fmt(ounce, 4)} 克。
+        价格用实时{latest?.usdcny_source || "人民币"}汇率折：元/克 × {fmt(ounce, 4)} ÷ 汇率 = 美元/盎司。
+        1 美元 = {fx == null ? "—" : fmt(fx, 4)} 元。
       </Text>
+
       <SimpleGrid cols={2} spacing="xs" mt="sm">
         <Paper className="stat-tile" p="xs">
           <Text size="xs" c="dimmed">
-            美元兑人民币
+            浙商现价
           </Text>
           <Text fw={700} size="sm">
-            {fx == null ? "—" : fmt(fx, 4)}
-          </Text>
-          <Text size="xs" c={tone(latest?.usdcny_change_amt)}>
-            {latest?.usdcny_change_amt == null ? "" : signed(latest.usdcny_change_amt, 4)}
+            {fmt(zheshang)} 元/克
           </Text>
         </Paper>
         <Paper className="stat-tile" p="xs">
           <Text size="xs" c="dimmed">
-            伦敦折人民币
+            伦敦现价折人民币
           </Text>
           <Text fw={700} size="sm">
             {fmt(latest?.london_cny_gram)} 元/克
           </Text>
           <Text size="xs" c={tone(latest?.premium_cny)}>
-            {latest?.premium_cny == null
-              ? "对不上价"
-              : `浙商${signed(latest.premium_cny)}（${signed(latest.premium_pct, 2)}%）`}
+            {latest?.premium_cny == null ? "" : `浙商贵 ${signed(latest.premium_cny)}（${signed(latest.premium_pct, 2)}%）`}
           </Text>
         </Paper>
       </SimpleGrid>
-      <SimpleGrid cols={2} spacing="xs" mt="sm">
+
+      <Text size="xs" c="dimmed" fw={600} mt="md" mb={4}>
+        价格换算（同一套汇率）
+      </Text>
+      <SimpleGrid cols={2} spacing="xs">
         <NumberInput
           size="xs"
-          label="浙商 · 克"
+          label="元 / 克"
           min={0}
-          decimalScale={4}
+          decimalScale={2}
           hideControls
-          value={field === "grams" ? raw : values.grams == null ? "" : Number(values.grams.toFixed(4))}
-          onChange={set("grams")}
+          value={priceSide === "cnyg" ? priceRaw || zheshang || "" : prices.cnyg == null ? "" : Number(prices.cnyg.toFixed(2))}
+          onChange={(value) => {
+            setPriceSide("cnyg");
+            setPriceRaw(value);
+          }}
         />
         <NumberInput
           size="xs"
-          label="伦敦 · 盎司"
+          label="美元 / 盎司"
+          min={0}
+          decimalScale={2}
+          hideControls
+          value={priceSide === "usdoz" ? priceRaw : prices.usdoz == null ? "" : Number(prices.usdoz.toFixed(2))}
+          onChange={(value) => {
+            setPriceSide("usdoz");
+            setPriceRaw(value);
+          }}
+        />
+      </SimpleGrid>
+      {fx && prices.cnyg != null && prices.usdoz != null ? (
+        <Text size="xs" c="dimmed" mt={6}>
+          {fmt(prices.cnyg)} 元/克 = {fmt(prices.usdoz)} 美元/盎司。
+          {zheshang != null ? ` 现在浙商 ${fmt(zheshang)}，差 ${signed(zheshang - prices.cnyg)} 元/克。` : ""}
+          {london != null ? ` 现在伦敦 ${fmt(london)}，差 ${signed(london - prices.usdoz)} 美元/盎司。` : ""}
+        </Text>
+      ) : (
+        <Text size="xs" c="dimmed" mt={6}>
+          汇率还没有，先点一次采集。
+        </Text>
+      )}
+
+      <Text size="xs" c="dimmed" fw={600} mt="md" mb={4}>
+        重量
+      </Text>
+      <SimpleGrid cols={2} spacing="xs">
+        <NumberInput
+          size="xs"
+          label="克"
           min={0}
           decimalScale={4}
           hideControls
-          value={field === "ounces" ? raw : values.ounces == null ? "" : Number(values.ounces.toFixed(4))}
-          onChange={set("ounces")}
+          value={gramSide === "g" ? gramsRaw : Number(grams.toFixed(4))}
+          onChange={(value) => {
+            setGramSide("g");
+            setGramsRaw(value);
+          }}
         />
         <NumberInput
           size="xs"
-          label="按浙商 · 人民币"
+          label="金衡盎司"
+          min={0}
+          decimalScale={4}
+          hideControls
+          value={gramSide === "oz" ? gramsRaw : Number(ounces.toFixed(4))}
+          onChange={(value) => {
+            setGramSide("oz");
+            setGramsRaw(value);
+          }}
+        />
+      </SimpleGrid>
+
+      <Text size="xs" c="dimmed" fw={600} mt="md" mb={4}>
+        人民币 ↔ 美元（只走汇率，不掺金价）
+      </Text>
+      <SimpleGrid cols={2} spacing="xs">
+        <NumberInput
+          size="xs"
+          label="人民币"
           min={0}
           decimalScale={2}
           hideControls
           thousandSeparator
           prefix="¥"
-          value={field === "cny" ? raw : values.cny == null ? "" : Number(values.cny.toFixed(2))}
-          onChange={set("cny")}
+          value={moneySide === "cny" ? moneyRaw : moneyCny == null ? "" : Number(moneyCny.toFixed(2))}
+          onChange={(value) => {
+            setMoneySide("cny");
+            setMoneyRaw(value);
+          }}
         />
         <NumberInput
           size="xs"
-          label="按伦敦 · 美元"
+          label="美元"
           min={0}
           decimalScale={2}
           hideControls
           thousandSeparator
           prefix="$"
-          value={field === "usd" ? raw : values.usd == null ? "" : Number(values.usd.toFixed(2))}
-          onChange={set("usd")}
+          value={moneySide === "usd" ? moneyRaw : moneyUsd == null ? "" : Number(moneyUsd.toFixed(2))}
+          onChange={(value) => {
+            setMoneySide("usd");
+            setMoneyRaw(value);
+          }}
         />
       </SimpleGrid>
-      {ready && values.cny != null && fx ? (
-        <Text size="xs" c="dimmed" mt="sm">
-          这 {fmt(values.grams, 4)} 克浙商约 {fmt(values.cny, 0)} 元；等量伦敦金约 {fmt(values.usd, 0)} 美元，按汇率合{" "}
-          {fmt((values.usd || 0) * fx, 0)} 元。差的是积存金相对伦敦的溢价，不是手续费。
+      {moneyCny != null && moneyUsd != null && zheshang && london ? (
+        <Text size="xs" c="dimmed" mt={6}>
+          这笔钱按浙商大约能买 {fmt(moneyCny / zheshang, 3)} 克，按伦敦大约能买 {fmt(moneyUsd / london, 4)} 盎司。
         </Text>
-      ) : (
-        <Text size="xs" c="dimmed" mt="sm">
-          金价或汇率还没齐，先点一次采集。
-        </Text>
-      )}
+      ) : null}
     </Paper>
   );
 }
