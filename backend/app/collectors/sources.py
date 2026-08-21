@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
@@ -143,3 +144,40 @@ async def fetch_today_chart(client: httpx.AsyncClient) -> List[Tuple[int, float]
 async def fetch_latest_as_point(quote: Quote) -> Tuple[int, float]:
     dt = quote.source_time or quote.collected_at
     return to_unix_seconds(dt), quote.price
+
+
+SINA_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.sina.com.cn/futures/quotes/XAU.shtml",
+}
+
+
+def fetch_london_gold() -> Optional[Dict[str, Any]]:
+    """伦敦金现货，美元/盎司。拿不到就返回 None，不影响积存金主价。"""
+    try:
+        with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+            response = client.get(settings.london_gold_url, headers=SINA_HEADERS)
+            response.raise_for_status()
+        text = response.content.decode("gbk", errors="ignore")
+        match = re.search(r'="([^"]+)"', text)
+        if not match:
+            return None
+        parts = match.group(1).split(",")
+        last = _parse_number(parts[0] if parts else None)
+        prev = _parse_number(parts[1] if len(parts) > 1 else None)
+        if last is None:
+            return None
+        change = round(last - prev, 2) if prev else None
+        rate = round(change / prev * 100, 3) if change is not None and prev else None
+        return {
+            "london_usd": last,
+            "london_prev": prev,
+            "london_change_amt": change,
+            "london_change_rate": rate,
+            "london_source": "sina_xau",
+        }
+    except Exception:
+        return None

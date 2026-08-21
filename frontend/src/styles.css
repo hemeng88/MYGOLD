@@ -52,6 +52,19 @@ body {
   color: #f6edd4;
 }
 
+.london-quote {
+  min-width: 168px;
+}
+
+.london-price {
+  font-family: "Fraunces", "Noto Serif SC", serif;
+  font-size: clamp(28px, 4.4vw, 42px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: #f6edd4;
+  margin-top: 6px;
+}
+
 .stat-tile {
   background: rgba(255, 255, 255, 0.03) !important;
   border-color: rgba(212, 175, 55, 0.1) !important;
@@ -107,6 +120,47 @@ body {
 .day-chip {
   min-width: 112px;
   flex-shrink: 0;
+}
+
+.chart-with-clock {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  align-items: center;
+}
+
+.chart-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.session-clock {
+  min-width: 0;
+}
+
+.session-clock .clock-hour {
+  fill: #8c8170;
+  font-size: 9px;
+  font-family: "Noto Sans SC", sans-serif;
+}
+
+.session-clock .clock-center {
+  fill: #f6edd4;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: "Noto Sans SC", sans-serif;
+}
+
+.session-clock .clock-sub {
+  fill: #c9b896;
+  font-size: 11px;
+  font-family: "Fraunces", serif;
+}
+
+@media (max-width: 52em) {
+  .chart-with-clock {
+    grid-template-columns: 1fr;
+  }
 }
 
 .mobile-tabbar {

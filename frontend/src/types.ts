@@ -7,6 +7,11 @@ export interface LatestQuote {
   collected_at: string | null;
   source: string;
   trade_date: string;
+  london_usd?: number | null;
+  london_prev?: number | null;
+  london_change_amt?: number | null;
+  london_change_rate?: number | null;
+  london_source?: string | null;
 }
 
 export interface DaySummary {
@@ -122,6 +127,65 @@ export interface Advice {
   sell_levels: AdviceLevel[];
   drivers: { tag: string; share_pct: number }[];
   notes: string[];
+  session?: AdviceSession | null;
+}
+
+export interface AdviceSession {
+  band: string | null;
+  band_label: string | null;
+  clock: string | null;
+  open_count: number;
+  open_names: string[];
+  hour_vol_rank_pct: number | null;
+  profile_days: number;
+}
+
+export interface SessionRange {
+  start: string;
+  end: string;
+  start_min: number;
+  end_min: number;
+}
+
+export interface SessionExchange {
+  id: string;
+  name: string;
+  region: string;
+  timezone: string;
+  source: string;
+  open: boolean;
+  weekend: boolean;
+  ranges: SessionRange[];
+}
+
+export interface SessionHour {
+  hour: number;
+  label: string;
+  samples: number;
+  mean_pct: number | null;
+  abs_pct: number | null;
+  win_rate: number | null;
+}
+
+export interface SessionSnapshot {
+  as_of: string;
+  timezone: string;
+  clock: string;
+  clock_min: number;
+  band: string;
+  band_label: string;
+  open_count: number;
+  open_names: string[];
+  exchanges: SessionExchange[];
+  bands: { id: string; label: string; color: string }[];
+  hour_profile: SessionHour[];
+  hour_abs_pct: number | null;
+  hour_mean_pct: number | null;
+  hour_win_rate: number | null;
+  hour_samples: number;
+  hour_vol_rank_pct: number | null;
+  profile_days: number;
+  note: string;
 }
 
 export interface AttributionType {

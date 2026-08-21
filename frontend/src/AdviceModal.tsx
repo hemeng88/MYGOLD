@@ -84,6 +84,12 @@ export function AdviceModal({
           </Group>
 
           <Text size="sm">{advice.headline}</Text>
+          {advice.session?.band_label ? (
+            <Text size="xs" c="dimmed">
+              {advice.session.clock} · {advice.session.band_label}
+              {advice.session.open_count ? ` · ${advice.session.open_count} 家交易所开盘` : ""}
+            </Text>
+          ) : null}
 
           {advice.factors.length ? (
             <Paper className="stat-tile" p="sm">

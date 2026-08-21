@@ -36,7 +36,8 @@ import { api } from "./api";
 import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
-import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent } from "./types";
+import { SessionClock } from "./SessionClock";
+import type { Advice, CurvePoint, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -56,6 +57,32 @@ function tone(value: number | null | undefined) {
 function clockToSec(value: string) {
   const parts = value.split(":").map(Number);
   return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+}
+
+function minutesOf(value: string) {
+  const parts = value.split(":").map(Number);
+  return (parts[0] || 0) * 60 + (parts[1] || 0);
+}
+
+function nearestClock(points: CurvePoint[], minutes: number) {
+  if (!points.length) return null;
+  return points.reduce((best, point) =>
+    Math.abs(minutesOf(point.time) - minutes) < Math.abs(minutesOf(best.time) - minutes) ? point : best,
+  );
+}
+
+function mergeRanges(exchanges: SessionExchange[], region?: string) {
+  const raw = exchanges
+    .filter((item) => !region || item.region === region)
+    .flatMap((item) => item.ranges)
+    .sort((a, b) => a.start_min - b.start_min);
+  const merged: { start_min: number; end_min: number }[] = [];
+  for (const range of raw) {
+    const last = merged[merged.length - 1];
+    if (last && range.start_min <= last.end_min) last.end_min = Math.max(last.end_min, range.end_min);
+    else merged.push({ start_min: range.start_min, end_min: range.end_min });
+  }
+  return merged;
 }
 
 function tagColor(tag: string) {
@@ -101,15 +128,24 @@ export default function App() {
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
   const [advising, setAdvising] = useState(false);
+  const [sessions, setSessions] = useState<SessionSnapshot | null>(null);
+  const [hoverExchange, setHoverExchange] = useState<SessionExchange | null>(null);
+  const [hoverClockMin, setHoverClockMin] = useState<number | null>(null);
+  const [liveClockMin, setLiveClockMin] = useState(() => {
+    const now = new Date();
+    return now.getHours() * 60 + now.getMinutes();
+  });
   const isMobile = useMediaQuery("(max-width: 52em)") ?? true;
 
   const loadAll = useCallback(async (date?: string) => {
-    const [dayList, latestQuote, feeRule, nextHoldings] = await Promise.all([
+    const [dayList, latestQuote, feeRule, nextHoldings, nextSessions] = await Promise.all([
       api.days(),
       api.latest().catch(() => null),
       api.rules().catch(() => null),
       api.holdings().catch(() => null),
+      api.sessions().catch(() => null),
     ]);
+    setSessions(nextSessions);
     setDays(dayList);
     setLatest(latestQuote);
     setRule(feeRule);
@@ -131,6 +167,21 @@ export default function App() {
       })
       .finally(() => setLoading(false));
   }, [loadAll]);
+
+  useEffect(() => {
+    const poll = window.setInterval(() => {
+      api.latest().then(setLatest).catch(() => undefined);
+    }, 20000);
+    return () => window.clearInterval(poll);
+  }, []);
+
+  useEffect(() => {
+    const tick = window.setInterval(() => {
+      const now = new Date();
+      setLiveClockMin(now.getHours() * 60 + now.getMinutes());
+    }, 30000);
+    return () => window.clearInterval(tick);
+  }, []);
 
   useEffect(() => {
     if (!compareDate) {
@@ -238,6 +289,20 @@ export default function App() {
         },
       });
     }
+    const points = curve?.points || [];
+    const sessionBands = hoverExchange
+      ? hoverExchange.ranges.map((range) => ({ ...range, color: "rgba(212,175,55,0.22)" }))
+      : [
+          ...mergeRanges(sessions?.exchanges || [], "asia").map((range) => ({ ...range, color: "rgba(126,182,212,0.16)" })),
+          ...mergeRanges(sessions?.exchanges || [], "emea").map((range) => ({ ...range, color: "rgba(212,175,55,0.12)" })),
+          ...mergeRanges(sessions?.exchanges || [], "americas").map((range) => ({ ...range, color: "rgba(210,75,58,0.12)" })),
+        ];
+    const markAreas = sessionBands.flatMap((range) => {
+      const start = nearestClock(points, range.start_min);
+      const end = nearestClock(points, range.end_min);
+      if (!start || !end) return [];
+      return [[{ xAxis: start.time, itemStyle: { color: range.color } }, { xAxis: end.time }]];
+    });
     return {
       backgroundColor: "transparent",
       tooltip: {
@@ -265,6 +330,10 @@ export default function App() {
         idx === 0
           ? {
               ...item,
+              markArea: {
+                silent: true,
+                data: markAreas,
+              },
               markPoint: {
                 symbol: "pin",
                 symbolSize: isMobile ? 22 : 36,
@@ -291,7 +360,7 @@ export default function App() {
           : item,
       ),
     };
-  }, [compareCurve, compareDate, curve, events, isMobile, selectedDate]);
+  }, [compareCurve, compareDate, curve, events, hoverExchange, isMobile, selectedDate, sessions]);
 
   const daysPanel = (
     <Paper className="glass" p="md">
@@ -378,22 +447,37 @@ export default function App() {
           </Badge>
         )}
       </Group>
-      <Group align="flex-end" justify="space-between" wrap="wrap" gap="xs">
-        <Text className="price">{fmt(displayPrice)}</Text>
-        <Group gap={8}>
-          <ThemeIcon size={isMobile ? 36 : 42} radius="xl" color={tone(displayChange)} variant="light">
-            <ChangeIcon size={20} />
-          </ThemeIcon>
-          <div>
-            <Text fw={700} c={tone(displayChange)} size={isMobile ? "md" : "lg"}>
-              {signed(displayChange)}
-              {displayRate === null || displayRate === undefined ? "" : `  (${signed(displayRate)}%)`}
+      <Group align="flex-end" justify="space-between" wrap="wrap" gap="lg">
+        <div>
+          <Text className="price">{fmt(displayPrice)}</Text>
+          <Group gap={8} mt={8}>
+            <ThemeIcon size={isMobile ? 32 : 38} radius="xl" color={tone(displayChange)} variant="light">
+              <ChangeIcon size={18} />
+            </ThemeIcon>
+            <div>
+              <Text fw={700} c={tone(displayChange)} size={isMobile ? "sm" : "md"}>
+                {signed(displayChange)}
+                {displayRate === null || displayRate === undefined ? "" : `  (${signed(displayRate)}%)`}
+              </Text>
+              <Text size="xs" c="dimmed">
+                较昨日 {fmt(summary?.prev_close ?? latest?.yesterday_price)}
+              </Text>
+            </div>
+          </Group>
+        </div>
+        {latest?.london_usd ? (
+          <div className="london-quote">
+            <Text className="eyebrow">伦敦金 · 美元 / 盎司</Text>
+            <Text className="london-price">{fmt(latest.london_usd)}</Text>
+            <Text fw={600} c={tone(latest.london_change_amt)} size={isMobile ? "sm" : "md"} mt={6}>
+              {signed(latest.london_change_amt)}
+              {latest.london_change_rate == null ? "" : `  (${signed(latest.london_change_rate)}%)`}
             </Text>
             <Text size="xs" c="dimmed">
-              较昨日 {fmt(summary?.prev_close ?? latest?.yesterday_price)}
+              较昨日 {fmt(latest.london_prev)}
             </Text>
           </div>
-        </Group>
+        ) : null}
       </Group>
       <SimpleGrid cols={2} mt="lg" spacing="sm">
         {[
@@ -425,10 +509,19 @@ export default function App() {
     </Paper>
   );
 
+  const clockMin = hoverClockMin ?? sessions?.clock_min ?? liveClockMin;
+
   const chartPanel = (
     <Paper className="glass" p={isMobile ? "md" : "lg"}>
       <Group justify="space-between" mb="md" wrap="wrap">
-        <Text fw={600}>当日价格曲线</Text>
+        <div>
+          <Text fw={600}>当日价格曲线</Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            {hoverExchange
+              ? `对着 ${hoverExchange.name}：${hoverExchange.ranges.map((r) => `${r.start}–${r.end}`).join(" / ")}`
+              : "底色是亚太 / 欧美开盘带，扫过曲线或圆环会对时"}
+          </Text>
+        </div>
         <Select
           placeholder="对比"
           clearable
@@ -438,15 +531,38 @@ export default function App() {
           data={days.filter((d) => d.date !== selectedDate).map((d) => d.date)}
         />
       </Group>
-      {curve && curve.points.length > 0 ? (
-        <ReactECharts option={option} style={{ height: isMobile ? 280 : 420 }} notMerge />
-      ) : (
-        <Skeleton height={isMobile ? 280 : 420} radius="lg" visible={loading}>
-          <Text ta="center" c="dimmed" py={80}>
-            这一天还没有曲线，先点右上角采集一次。
-          </Text>
-        </Skeleton>
-      )}
+      <div className={isMobile ? "chart-stack" : "chart-with-clock"}>
+        {curve && curve.points.length > 0 ? (
+          <ReactECharts
+            option={option}
+            style={{ height: isMobile ? 280 : 420, minWidth: 0 }}
+            notMerge
+            onEvents={{
+              updateAxisPointer: (event: { axesInfo?: { value?: string }[] }) => {
+                const value = event.axesInfo?.[0]?.value;
+                if (typeof value === "string") setHoverClockMin(minutesOf(value));
+              },
+              globalout: () => setHoverClockMin(null),
+            }}
+          />
+        ) : (
+          <Skeleton height={isMobile ? 280 : 420} radius="lg" visible={loading}>
+            <Text ta="center" c="dimmed" py={80}>
+              这一天还没有曲线，先点右上角采集一次。
+            </Text>
+          </Skeleton>
+        )}
+        {sessions ? (
+          <SessionClock
+            data={sessions}
+            clockMin={clockMin}
+            highlightId={hoverExchange?.id || null}
+            compact={isMobile}
+            onHoverExchange={setHoverExchange}
+            onLeave={() => setHoverExchange(null)}
+          />
+        ) : null}
+      </div>
     </Paper>
   );
 

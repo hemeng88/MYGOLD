@@ -21,6 +21,7 @@ from ..holdings import list_holdings
 from ..models import DailySummary, NewsFlash
 from ..timeutil import now_local
 from .regime import MIN_ZONE_DAYS, measure
+from .sessions import snapshot as session_snapshot
 
 # 位置用 ATR 的倍数衡量：偏离一个 ATR 以上才算真的偏离
 LOW_ZONE = -1.0
@@ -90,9 +91,26 @@ def _factor(name: str, label: str, detail: str, stats: Optional[Dict]) -> Option
     }
 
 
-def _direction_score(z: float, regime: Optional[Dict]) -> Dict:
-    """位置和事件方向各占一半。两者都用实测胜率，而不是拍出来的系数。"""
-    factors: List[Dict] = []
+def _session_factor(session: Optional[Dict]) -> Optional[Dict]:
+    """当前钟点的金价方向，只有折进出足够多的盘中小时样本才打分。"""
+    if not session:
+        return None
+    samples = session.get("hour_samples") or 0
+    win_rate = session.get("hour_win_rate")
+    mean_pct = session.get("hour_mean_pct")
+    if samples < MIN_ZONE_DAYS or win_rate is None or mean_pct is None:
+        return None
+    return _factor(
+        "session",
+        "交易时段",
+        "现在是%s，这个钟点历史上金价上涨 %d%%"
+        % (session.get("band_label") or "未知时段", win_rate),
+        {"days": samples, "win_rate": win_rate, "mean_next": mean_pct},
+    )
+
+
+def _direction_score(z: float, regime: Optional[Dict], session: Optional[Dict] = None) -> Dict:
+    """位置、事件方向、交易时段。能拿到实测胜率的才进分，进不去的记到 skipped。"""
     if z <= -1.0:
         zone, zone_label = "low", "低于均线一个 ATR 以上"
     elif z >= 1.5:
@@ -120,6 +138,7 @@ def _direction_score(z: float, regime: Optional[Dict]) -> Dict:
                 ),
             )
         )
+    candidates.append(("交易时段", _session_factor(session)))
     # 样本不到 MIN_ZONE_DAYS 的分区拿不到胜率，直接不参与打分，并记下来告诉用户
     skipped = [name for name, item in candidates if not item]
     factors = [item for _, item in candidates if item]
@@ -138,6 +157,7 @@ def evaluate(
     basis: Dict,
     position: Dict,
     regime: Optional[Dict] = None,
+    session: Optional[Dict] = None,
 ) -> Dict:
     """给定价格、日线、持仓和事件环境算出档位。不碰数据库，方便回算历史某一天。"""
     scale = basis["scale"]
@@ -173,7 +193,7 @@ def evaluate(
     has_position = bool(position.get("total_grams"))
     in_profit = bool(breakeven and price > breakeven)
 
-    direction = _direction_score(z, regime)
+    direction = _direction_score(z, regime, session=session)
     score = direction["score"]
     high_side = z >= HIGH_ZONE
 
@@ -277,6 +297,25 @@ def evaluate(
             "%s这个因子今天不参与打分：所处分区历史样本不足 %d 天，胜率算不准。"
             % ("、".join(direction["skipped"]), MIN_ZONE_DAYS)
         )
+    if session:
+        names = session.get("open_names") or []
+        if names:
+            notes.append(
+                "此刻东八区 %s，%s开着：%s。"
+                % (session.get("clock", ""), session.get("band_label", "空窗"), "、".join(names[:6]))
+            )
+        elif session.get("band_label"):
+            notes.append("此刻东八区 %s，主要股票市场都还没开。" % session.get("clock", ""))
+        if session.get("hour_samples", 0) < MIN_ZONE_DAYS:
+            notes.append(
+                "交易时段还没进打分：盘中曲线只折进了 %d 天，少于 %d 天不算数。"
+                % (session.get("profile_days") or 0, MIN_ZONE_DAYS)
+            )
+        elif session.get("hour_vol_rank_pct") is not None:
+            notes.append(
+                "这个钟点的金价振幅处在已观测小时的第 %d 百分位。"
+                % session["hour_vol_rank_pct"]
+            )
     if regime and regime.get("volume_rank_pct") is not None:
         # 原先这里写「声量高的日子次日振幅更大」，实测 r 只有 0.04 且分区不单调，
         # 站不住，改成只报位置不下结论
@@ -334,6 +373,7 @@ def build_advice(db: Session) -> Dict:
 
     holdings = list_holdings(db)
     conditions = measure(db)
+    session = session_snapshot(db)
     result = evaluate(
         price,
         bars,
@@ -345,6 +385,7 @@ def build_advice(db: Session) -> Dict:
             "net_if_sell_now": holdings.net_if_sell_now,
         },
         regime=conditions,
+        session=session,
     )
     if not result.get("ready"):
         return result
@@ -357,4 +398,13 @@ def build_advice(db: Session) -> Dict:
         result["volume_rank_pct"] = conditions["volume_rank_pct"]
     else:
         result["drivers"] = _recent_drivers(db)
+    result["session"] = {
+        "band": session.get("band"),
+        "band_label": session.get("band_label"),
+        "clock": session.get("clock"),
+        "open_count": session.get("open_count"),
+        "open_names": session.get("open_names"),
+        "hour_vol_rank_pct": session.get("hour_vol_rank_pct"),
+        "profile_days": session.get("profile_days"),
+    }
     return result

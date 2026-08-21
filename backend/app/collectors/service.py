@@ -10,7 +10,7 @@ from ..models import CurvePoint, DailySummary, MarketEvent, PriceTick
 from .news import classify_tags
 from ..schemas import CollectResult, CurvePointOut, CurveResponse, DaySummary, LatestQuote, MarketEventOut
 from ..timeutil import format_clock, from_unix_seconds, now_local, trade_date_of, trade_date_today
-from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_today_chart
+from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_london_gold, fetch_today_chart
 from .watch import evaluate_move
 
 
@@ -146,7 +146,7 @@ def get_latest_quote(db: Session) -> Optional[LatestQuote]:
     tick = db.scalars(select(PriceTick).order_by(PriceTick.id.desc()).limit(1)).first()
     if not tick:
         return None
-    return LatestQuote(
+    payload = LatestQuote(
         price=tick.price,
         yesterday_price=tick.yesterday_price,
         change_amt=tick.change_amt,
@@ -156,6 +156,14 @@ def get_latest_quote(db: Session) -> Optional[LatestQuote]:
         source=tick.source,
         trade_date=tick.trade_date,
     )
+    spot = fetch_london_gold()
+    if spot:
+        payload.london_usd = spot["london_usd"]
+        payload.london_prev = spot["london_prev"]
+        payload.london_change_amt = spot["london_change_amt"]
+        payload.london_change_rate = spot["london_change_rate"]
+        payload.london_source = spot["london_source"]
+    return payload
 
 
 def summary_to_schema(row: DailySummary) -> DaySummary:

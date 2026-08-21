@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..analysis.advice import build_advice
 from ..analysis.attribution import compute_attribution
 from ..analysis.refresh import refresh_attribution_data
+from ..analysis.sessions import snapshot as session_snapshot
 from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
 from ..database import get_db
 from ..formula import rule_payload
@@ -23,6 +24,7 @@ from ..schemas import (
     LatestQuote,
     MarketEventOut,
     RefreshResult,
+    SessionSnapshot,
 )
 from ..timeutil import now_local, trade_date_today
 
@@ -82,6 +84,11 @@ def events(
 @router.get("/advice", response_model=AdviceResponse)
 def advice(db: Session = Depends(get_db)):
     return build_advice(db)
+
+
+@router.get("/sessions", response_model=SessionSnapshot)
+def sessions(db: Session = Depends(get_db)):
+    return session_snapshot(db)
 
 
 @router.get("/analysis/weights", response_model=AttributionResponse)

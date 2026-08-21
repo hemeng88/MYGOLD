@@ -1,4 +1,4 @@
-import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent } from "./types";
+import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -35,4 +35,5 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteLot: (id: number) => request<{ ok: boolean }>(`/api/holdings/lots/${id}`, { method: "DELETE" }),
+  sessions: () => request<SessionSnapshot>("/api/sessions"),
 };

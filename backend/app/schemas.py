@@ -13,6 +13,11 @@ class LatestQuote(BaseModel):
     collected_at: Optional[datetime] = None
     source: str
     trade_date: str
+    london_usd: Optional[float] = None
+    london_prev: Optional[float] = None
+    london_change_amt: Optional[float] = None
+    london_change_rate: Optional[float] = None
+    london_source: Optional[str] = None
 
 
 class CurvePointOut(BaseModel):
@@ -176,6 +181,16 @@ class AdviceFactor(BaseModel):
     days: int
 
 
+class AdviceSession(BaseModel):
+    band: Optional[str] = None
+    band_label: Optional[str] = None
+    clock: Optional[str] = None
+    open_count: int = 0
+    open_names: List[str] = Field(default_factory=list)
+    hour_vol_rank_pct: Optional[int] = None
+    profile_days: int = 0
+
+
 class AdviceResponse(BaseModel):
     ready: bool
     message: Optional[str] = None
@@ -203,6 +218,61 @@ class AdviceResponse(BaseModel):
     sell_levels: List[AdviceLevel] = Field(default_factory=list)
     drivers: List[AdviceDriver] = Field(default_factory=list)
     notes: List[str] = Field(default_factory=list)
+    session: Optional[AdviceSession] = None
+
+
+class SessionRange(BaseModel):
+    start: str
+    end: str
+    start_min: int
+    end_min: int
+
+
+class SessionExchange(BaseModel):
+    id: str
+    name: str
+    region: str
+    timezone: str
+    source: str
+    open: bool
+    weekend: bool
+    ranges: List[SessionRange] = Field(default_factory=list)
+
+
+class SessionBand(BaseModel):
+    id: str
+    label: str
+    color: str
+
+
+class SessionHour(BaseModel):
+    hour: int
+    label: str
+    samples: int
+    mean_pct: Optional[float] = None
+    abs_pct: Optional[float] = None
+    win_rate: Optional[int] = None
+
+
+class SessionSnapshot(BaseModel):
+    as_of: str
+    timezone: str
+    clock: str
+    clock_min: int
+    band: str
+    band_label: str
+    open_count: int
+    open_names: List[str] = Field(default_factory=list)
+    exchanges: List[SessionExchange] = Field(default_factory=list)
+    bands: List[SessionBand] = Field(default_factory=list)
+    hour_profile: List[SessionHour] = Field(default_factory=list)
+    hour_abs_pct: Optional[float] = None
+    hour_mean_pct: Optional[float] = None
+    hour_win_rate: Optional[int] = None
+    hour_samples: int = 0
+    hour_vol_rank_pct: Optional[int] = None
+    profile_days: int = 0
+    note: str = ""
 
 
 class RefreshResult(BaseModel):

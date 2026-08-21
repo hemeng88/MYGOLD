@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     )
     goldmonitor_latest_url: str = "https://jin.20021002.xyz/api.php?type=zs"
     goldmonitor_chart_url: str = "https://jin.20021002.xyz/api.php?action=chart&type=zs"
+    london_gold_url: str = "https://hq.sinajs.cn/list=hf_XAU"
 
     request_timeout_seconds: float = 15.0
 
