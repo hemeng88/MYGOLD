@@ -88,6 +88,7 @@ export function AdviceModal({
             <Text size="xs" c="dimmed">
               {advice.session.clock} · {advice.session.band_label}
               {advice.session.open_count ? ` · ${advice.session.open_count} 家交易所开盘` : ""}
+              {advice.session.hot_open?.length ? ` · 影响大：${advice.session.hot_open.slice(0, 2).join("、")}` : ""}
             </Text>
           ) : null}
 
@@ -117,9 +118,15 @@ export function AdviceModal({
                     <Text size="xs" c="dimmed">
                       {factor.detail}
                     </Text>
-                    <Text size="xs" c="dimmed">
-                      历史 {factor.days} 天：次日上涨 {factor.win_rate}%，平均 {signed(factor.mean_next)}%
-                    </Text>
+                    {factor.kind === "recent" ? (
+                      <Text size="xs" c="dimmed">
+                        近 {factor.days} 个观测，只作战术参考，不是长期胜率
+                      </Text>
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        历史 {factor.days} 天：次日上涨 {factor.win_rate}%，平均 {signed(factor.mean_next)}%
+                      </Text>
+                    )}
                   </div>
                 ))}
               </Stack>

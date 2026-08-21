@@ -176,9 +176,10 @@ class AdviceFactor(BaseModel):
     label: str
     detail: str
     score: float
-    win_rate: int
-    mean_next: float
+    win_rate: Optional[int] = None
+    mean_next: Optional[float] = None
     days: int
+    kind: str = "hist"
 
 
 class AdviceSession(BaseModel):
@@ -189,6 +190,8 @@ class AdviceSession(BaseModel):
     open_names: List[str] = Field(default_factory=list)
     hour_vol_rank_pct: Optional[int] = None
     profile_days: int = 0
+    hot_names: List[str] = Field(default_factory=list)
+    hot_open: List[str] = Field(default_factory=list)
 
 
 class AdviceResponse(BaseModel):

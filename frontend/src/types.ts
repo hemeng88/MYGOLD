@@ -95,9 +95,10 @@ export interface AdviceFactor {
   label: string;
   detail: string;
   score: number;
-  win_rate: number;
-  mean_next: number;
+  win_rate?: number | null;
+  mean_next?: number | null;
   days: number;
+  kind?: string;
 }
 
 export interface Advice {
@@ -138,6 +139,8 @@ export interface AdviceSession {
   open_names: string[];
   hour_vol_rank_pct: number | null;
   profile_days: number;
+  hot_names?: string[];
+  hot_open?: string[];
 }
 
 export interface SessionRange {

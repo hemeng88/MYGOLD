@@ -1,8 +1,9 @@
 """买卖参考价位。
 
 规则很朴素：用沪金日线算出均线、ATR 和近期高低点，换算到积存金报价上，
-再看当前价站在哪个位置，给出分批买入档、卖出档和保本线。
+再看当前价站在哪个位置，叠近两日涨跌和交易所开盘时段，给出分批买入档、卖出档和保本线。
 卖出手续费 0.4% 是硬约束——低于保本价卖出必亏，所以任何减仓建议都要先过这道线。
+高位连涨时禁止追买；时段样本不够 20 天就改用近几日这个钟点的实际流向，不当长期胜率。
 """
 
 import statistics
@@ -73,7 +74,38 @@ def _recent_drivers(db: Session, days: int = 5) -> List[Dict]:
     return [{"tag": tag, "share_pct": round(score / total * 100, 1)} for tag, score in ranked]
 
 
-def _factor(name: str, label: str, detail: str, stats: Optional[Dict]) -> Optional[Dict]:
+def _recent_tape(db: Session, price: float) -> Optional[Dict]:
+    """积存金最近两个交易日的涨跌，今天用现价相对昨收重算。"""
+    rows = db.scalars(select(DailySummary).order_by(DailySummary.trade_date.desc()).limit(4)).all()
+    if len(rows) < 2:
+        return None
+    ordered = list(reversed(rows[:3]))
+    changes = []
+    for row in ordered:
+        pct = row.change_rate
+        if pct is None and row.close_price and row.prev_close:
+            pct = (row.close_price / row.prev_close - 1) * 100
+        if pct is None:
+            continue
+        changes.append({"date": row.trade_date, "pct": float(pct)})
+    if changes and rows[0].prev_close:
+        changes[-1] = {
+            "date": rows[0].trade_date,
+            "pct": (price / rows[0].prev_close - 1) * 100,
+        }
+    last2 = changes[-2:]
+    if len(last2) < 2:
+        return None
+    return {
+        "days": 2,
+        "changes": last2,
+        "sum_pct": sum(item["pct"] for item in last2),
+        "up_days": sum(1 for item in last2 if item["pct"] > 0),
+        "down_days": sum(1 for item in last2 if item["pct"] < 0),
+    }
+
+
+def _factor(name: str, label: str, detail: str, stats: Optional[Dict], kind: str = "hist") -> Optional[Dict]:
     """把一个分区的历史胜率折成 [-1, 1] 的分数，样本越薄权重压得越低。"""
     if not stats:
         return None
@@ -88,29 +120,115 @@ def _factor(name: str, label: str, detail: str, stats: Optional[Dict]) -> Option
         "win_rate": stats["win_rate"],
         "mean_next": stats["mean_next"],
         "days": days,
+        "kind": kind,
     }
 
 
 def _session_factor(session: Optional[Dict]) -> Optional[Dict]:
-    """当前钟点的金价方向，只有折进出足够多的盘中小时样本才打分。"""
+    """当前钟点的金价方向：样本够就用历史胜率，不够就用近几日这个钟点的实际流向。"""
     if not session:
         return None
     samples = session.get("hour_samples") or 0
     win_rate = session.get("hour_win_rate")
     mean_pct = session.get("hour_mean_pct")
-    if samples < MIN_ZONE_DAYS or win_rate is None or mean_pct is None:
+    if samples >= MIN_ZONE_DAYS and win_rate is not None and mean_pct is not None:
+        return _factor(
+            "session",
+            "交易时段",
+            "现在是%s，这个钟点历史上金价上涨 %d%%"
+            % (session.get("band_label") or "未知时段", win_rate),
+            {"days": samples, "win_rate": win_rate, "mean_next": mean_pct},
+        )
+    days = session.get("profile_days") or 0
+    if days < 1 or mean_pct is None or samples < 1:
         return None
-    return _factor(
-        "session",
-        "交易时段",
-        "现在是%s，这个钟点历史上金价上涨 %d%%"
-        % (session.get("band_label") or "未知时段", win_rate),
-        {"days": samples, "win_rate": win_rate, "mean_next": mean_pct},
-    )
+    shrink = samples / (samples + 8)
+    score = max(-1.0, min(1.0, mean_pct / 0.35)) * shrink * 0.65
+    hots = [
+        item["name"]
+        for item in session.get("exchanges") or []
+        if item.get("hot") and item.get("open")
+    ]
+    if hots:
+        score *= 1.2
+    score = max(-0.22, min(0.22, score))
+    who = "；影响较大的%s也在开" % "、".join(hots[:2]) if hots else ""
+    return {
+        "name": "session",
+        "label": "交易时段",
+        "detail": "近%d日这个钟点金价平均 %+.2f%%（%d 个观测）%s"
+        % (days, mean_pct, samples, who),
+        "score": round(score, 3),
+        "win_rate": win_rate,
+        "mean_next": mean_pct,
+        "days": samples,
+        "kind": "recent",
+    }
 
 
-def _direction_score(z: float, regime: Optional[Dict], session: Optional[Dict] = None) -> Dict:
-    """位置、事件方向、交易时段。能拿到实测胜率的才进分，进不去的记到 skipped。"""
+def _stretch_factor(z: float, tape: Optional[Dict]) -> Optional[Dict]:
+    """高位连涨不追。8/19 之后又走出两根阳线，位置因子却因样本不足被跳过。"""
+    if not tape:
+        return None
+    run = tape["sum_pct"]
+    labels = "、".join("%s %+.2f%%" % (item["date"][5:], item["pct"]) for item in tape["changes"])
+    if z >= 1.5 and run > 0:
+        mag = min(0.45, 0.12 * z + 0.08 * min(run, 2.5))
+        return {
+            "name": "stretch",
+            "label": "近两日位置",
+            "detail": "近两日 %s，现价已高出均线 %.1f 个 ATR，连涨后不追" % (labels, z),
+            "score": round(-mag, 3),
+            "win_rate": None,
+            "mean_next": round(run, 2),
+            "days": tape["days"],
+            "kind": "recent",
+        }
+    if z <= -1.2 and run < 0:
+        mag = min(0.28, 0.08 * abs(z) + 0.05 * min(abs(run), 2.5))
+        return {
+            "name": "stretch",
+            "label": "近两日位置",
+            "detail": "近两日 %s，现价低于均线 %.1f 个 ATR" % (labels, abs(z)),
+            "score": round(mag, 3),
+            "win_rate": None,
+            "mean_next": round(run, 2),
+            "days": tape["days"],
+            "kind": "recent",
+        }
+    return None
+
+
+def _hot_open_names(session: Optional[Dict]) -> List[str]:
+    if not session:
+        return []
+    return [
+        item["name"]
+        for item in session.get("exchanges") or []
+        if item.get("hot") and item.get("open")
+    ]
+
+
+def _vol_boost(session: Optional[Dict]) -> float:
+    """近两日波动大的钟点、高影响交易所开盘时，把买卖档拉开一点。"""
+    boost = 1.0
+    if not session:
+        return boost
+    rank = session.get("hour_vol_rank_pct")
+    if rank is not None and rank >= 70:
+        boost += 0.15
+    if _hot_open_names(session):
+        boost += 0.1
+    return boost
+
+
+def _direction_score(
+    z: float,
+    regime: Optional[Dict],
+    session: Optional[Dict] = None,
+    tape: Optional[Dict] = None,
+) -> Dict:
+    """位置、事件、近两日路径、交易时段。历史胜率不够的分区不进分。"""
     if z <= -1.0:
         zone, zone_label = "low", "低于均线一个 ATR 以上"
     elif z >= 1.5:
@@ -138,8 +256,8 @@ def _direction_score(z: float, regime: Optional[Dict], session: Optional[Dict] =
                 ),
             )
         )
+    candidates.append(("近两日位置", _stretch_factor(z, tape)))
     candidates.append(("交易时段", _session_factor(session)))
-    # 样本不到 MIN_ZONE_DAYS 的分区拿不到胜率，直接不参与打分，并记下来告诉用户
     skipped = [name for name, item in candidates if not item]
     factors = [item for _, item in candidates if item]
     if not factors:
@@ -158,6 +276,7 @@ def evaluate(
     position: Dict,
     regime: Optional[Dict] = None,
     session: Optional[Dict] = None,
+    tape: Optional[Dict] = None,
 ) -> Dict:
     """给定价格、日线、持仓和事件环境算出档位。不碰数据库，方便回算历史某一天。"""
     scale = basis["scale"]
@@ -193,9 +312,10 @@ def evaluate(
     has_position = bool(position.get("total_grams"))
     in_profit = bool(breakeven and price > breakeven)
 
-    direction = _direction_score(z, regime, session=session)
+    direction = _direction_score(z, regime, session=session, tape=tape)
     score = direction["score"]
     high_side = z >= HIGH_ZONE
+    stretched_run = bool(high_side and tape and tape.get("sum_pct", 0) > 0.4 and tape.get("up_days", 0) >= 2)
 
     if not direction["factors"]:
         stance = "hold"
@@ -209,7 +329,11 @@ def evaluate(
         )
     elif score > -DIRECTION_EDGE:
         stance = "hold"
-        headline = "优势不明显，观望；真想买就挂在下面第一档等回落"
+        headline = (
+            "近两日已经在均线上方连涨，先观望，真想买就挂在下面第一档"
+            if stretched_run
+            else "优势不明显，观望；真想买就挂在下面第一档等回落"
+        )
     else:
         stance = "reduce" if in_profit else "wait"
         headline = (
@@ -217,6 +341,9 @@ def evaluate(
             if in_profit
             else "环境偏差，别加仓；现价卖出还不够保本，先等"
         )
+    if stance == "accumulate" and stretched_run:
+        stance = "hold"
+        headline = "事件仍偏多，但近两日已在高位连涨，不追，等回落再看买入档"
     # 数据不支持「偏高就该等回踩」，但价格离均线多远总该讲清楚
     notes_extra = (
         "价格已高于均线 %.1f 个 ATR，买入档都设在现价下方，等回落再接。" % z
@@ -251,10 +378,11 @@ def evaluate(
         kept.sort(key=lambda item: item["price"], reverse=below)
         return kept
 
+    step = atr * _vol_boost(session)
     buy_levels = ladder(
         [
-            (price - 0.5 * atr, "回落半个 ATR，试探性买"),
-            (price - 1.2 * atr, "再跌一个多 ATR，加一档"),
+            (price - 0.5 * step, "回落半个 ATR，试探性买"),
+            (price - 1.2 * step, "再跌一个多 ATR，加一档"),
             (ma20, "回踩 20 日均线"),
             (swing_low, "近 20 日低点，跌破就别接了"),
         ],
@@ -267,9 +395,9 @@ def evaluate(
         [
             (floor, "保本线（含 %.1f%% 卖出费），到这儿才不亏" % (settings.sell_fee_rate * 100)),
             (swing_high, "近 20 日高点，站不上就走"),
-            (price + 0.6 * atr, "反弹半个多 ATR，减一部分"),
-            (price + 1.5 * atr, "冲高一个半 ATR，再减一档"),
-            ((floor or price) + 0.8 * atr, "越过保本再涨一段，走一批"),
+            (price + 0.6 * step, "反弹半个多 ATR，减一部分"),
+            (price + 1.5 * step, "冲高一个半 ATR，再减一档"),
+            ((floor or price) + 0.8 * step, "越过保本再涨一段，走一批"),
         ],
         below=False,
         bound=floor,
@@ -292,10 +420,11 @@ def evaluate(
         )
     if notes_extra:
         notes.append(notes_extra)
-    if direction.get("skipped"):
+    hist_skipped = [name for name in direction.get("skipped") or [] if name in ("价格位置", "事件方向")]
+    if hist_skipped:
         notes.append(
             "%s这个因子今天不参与打分：所处分区历史样本不足 %d 天，胜率算不准。"
-            % ("、".join(direction["skipped"]), MIN_ZONE_DAYS)
+            % ("、".join(hist_skipped), MIN_ZONE_DAYS)
         )
     if session:
         names = session.get("open_names") or []
@@ -306,16 +435,27 @@ def evaluate(
             )
         elif session.get("band_label"):
             notes.append("此刻东八区 %s，主要股票市场都还没开。" % session.get("clock", ""))
-        if session.get("hour_samples", 0) < MIN_ZONE_DAYS:
+        if any(item.get("name") == "session" and item.get("kind") == "recent" for item in direction["factors"]):
+            notes.append(
+                "交易时段按近 %d 日盘中流向打分，观测不够当长期胜率，只作战术参考。"
+                % (session.get("profile_days") or 0)
+            )
+        elif session.get("hour_samples", 0) < MIN_ZONE_DAYS:
             notes.append(
                 "交易时段还没进打分：盘中曲线只折进了 %d 天，少于 %d 天不算数。"
                 % (session.get("profile_days") or 0, MIN_ZONE_DAYS)
             )
-        elif session.get("hour_vol_rank_pct") is not None:
+        if session.get("hour_vol_rank_pct") is not None:
             notes.append(
                 "这个钟点的金价振幅处在已观测小时的第 %d 百分位。"
                 % session["hour_vol_rank_pct"]
             )
+        hot_open = _hot_open_names(session)
+        if hot_open:
+            notes.append("当前开着、近两日金价波动较大的交易所：%s。" % "、".join(hot_open[:3]))
+        boost = _vol_boost(session)
+        if boost > 1.01:
+            notes.append("这个钟点波动偏大，买入卖出档按 %.0f%% 放宽。" % ((boost - 1) * 100))
     if regime and regime.get("volume_rank_pct") is not None:
         # 原先这里写「声量高的日子次日振幅更大」，实测 r 只有 0.04 且分区不单调，
         # 站不住，改成只报位置不下结论
@@ -374,6 +514,7 @@ def build_advice(db: Session) -> Dict:
     holdings = list_holdings(db)
     conditions = measure(db)
     session = session_snapshot(db)
+    tape = _recent_tape(db, price)
     result = evaluate(
         price,
         bars,
@@ -386,6 +527,7 @@ def build_advice(db: Session) -> Dict:
         },
         regime=conditions,
         session=session,
+        tape=tape,
     )
     if not result.get("ready"):
         return result
@@ -406,5 +548,7 @@ def build_advice(db: Session) -> Dict:
         "open_names": session.get("open_names"),
         "hour_vol_rank_pct": session.get("hour_vol_rank_pct"),
         "profile_days": session.get("profile_days"),
+        "hot_names": [item["name"] for item in session.get("exchanges") or [] if item.get("hot")][:3],
+        "hot_open": _hot_open_names(session),
     }
     return result
