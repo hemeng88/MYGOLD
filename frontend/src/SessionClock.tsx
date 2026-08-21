@@ -91,7 +91,7 @@ export function SessionClock({
       <svg
         viewBox={`0 0 ${size} ${size}`}
         width="100%"
-        height={compact ? 260 : 340}
+        height={compact ? 240 : 340}
         role="img"
         aria-label="全球交易所交易时段"
         onMouseLeave={() => {
@@ -188,8 +188,11 @@ export function SessionClock({
           : "当前主要股票市场都未开盘"}
       </Text>
       <div className="session-schedule" onMouseLeave={onLeave}>
-        <Text size="xs" c="dimmed" mb={6}>
-          按北京时间开盘先后
+        <Text size="sm" fw={600} mb={2}>
+          各交易所开盘时间
+        </Text>
+        <Text size="xs" c="dimmed" mb={8}>
+          按北京时间先后，点一行可对照圆盘和曲线
         </Text>
         {schedule.map(({ exchange }) => {
           const color = REGION_COLOR[exchange.region] || "#8c8170";
@@ -199,6 +202,7 @@ export function SessionClock({
               key={exchange.id}
               className={`session-row${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}`}
               onMouseEnter={() => onHoverExchange(exchange)}
+              onClick={() => onHoverExchange(on ? null : exchange)}
             >
               <span className="session-time">{formatRanges(exchange.ranges)}</span>
               <span className="session-name">
