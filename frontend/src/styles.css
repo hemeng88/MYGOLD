@@ -173,64 +173,38 @@ body {
   font-family: "Fraunces", serif;
 }
 
-.session-schedule {
-  margin-top: 12px;
-  overflow: visible;
+.session-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
 }
 
-.session-row {
-  display: grid;
-  grid-template-columns: minmax(108px, max-content) minmax(0, 1fr) 32px;
-  gap: 8px;
-  align-items: start;
-  padding: 5px 8px;
-  border-radius: 8px;
-  border: 1px solid transparent;
+.session-chip {
+  appearance: none;
+  border: 1px solid rgba(212, 175, 55, 0.16);
+  background: rgba(255, 255, 255, 0.03);
+  color: #f4ead6;
+  border-radius: 999px;
+  padding: 6px 10px;
+  min-height: 32px;
+  font-size: 12px;
+  line-height: 1;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.session-row.is-open {
-  background: rgba(212, 175, 55, 0.08);
+.session-chip.is-open {
+  border-color: var(--chip, #d4af37);
+  color: var(--chip, #d4af37);
 }
 
-.session-row.is-on,
-.session-row:hover {
-  background: rgba(212, 175, 55, 0.16);
-  border-color: rgba(212, 175, 55, 0.28);
-}
-
-.session-time {
-  color: #c9b896;
-  font-size: 11px;
-  line-height: 1.45;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.session-name {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  color: #f4ead6;
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.session-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-top: 6px;
-  border-radius: 50%;
-  flex: 0 0 6px;
-}
-
-.session-state {
-  color: #d4af37;
-  font-size: 11px;
-  line-height: 1.45;
-  text-align: right;
+.session-chip.is-on,
+.session-chip:hover {
+  background: rgba(212, 175, 55, 0.18);
+  border-color: #d4af37;
+  color: #f6edd4;
 }
 
 @media (max-width: 52em) {
@@ -238,34 +212,10 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .session-schedule {
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid rgba(212, 175, 55, 0.12);
-  }
-
-  .session-row {
-    grid-template-columns: 1fr auto;
-    gap: 2px 10px;
-    padding: 8px 10px;
-  }
-
-  .session-name {
-    grid-column: 1;
-    grid-row: 1;
+  .session-chip {
+    min-height: 36px;
+    padding: 8px 12px;
     font-size: 13px;
-  }
-
-  .session-time {
-    grid-column: 1;
-    grid-row: 2;
-    white-space: normal;
-  }
-
-  .session-state {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
   }
 }
 

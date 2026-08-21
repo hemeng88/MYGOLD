@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { Group, Text } from "@mantine/core";
 import type { SessionExchange, SessionHour, SessionRange, SessionSnapshot } from "./types";
 
@@ -6,6 +6,30 @@ const REGION_COLOR: Record<string, string> = {
   asia: "#7eb6d4",
   emea: "#d4af37",
   americas: "#d24b3a",
+};
+
+const SHORT_NAME: Record<string, string> = {
+  nzx: "新西兰",
+  asx: "澳洲",
+  tse: "东京",
+  sse: "上交所",
+  hkex: "港交所",
+  sgx: "新加坡",
+  nse: "印度",
+  dfm: "迪拜",
+  tadawul: "沙特",
+  jse: "约翰内斯堡",
+  moex: "莫斯科",
+  lse: "伦敦",
+  xetra: "法兰克福",
+  six: "瑞士",
+  bme: "马德里",
+  stockholm: "斯德哥尔摩",
+  nyse: "纽交所",
+  nasdaq: "纳斯达克",
+  tsx: "多伦多",
+  chx: "芝加哥",
+  b3: "巴西",
 };
 
 function rangeLabel(range: SessionRange) {
@@ -85,6 +109,7 @@ export function SessionClock({
         .sort((a, b) => openSortKey(a.exchange) - openSortKey(b.exchange) || a.index - b.index),
     [data.exchanges],
   );
+  const picked = data.exchanges.find((item) => item.id === highlightId) || null;
 
   return (
     <div className="session-clock">
@@ -187,33 +212,33 @@ export function SessionClock({
           ? `当前 ${data.open_count} 家开盘：${data.open_names.slice(0, 4).join("、")}${data.open_names.length > 4 ? "…" : ""}`
           : "当前主要股票市场都未开盘"}
       </Text>
-      <div className="session-schedule" onMouseLeave={onLeave}>
-        <Text size="sm" fw={600} mb={2}>
-          各交易所开盘时间
-        </Text>
-        <Text size="xs" c="dimmed" mb={8}>
-          按北京时间先后，点一行可对照圆盘和曲线
-        </Text>
+      <div className="session-chips">
         {schedule.map(({ exchange }) => {
           const color = REGION_COLOR[exchange.region] || "#8c8170";
           const on = highlightId === exchange.id;
           return (
-            <div
+            <button
               key={exchange.id}
-              className={`session-row${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}`}
-              onMouseEnter={() => onHoverExchange(exchange)}
+              type="button"
+              className={`session-chip${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}`}
+              style={{ "--chip": color } as CSSProperties}
               onClick={() => onHoverExchange(on ? null : exchange)}
             >
-              <span className="session-time">{formatRanges(exchange.ranges)}</span>
-              <span className="session-name">
-                <i className="session-dot" style={{ background: color }} />
-                {exchange.name}
-              </span>
-              <span className="session-state">{exchange.open ? "开盘" : exchange.weekend ? "休市" : ""}</span>
-            </div>
+              {SHORT_NAME[exchange.id] || exchange.name}
+            </button>
           );
         })}
       </div>
+      {picked ? (
+        <Text size="xs" ta="center" mt={8} c="#f4ead6">
+          {picked.name}  {formatRanges(picked.ranges)}
+          {picked.open ? "  · 开盘" : picked.weekend ? "  · 休市" : ""}
+        </Text>
+      ) : (
+        <Text size="xs" c="dimmed" ta="center" mt={8}>
+          点所名可对照圆盘和曲线，时间是北京时间
+        </Text>
+      )}
     </div>
   );
 }
