@@ -32,7 +32,7 @@ if [ -f .env ]; then
   DOMAIN="$(grep -E '^MYGOLD_DOMAIN=' .env | tail -n 1 | cut -d= -f2- | tr -d '[:space:]')"
 fi
 if [ -z "$DOMAIN" ]; then
-  DOMAIN="ohmygod.icu"
+  DOMAIN="ohmygold.icu"
   echo "MYGOLD_DOMAIN=$DOMAIN" >> .env
 fi
 
