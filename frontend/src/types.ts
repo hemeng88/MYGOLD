@@ -291,12 +291,17 @@ export interface StockItem {
   headline: string | null;
   z_score: number | null;
   vs_index_pct?: number | null;
+  news_label?: string | null;
+  win_rate?: number | null;
+  predicted_points?: number | null;
+  lot_cost?: number | null;
   as_of: string | null;
   ready: boolean;
 }
 
 export interface StockList {
   session: string;
+  budget?: number | null;
   items: StockItem[];
 }
 
@@ -344,6 +349,17 @@ export interface StockAdvice {
   sell_levels: StockLevel[];
   session: string | null;
   notes: string[];
+  news_lean?: number | null;
+  news_label?: string | null;
+  news?: { title: string; url?: string | null; kind?: string | null; tags: string[]; score: number; published_at?: string | null }[];
+  win_rate?: number | null;
+  win_samples?: number | null;
+  horizon_days?: number | null;
+  predicted_points?: number | null;
+  predicted_price?: number | null;
+  lot_size?: number | null;
+  lot_cost?: number | null;
+  budget?: number | null;
   as_of: string | null;
 }
 

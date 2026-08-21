@@ -30,7 +30,9 @@ from ..schemas import (
     StockDetailResponse,
     StockListResponse,
     StockRefreshResult,
+    StockSettings,
 )
+from ..prefs import get_budget, set_budget
 from ..stocks.collector import refresh_stocks
 from ..stocks.universe import meta_of
 from ..timeutil import now_local, trade_date_today
@@ -145,6 +147,16 @@ def remove_lot(lot_id: int, db: Session = Depends(get_db)):
 @router.get("/stocks", response_model=StockListResponse)
 def stocks(db: Session = Depends(get_db)):
     return list_stocks(db)
+
+
+@router.get("/stocks/settings", response_model=StockSettings)
+def stock_settings(db: Session = Depends(get_db)):
+    return {"budget": get_budget(db)}
+
+
+@router.put("/stocks/settings", response_model=StockSettings)
+def update_stock_settings(payload: StockSettings, db: Session = Depends(get_db)):
+    return {"budget": set_budget(db, payload.budget)}
 
 
 @router.get("/stocks/{code}", response_model=StockDetailResponse)

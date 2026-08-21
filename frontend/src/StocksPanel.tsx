@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
-import { Badge, Button, Group, Paper, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, NumberInput, Paper, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconRefresh } from "@tabler/icons-react";
 import { api } from "./api";
@@ -40,20 +40,23 @@ export function StocksPanel() {
   const [picked, setPicked] = useState<string | null>(null);
   const [detail, setDetail] = useState<StockDetail | null>(null);
   const [advice, setAdvice] = useState<StockAdvice | null>(null);
+  const [budgetInput, setBudgetInput] = useState<number | string>(15000);
+  const [savingBudget, setSavingBudget] = useState(false);
 
-  const loadList = async () => {
+  const loadList = async (syncBudget = false) => {
     const next = await api.stocks();
     setList(next);
+    if (syncBudget && next.budget != null) setBudgetInput(next.budget);
     setLoading(false);
   };
 
   useEffect(() => {
-    loadList().catch((err) => {
+    loadList(true).catch((err) => {
       setLoading(false);
       notifications.show({ color: "red", title: "股票列表读不到", message: err instanceof Error ? err.message : "稍后重试" });
     });
     const timer = window.setInterval(() => {
-      loadList().catch(() => undefined);
+      loadList(false).catch(() => undefined);
     }, 20000);
     return () => window.clearInterval(timer);
   }, []);
@@ -92,6 +95,32 @@ export function StocksPanel() {
     }
   };
 
+  const onSaveBudget = async () => {
+    const value = Number(budgetInput);
+    if (!Number.isFinite(value) || value < 1000) {
+      notifications.show({ color: "red", title: "预算不对", message: "至少 1000 元" });
+      return;
+    }
+    if (list?.budget != null && value === list.budget) return;
+    setSavingBudget(true);
+    try {
+      const saved = await api.saveStockSettings(value);
+      setBudgetInput(saved.budget);
+      const next = await api.stocks();
+      setList(next);
+      if (picked && !next.items.some((item) => item.code === picked)) {
+        setPicked(null);
+        setDetail(null);
+        setAdvice(null);
+      }
+      notifications.show({ color: "teal", title: "预算已保存", message: `一手上限 ${saved.budget} 元` });
+    } catch (err) {
+      notifications.show({ color: "red", title: "预算没存上", message: err instanceof Error ? err.message : "稍后重试" });
+    } finally {
+      setSavingBudget(false);
+    }
+  };
+
   const option = useMemo(() => {
     const bars = detail?.bars || [];
     return {
@@ -105,8 +134,8 @@ export function StocksPanel() {
       grid: { left: 44, right: 10, top: 16, bottom: 28 },
       xAxis: {
         type: "category",
-        data: bars.map((bar) => bar.date.slice(5)),
-        axisLabel: { color: "#8c8170" },
+        data: bars.map((bar) => bar.date.slice(2)),
+        axisLabel: { color: "#8c8170", hideOverlap: true },
         axisLine: { lineStyle: { color: "rgba(212,175,55,0.16)" } },
       },
       yAxis: {
@@ -133,12 +162,33 @@ export function StocksPanel() {
         <div>
           <Text fw={600}>A股观察池</Text>
           <Text size="xs" c="dimmed" mt={4}>
-            {list?.session || "读取时段中"} · 个股看自身趋势和相对沪深300，不套黄金逻辑
+            {list?.session || "读取时段中"} · 只看一手买得起的，日线和资讯会尽量多拉
           </Text>
         </div>
-        <Button variant="light" color="gold" size="xs" loading={refreshing} onClick={onRefresh} leftSection={<IconRefresh size={14} />}>
-          刷新行情
-        </Button>
+        <Group gap="xs" wrap="nowrap">
+          <NumberInput
+            size="xs"
+            w={132}
+            min={1000}
+            step={1000}
+            thousandSeparator
+            prefix="¥"
+            hideControls
+            value={budgetInput}
+            onChange={setBudgetInput}
+            onBlur={onSaveBudget}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                (event.currentTarget as HTMLInputElement).blur();
+              }
+            }}
+            disabled={savingBudget}
+            aria-label="买入预算"
+          />
+          <Button variant="light" color="gold" size="xs" loading={refreshing} onClick={onRefresh} leftSection={<IconRefresh size={14} />}>
+            刷新行情和消息
+          </Button>
+        </Group>
       </Group>
 
       {loading && !list ? (
@@ -158,9 +208,35 @@ export function StocksPanel() {
       {picked && advice ? (
         <Stack gap="sm" mt="md">
           <Text size="sm">{advice.headline || advice.message}</Text>
-          {detail?.bars?.length ? <ReactECharts option={option} style={{ height: 220 }} notMerge /> : null}
+          {detail?.bars?.length ? <ReactECharts option={option} style={{ height: 260 }} notMerge /> : null}
           {advice.ready ? (
             <>
+              <SimpleGrid cols={3} spacing="xs">
+                <Paper className="stat-tile" p="xs">
+                  <Text size="xs" c="dimmed">
+                    {advice.horizon_days || 3}日胜率
+                  </Text>
+                  <Text fw={600} size="sm">
+                    {advice.win_rate == null ? "样本不足" : `${fmt(advice.win_rate, 1)}%`}
+                  </Text>
+                </Paper>
+                <Paper className="stat-tile" p="xs">
+                  <Text size="xs" c="dimmed">
+                    预测点数
+                  </Text>
+                  <Text fw={600} size="sm" c={tone(advice.predicted_points)}>
+                    {signed(advice.predicted_points)}
+                  </Text>
+                </Paper>
+                <Paper className="stat-tile" p="xs">
+                  <Text size="xs" c="dimmed">
+                    一手大约
+                  </Text>
+                  <Text fw={600} size="sm">
+                    {advice.lot_cost == null ? "—" : `${fmt(advice.lot_cost, 0)}元`}
+                  </Text>
+                </Paper>
+              </SimpleGrid>
               <SimpleGrid cols={3} spacing="xs">
                 <Paper className="stat-tile" p="xs">
                   <Text size="xs" c="dimmed">
@@ -187,6 +263,36 @@ export function StocksPanel() {
                   </Text>
                 </Paper>
               </SimpleGrid>
+              {advice.news_label ? (
+                <Text size="xs" c="dimmed">
+                  消息：{advice.news_label}
+                  {advice.news_lean != null ? `（${signed(advice.news_lean, 2)}）` : ""}
+                  。标题打分，不是涨跌幅预测。
+                </Text>
+              ) : null}
+              {advice.news?.length ? (
+                <div>
+                  <Text size="xs" c="dimmed" fw={600} mb={4}>
+                    最近公告 / 资讯
+                  </Text>
+                  {advice.news.slice(0, 12).map((item) => (
+                    <Group key={`${item.kind}-${item.title}`} justify="space-between" gap="xs" wrap="nowrap">
+                      <Text size="xs" lineClamp={1}>
+                        {item.url ? (
+                          <a href={item.url} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
+                            {item.title}
+                          </a>
+                        ) : (
+                          item.title
+                        )}
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        {item.kind === "ann" ? "公告" : item.kind === "market" ? "大盘" : "资讯"}
+                      </Text>
+                    </Group>
+                  ))}
+                </div>
+              ) : null}
               <div>
                 <Text size="xs" c="teal.4" fw={600} mb={4}>
                   关注档
@@ -256,7 +362,9 @@ function StockRow({ item, active, onPick }: { item: StockItem; active: boolean; 
           </Group>
           <Text size="xs" c="dimmed" mt={4}>
             {item.code.toUpperCase()}
-            {item.vs_index_pct != null ? ` · 相对300 ${signed(item.vs_index_pct, 1)}pt` : ""}
+            {item.lot_cost != null ? ` · 一手约${fmt(item.lot_cost, 0)}元` : ""}
+            {item.win_rate != null ? ` · 胜率${fmt(item.win_rate, 0)}%` : ""}
+            {item.predicted_points != null ? ` · ${signed(item.predicted_points)}点` : ""}
           </Text>
         </div>
         <div style={{ textAlign: "right" }}>

@@ -44,4 +44,10 @@ export const api = {
       `/api/stocks/refresh?include_bars=${includeBars}`,
       { method: "POST" },
     ),
+  saveStockSettings: (budget: number) =>
+    request<{ budget: number }>("/api/stocks/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ budget }),
+    }),
 };

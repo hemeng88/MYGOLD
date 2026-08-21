@@ -37,7 +37,10 @@ class Settings(BaseSettings):
         "CN_MarketData.getKLineData"
     )
     stock_quote_interval_seconds: int = 30
-    stock_kline_limit: int = 120
+    stock_news_interval_seconds: int = 300
+    stock_kline_limit: int = 1023
+    stock_budget_yuan: float = 15000
+    stock_forecast_horizon: int = 3
 
     request_timeout_seconds: float = 15.0
 

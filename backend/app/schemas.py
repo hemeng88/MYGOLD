@@ -329,12 +329,21 @@ class StockItem(BaseModel):
     headline: Optional[str] = None
     z_score: Optional[float] = None
     vs_index_pct: Optional[float] = None
+    news_label: Optional[str] = None
+    win_rate: Optional[float] = None
+    predicted_points: Optional[float] = None
+    lot_cost: Optional[float] = None
     as_of: Optional[datetime] = None
     ready: bool = False
 
 
+class StockSettings(BaseModel):
+    budget: float
+
+
 class StockListResponse(BaseModel):
     session: str
+    budget: Optional[float] = None
     items: List[StockItem] = Field(default_factory=list)
 
 
@@ -356,6 +365,15 @@ class StockDetailResponse(BaseModel):
     quote: Optional[StockItem] = None
     bars: List[StockBarOut] = Field(default_factory=list)
     session: Optional[str] = None
+
+
+class StockNewsItem(BaseModel):
+    title: str
+    url: Optional[str] = None
+    kind: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    score: float = 0
+    published_at: Optional[str] = None
 
 
 class StockAdviceResponse(BaseModel):
@@ -382,6 +400,17 @@ class StockAdviceResponse(BaseModel):
     sell_levels: List[StockLevel] = Field(default_factory=list)
     session: Optional[str] = None
     notes: List[str] = Field(default_factory=list)
+    news_lean: Optional[float] = None
+    news_label: Optional[str] = None
+    news: List[StockNewsItem] = Field(default_factory=list)
+    win_rate: Optional[float] = None
+    win_samples: Optional[int] = None
+    horizon_days: Optional[int] = None
+    predicted_points: Optional[float] = None
+    predicted_price: Optional[float] = None
+    lot_size: Optional[int] = None
+    lot_cost: Optional[float] = None
+    budget: Optional[float] = None
     as_of: Optional[datetime] = None
 
 
@@ -389,6 +418,7 @@ class StockRefreshResult(BaseModel):
     ok: bool
     quotes: int = 0
     bars: int = 0
+    news: int = 0
     message: str
 
 

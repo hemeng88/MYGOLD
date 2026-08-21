@@ -147,6 +147,33 @@ class StockBar(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
+class StockNews(Base):
+    """观察池相关公告和资讯，只用来给倾向，不当预测准星。"""
+
+    __tablename__ = "stock_news"
+    __table_args__ = (UniqueConstraint("source", "external_id", name="uq_stock_news_source_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(400), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    tags: Mapped[str] = mapped_column(String(80), nullable=True)
+    score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class GoldLot(Base):
     __tablename__ = "gold_lots"
 

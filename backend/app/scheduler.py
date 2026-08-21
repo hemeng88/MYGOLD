@@ -7,6 +7,7 @@ from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
 from .stocks.collector import collect_bars, collect_quotes
+from .stocks.news import collect_news
 from .stocks.universe import should_poll_quotes
 
 logger = logging.getLogger("mygold.scheduler")
@@ -55,6 +56,18 @@ async def job_stock_quotes() -> None:
         logger.info("A股报价：%s", result["message"])
     except Exception:
         logger.exception("A股报价采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_stock_news() -> None:
+    db = SessionLocal()
+    try:
+        result = await collect_news(db)
+        logger.info("股票资讯：%s", result["message"])
+    except Exception:
+        logger.exception("股票资讯采集失败")
         db.rollback()
     finally:
         db.close()
@@ -123,12 +136,22 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        job_stock_news,
+        "interval",
+        seconds=settings.stock_news_interval_seconds,
+        id="stock-news",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     logger.info(
-        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价",
+        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价，资讯每 %ss",
         settings.tick_interval_seconds,
         settings.curve_snapshot_interval_seconds,
         settings.stock_quote_interval_seconds,
+        settings.stock_news_interval_seconds,
     )
 
 
