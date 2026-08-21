@@ -328,6 +328,7 @@ class StockItem(BaseModel):
     stance: Optional[str] = None
     headline: Optional[str] = None
     z_score: Optional[float] = None
+    vs_index_pct: Optional[float] = None
     as_of: Optional[datetime] = None
     ready: bool = False
 
@@ -375,6 +376,8 @@ class StockAdviceResponse(BaseModel):
     atr: Optional[float] = None
     swing_high: Optional[float] = None
     swing_low: Optional[float] = None
+    vs_index_pct: Optional[float] = None
+    vol_ratio: Optional[float] = None
     buy_levels: List[StockLevel] = Field(default_factory=list)
     sell_levels: List[StockLevel] = Field(default_factory=list)
     session: Optional[str] = None

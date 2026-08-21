@@ -290,6 +290,7 @@ export interface StockItem {
   stance: "watch_buy" | "hold" | "no_chase" | null;
   headline: string | null;
   z_score: number | null;
+  vs_index_pct?: number | null;
   as_of: string | null;
   ready: boolean;
 }
@@ -337,6 +338,8 @@ export interface StockAdvice {
   atr: number | null;
   swing_high: number | null;
   swing_low: number | null;
+  vs_index_pct?: number | null;
+  vol_ratio?: number | null;
   buy_levels: StockLevel[];
   sell_levels: StockLevel[];
   session: string | null;

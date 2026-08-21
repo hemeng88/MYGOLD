@@ -22,9 +22,9 @@ function tone(value: number | null | undefined) {
 }
 
 const STANCE: Record<string, { label: string; color: string }> = {
-  watch_buy: { label: "关注买入", color: "teal" },
+  watch_buy: { label: "趋势关注", color: "teal" },
   hold: { label: "观望", color: "gray" },
-  no_chase: { label: "不追高", color: "yellow" },
+  no_chase: { label: "不追", color: "yellow" },
 };
 
 const KIND: Record<string, string> = {
@@ -133,7 +133,7 @@ export function StocksPanel() {
         <div>
           <Text fw={600}>A股观察池</Text>
           <Text size="xs" c="dimmed" mt={4}>
-            {list?.session || "读取时段中"} · 只给规则参考，系统不会下单
+            {list?.session || "读取时段中"} · 个股看自身趋势和相对沪深300，不套黄金逻辑
           </Text>
         </div>
         <Button variant="light" color="gold" size="xs" loading={refreshing} onClick={onRefresh} leftSection={<IconRefresh size={14} />}>
@@ -172,18 +172,18 @@ export function StocksPanel() {
                 </Paper>
                 <Paper className="stat-tile" p="xs">
                   <Text size="xs" c="dimmed">
-                    ATR
+                    相对沪深300
                   </Text>
                   <Text fw={600} size="sm">
-                    {fmt(advice.atr)}
+                    {advice.vs_index_pct == null ? "—" : `${signed(advice.vs_index_pct, 1)}pt`}
                   </Text>
                 </Paper>
                 <Paper className="stat-tile" p="xs">
                   <Text size="xs" c="dimmed">
-                    偏离
+                    量能
                   </Text>
                   <Text fw={600} size="sm">
-                    {signed(advice.z_score, 1)} ATR
+                    {advice.vol_ratio == null ? "—" : `${fmt(advice.vol_ratio)}x`}
                   </Text>
                 </Paper>
               </SimpleGrid>
@@ -256,7 +256,7 @@ function StockRow({ item, active, onPick }: { item: StockItem; active: boolean; 
           </Group>
           <Text size="xs" c="dimmed" mt={4}>
             {item.code.toUpperCase()}
-            {item.headline ? ` · ${item.headline}` : ""}
+            {item.vs_index_pct != null ? ` · 相对300 ${signed(item.vs_index_pct, 1)}pt` : ""}
           </Text>
         </div>
         <div style={{ textAlign: "right" }}>
