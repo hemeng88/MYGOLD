@@ -10,7 +10,7 @@ from ..models import CurvePoint, DailySummary, MarketEvent, PriceTick
 from .news import classify_tags
 from ..schemas import CollectResult, CurvePointOut, CurveResponse, DaySummary, LatestQuote, MarketEventOut
 from ..timeutil import format_clock, from_unix_seconds, now_local, trade_date_of, trade_date_today
-from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_london_gold, fetch_today_chart
+from .sources import Quote, fetch_latest_as_point, fetch_latest_quote, fetch_london_gold, fetch_today_chart, gold_parity
 from .watch import evaluate_move
 
 
@@ -156,13 +156,25 @@ def get_latest_quote(db: Session) -> Optional[LatestQuote]:
         source=tick.source,
         trade_date=tick.trade_date,
     )
-    spot = fetch_london_gold()
-    if spot:
+    spot = fetch_london_gold() or {}
+    if spot.get("london_usd") is not None:
         payload.london_usd = spot["london_usd"]
-        payload.london_prev = spot["london_prev"]
-        payload.london_change_amt = spot["london_change_amt"]
-        payload.london_change_rate = spot["london_change_rate"]
-        payload.london_source = spot["london_source"]
+        payload.london_prev = spot.get("london_prev")
+        payload.london_change_amt = spot.get("london_change_amt")
+        payload.london_change_rate = spot.get("london_change_rate")
+        payload.london_source = spot.get("london_source")
+    if spot.get("usdcny") is not None:
+        payload.usdcny = spot["usdcny"]
+        payload.usdcny_prev = spot.get("usdcny_prev")
+        payload.usdcny_change_amt = spot.get("usdcny_change_amt")
+        payload.usdcny_change_rate = spot.get("usdcny_change_rate")
+        payload.usdcny_source = spot.get("usdcny_source")
+    parity = gold_parity(payload.price, payload.london_usd, payload.usdcny)
+    payload.troy_ounce_grams = parity["troy_ounce_grams"]
+    payload.london_cny_gram = parity["london_cny_gram"]
+    payload.zheshang_usd_oz = parity["zheshang_usd_oz"]
+    payload.premium_cny = parity["premium_cny"]
+    payload.premium_pct = parity["premium_pct"]
     return payload
 
 

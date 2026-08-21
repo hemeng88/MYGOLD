@@ -155,29 +155,80 @@ SINA_HEADERS = {
 }
 
 
+def _sina_fields(text: str) -> Dict[str, List[str]]:
+    found: Dict[str, List[str]] = {}
+    for match in re.finditer(r'hq_str_([a-z0-9_]+)="([^"]*)"', text, re.I):
+        found[match.group(1).lower()] = match.group(2).split(",")
+    return found
+
+
+def _parse_usdcny(parts: List[str]) -> Optional[Dict[str, Any]]:
+    last = _parse_number(parts[1] if len(parts) > 1 else None)
+    prev = _parse_number(parts[3] if len(parts) > 3 else None)
+    if last is None or last < 5 or last > 12:
+        return None
+    change = round(last - prev, 4) if prev else None
+    rate = round(change / prev * 100, 3) if change is not None and prev else None
+    label = parts[9] if len(parts) > 9 else "人民币"
+    return {
+        "usdcny": last,
+        "usdcny_prev": prev,
+        "usdcny_change_amt": change,
+        "usdcny_change_rate": rate,
+        "usdcny_source": label,
+    }
+
+
 def fetch_london_gold() -> Optional[Dict[str, Any]]:
-    """伦敦金现货，美元/盎司。拿不到就返回 None，不影响积存金主价。"""
+    """伦敦金（美元/盎司）和美元兑人民币。失败不影响积存金主价。"""
     try:
         with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
             response = client.get(settings.london_gold_url, headers=SINA_HEADERS)
             response.raise_for_status()
-        text = response.content.decode("gbk", errors="ignore")
-        match = re.search(r'="([^"]+)"', text)
-        if not match:
-            return None
-        parts = match.group(1).split(",")
-        last = _parse_number(parts[0] if parts else None)
-        prev = _parse_number(parts[1] if len(parts) > 1 else None)
-        if last is None:
-            return None
-        change = round(last - prev, 2) if prev else None
-        rate = round(change / prev * 100, 3) if change is not None and prev else None
-        return {
-            "london_usd": last,
-            "london_prev": prev,
-            "london_change_amt": change,
-            "london_change_rate": rate,
-            "london_source": "sina_xau",
-        }
+        fields = _sina_fields(response.content.decode("gbk", errors="ignore"))
+        out: Dict[str, Any] = {}
+        xau = fields.get("hf_xau")
+        if xau:
+            last = _parse_number(xau[0] if xau else None)
+            prev = _parse_number(xau[1] if len(xau) > 1 else None)
+            if last is not None:
+                change = round(last - prev, 2) if prev else None
+                rate = round(change / prev * 100, 3) if change is not None and prev else None
+                out.update(
+                    {
+                        "london_usd": last,
+                        "london_prev": prev,
+                        "london_change_amt": change,
+                        "london_change_rate": rate,
+                        "london_source": "sina_xau",
+                    }
+                )
+        fx = _parse_usdcny(fields.get("fx_susdcny") or []) or _parse_usdcny(fields.get("fx_susdcnh") or [])
+        if fx:
+            out.update(fx)
+        return out or None
     except Exception:
         return None
+
+
+def gold_parity(zheshang_cny_g: Optional[float], london_usd: Optional[float], usdcny: Optional[float]) -> Dict[str, Any]:
+    """1 金衡盎司 = 31.1034768 克。伦敦折人民币/克，浙商折美元/盎司。"""
+    ounce = settings.troy_ounce_grams
+    london_cny_g = None
+    zheshang_usd_oz = None
+    if london_usd and usdcny:
+        london_cny_g = london_usd / ounce * usdcny
+    if zheshang_cny_g and usdcny:
+        zheshang_usd_oz = zheshang_cny_g * ounce / usdcny
+    premium = None
+    premium_pct = None
+    if zheshang_cny_g and london_cny_g:
+        premium = zheshang_cny_g - london_cny_g
+        premium_pct = premium / london_cny_g * 100
+    return {
+        "troy_ounce_grams": ounce,
+        "london_cny_gram": round(london_cny_g, 2) if london_cny_g is not None else None,
+        "zheshang_usd_oz": round(zheshang_usd_oz, 2) if zheshang_usd_oz is not None else None,
+        "premium_cny": round(premium, 2) if premium is not None else None,
+        "premium_pct": round(premium_pct, 3) if premium_pct is not None else None,
+    }

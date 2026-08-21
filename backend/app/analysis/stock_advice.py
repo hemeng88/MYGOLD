@@ -27,8 +27,12 @@ def _round(value: Optional[float], digits: int = 2) -> Optional[float]:
     return None if value is None else round(value, digits)
 
 
-def _bars_of(db: Session, code: str) -> List[StockBar]:
-    return db.scalars(select(StockBar).where(StockBar.code == code).order_by(StockBar.trade_date.asc())).all()
+def _bars_of(db: Session, code: str, limit: int = 300) -> List[StockBar]:
+    query = select(StockBar).where(StockBar.code == code)
+    if not limit:
+        return db.scalars(query.order_by(StockBar.trade_date.asc())).all()
+    rows = db.scalars(query.order_by(StockBar.trade_date.desc()).limit(limit)).all()
+    return list(reversed(list(rows)))
 
 
 def _closes(bars: Sequence[StockBar]) -> List[float]:
@@ -165,6 +169,9 @@ def _replay_forecast(
     horizon = settings.stock_forecast_horizon
     bench = bench_bars or []
     moves: List[float] = []
+    if len(bars) > 240:
+        bars = bars[-240:]
+        bench = [row for row in bench if row.trade_date >= bars[0].trade_date]
     start = 24
     last = len(bars) - horizon
     for index in range(start, last):
@@ -428,7 +435,7 @@ def list_stocks(db: Session) -> Dict:
         quote = quotes.get(code)
         bars = _bars_of(db, code)
         if quote:
-            items.append(summarize_stock(quote, bars, bench, news_context(db, code), budget))
+            items.append(summarize_stock(quote, bars, bench, None, budget))
         else:
             items.append(
                 {

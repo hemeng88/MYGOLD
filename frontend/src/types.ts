@@ -12,6 +12,16 @@ export interface LatestQuote {
   london_change_amt?: number | null;
   london_change_rate?: number | null;
   london_source?: string | null;
+  usdcny?: number | null;
+  usdcny_prev?: number | null;
+  usdcny_change_amt?: number | null;
+  usdcny_change_rate?: number | null;
+  usdcny_source?: string | null;
+  troy_ounce_grams?: number | null;
+  london_cny_gram?: number | null;
+  zheshang_usd_oz?: number | null;
+  premium_cny?: number | null;
+  premium_pct?: number | null;
 }
 
 export interface DaySummary {

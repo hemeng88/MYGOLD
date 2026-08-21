@@ -18,6 +18,16 @@ class LatestQuote(BaseModel):
     london_change_amt: Optional[float] = None
     london_change_rate: Optional[float] = None
     london_source: Optional[str] = None
+    usdcny: Optional[float] = None
+    usdcny_prev: Optional[float] = None
+    usdcny_change_amt: Optional[float] = None
+    usdcny_change_rate: Optional[float] = None
+    usdcny_source: Optional[str] = None
+    troy_ounce_grams: Optional[float] = None
+    london_cny_gram: Optional[float] = None
+    zheshang_usd_oz: Optional[float] = None
+    premium_cny: Optional[float] = None
+    premium_pct: Optional[float] = None
 
 
 class CurvePointOut(BaseModel):

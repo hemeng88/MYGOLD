@@ -38,6 +38,7 @@ import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { SessionClock } from "./SessionClock";
+import { GoldConvert } from "./GoldConvert";
 import { StocksPanel } from "./StocksPanel";
 import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
@@ -522,6 +523,7 @@ export default function App() {
           </Text>
           <Text size="xs" c="dimmed">
             {latest?.london_usd ? `较昨日 ${fmt(latest.london_prev)}` : "正在取现货价"}
+            {latest?.usdcny ? ` · 汇率 ${latest.usdcny.toFixed(4)}` : ""}
           </Text>
         </div>
       </div>
@@ -554,6 +556,8 @@ export default function App() {
       </Button>
     </Paper>
   );
+
+  const convertPanel = <GoldConvert latest={latest} />;
 
   const clockMin = hoverClockMin ?? sessions?.clock_min ?? liveClockMin;
 
@@ -745,6 +749,7 @@ export default function App() {
           {mobileTab === "market" && (
             <>
               {heroPanel}
+              {convertPanel}
               {daysPanel}
               {chartPanel}
             </>
@@ -762,6 +767,7 @@ export default function App() {
           <Grid.Col span={8}>
             <Stack gap="lg">
               {heroPanel}
+              {convertPanel}
               <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
               {chartPanel}
               <StocksPanel />

@@ -179,4 +179,10 @@ async def stock_refresh(include_bars: bool = True, db: Session = Depends(get_db)
         return await refresh_stocks(db, include_bars=include_bars)
     except Exception as exc:
         db.rollback()
-        raise HTTPException(status_code=502, detail="股票数据刷新失败：%s" % exc) from exc
+        return {
+            "ok": False,
+            "quotes": 0,
+            "bars": 0,
+            "news": 0,
+            "message": "股票刷新中断：%s" % exc,
+        }

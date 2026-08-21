@@ -87,7 +87,11 @@ export function StocksPanel() {
         setDetail(nextDetail);
         setAdvice(nextAdvice);
       }
-      notifications.show({ color: "teal", title: "股票数据已更新", message: result.message });
+      notifications.show({
+        color: result.ok ? "teal" : "yellow",
+        title: result.ok ? "股票数据已更新" : "只更新了一部分",
+        message: result.message,
+      });
     } catch (err) {
       notifications.show({ color: "red", title: "刷新失败", message: err instanceof Error ? err.message : "稍后重试" });
     } finally {

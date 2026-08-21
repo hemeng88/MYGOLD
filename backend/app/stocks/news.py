@@ -63,7 +63,7 @@ def _search_param(keyword: str, page_index: int = 1, page_size: int = 20) -> str
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-async def _fetch_anns(client: httpx.AsyncClient, code: str, pages: int = 4, page_size: int = 50) -> List[Dict]:
+async def _fetch_anns(client: httpx.AsyncClient, code: str, pages: int = 1, page_size: int = 20) -> List[Dict]:
     number = code[2:]
     items = []
     for page in range(1, pages + 1):
@@ -114,7 +114,7 @@ def _parse_ann_rows(rows, code: str, number: str) -> List[Dict]:
 
 
 async def _fetch_articles(
-    client: httpx.AsyncClient, code: str, keyword: str, market: bool, pages: int = 5, page_size: int = 20
+    client: httpx.AsyncClient, code: str, keyword: str, market: bool, pages: int = 1, page_size: int = 15
 ) -> List[Dict]:
     items = []
     for page in range(1, pages + 1):
@@ -191,8 +191,8 @@ def upsert_news(db: Session, items: List[Dict]) -> int:
 
 async def collect_news(db: Session) -> Dict:
     written = 0
-    async with httpx.AsyncClient(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
-        for keyword in ("沪指", "创业板", "北向资金", "央行"):
+    async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+        for keyword in ("沪指",):
             try:
                 written += upsert_news(db, await _fetch_articles(client, "_market", keyword, True))
             except Exception:

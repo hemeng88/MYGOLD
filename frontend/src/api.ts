@@ -40,7 +40,7 @@ export const api = {
   stock: (code: string) => request<StockDetail>(`/api/stocks/${code}`),
   stockAdvice: (code: string) => request<StockAdvice>(`/api/stocks/${code}/advice`),
   refreshStocks: (includeBars = true) =>
-    request<{ ok: boolean; quotes: number; bars: number; message: string }>(
+    request<{ ok: boolean; quotes: number; bars: number; news?: number; message: string }>(
       `/api/stocks/refresh?include_bars=${includeBars}`,
       { method: "POST" },
     ),
