@@ -67,6 +67,45 @@ function clockLabel(minutes: number) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function extremumMarks(
+  points: { time: string; p: number }[],
+  highColor: string,
+  lowColor: string,
+  compact: boolean,
+) {
+  if (!points.length) return [];
+  const high = points.reduce((best, point) => (point.p > best.p ? point : best));
+  const low = points.reduce((best, point) => (point.p < best.p ? point : best));
+  const label = (text: string, color: string, position: "top" | "bottom") => ({
+    formatter: text,
+    position,
+    color,
+    fontSize: compact ? 10 : 11,
+    fontWeight: 600,
+    distance: 6,
+  });
+  return [
+    {
+      name: "最高",
+      coord: [minutesOf(high.time), high.p],
+      value: high.p.toFixed(2),
+      symbol: "circle",
+      symbolSize: compact ? 7 : 9,
+      itemStyle: { color: highColor, borderColor: "#1a1610", borderWidth: 1 },
+      label: label(`最高 ${high.p.toFixed(2)}`, highColor, "top"),
+    },
+    {
+      name: "最低",
+      coord: [minutesOf(low.time), low.p],
+      value: low.p.toFixed(2),
+      symbol: "circle",
+      symbolSize: compact ? 7 : 9,
+      itemStyle: { color: lowColor, borderColor: "#1a1610", borderWidth: 1 },
+      label: label(`最低 ${low.p.toFixed(2)}`, lowColor, "bottom"),
+    },
+  ];
+}
+
 function mergeRanges(exchanges: SessionExchange[], region?: string) {
   const raw = exchanges
     .filter((item) => !region || item.region === region)
@@ -312,7 +351,7 @@ export default function App() {
         },
       },
       legend: { show: Boolean(compareCurve), top: 4, textStyle: { color: "#c9b896" } },
-      grid: { left: isMobile ? 36 : 52, right: 12, top: compareCurve ? 40 : 16, bottom: 28 },
+      grid: { left: isMobile ? 36 : 52, right: 16, top: compareCurve ? 44 : 28, bottom: 36 },
       xAxis: {
         type: "value",
         min: 0,
@@ -343,19 +382,27 @@ export default function App() {
               markPoint: {
                 symbol: "pin",
                 symbolSize: isMobile ? 22 : 36,
-                data: events.map((event) => {
-                  const clock = event.triggered_at.slice(11, 19);
-                  return {
-                    name: event.headline.slice(0, 18),
-                    coord: [minutesOf(clock), event.end_price],
-                    value: `${event.change_rate > 0 ? "+" : ""}${event.change_rate.toFixed(2)}%`,
-                    itemStyle: { color: event.direction === "up" ? "#d24b3a" : "#2f9b6a" },
-                  };
-                }),
+                data: [
+                  ...extremumMarks(curve?.points || [], "#d24b3a", "#2f9b6a", isMobile),
+                  ...events.map((event) => {
+                    const clock = event.triggered_at.slice(11, 19);
+                    return {
+                      name: event.headline.slice(0, 18),
+                      coord: [minutesOf(clock), event.end_price],
+                      value: `${event.change_rate > 0 ? "+" : ""}${event.change_rate.toFixed(2)}%`,
+                      itemStyle: { color: event.direction === "up" ? "#d24b3a" : "#2f9b6a" },
+                    };
+                  }),
+                ],
                 label: { color: "#f4ead6", fontSize: 10 },
               },
             }
-          : item,
+          : {
+              ...item,
+              markPoint: {
+                data: extremumMarks(compareCurve?.points || [], "#7eb6d4", "#5a8fa8", isMobile),
+              },
+            },
       ),
     };
   }, [compareCurve, compareDate, curve, events, hoverExchange, isMobile, selectedDate, sessions]);
