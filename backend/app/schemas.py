@@ -307,6 +307,88 @@ class GoldLotOut(BaseModel):
     created_at: datetime
 
 
+class StockLevel(BaseModel):
+    price: float
+    note: str
+    gap_pct: Optional[float] = None
+    kind: Optional[str] = None
+
+
+class StockItem(BaseModel):
+    code: str
+    name: Optional[str] = None
+    kind: Optional[str] = None
+    price: Optional[float] = None
+    prev_close: Optional[float] = None
+    change_amt: Optional[float] = None
+    change_rate: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    open: Optional[float] = None
+    stance: Optional[str] = None
+    headline: Optional[str] = None
+    z_score: Optional[float] = None
+    as_of: Optional[datetime] = None
+    ready: bool = False
+
+
+class StockListResponse(BaseModel):
+    session: str
+    items: List[StockItem] = Field(default_factory=list)
+
+
+class StockBarOut(BaseModel):
+    date: str
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    close: float
+    volume: Optional[float] = None
+
+
+class StockDetailResponse(BaseModel):
+    ready: bool = True
+    message: Optional[str] = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+    kind: Optional[str] = None
+    quote: Optional[StockItem] = None
+    bars: List[StockBarOut] = Field(default_factory=list)
+    session: Optional[str] = None
+
+
+class StockAdviceResponse(BaseModel):
+    ready: bool
+    message: Optional[str] = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+    kind: Optional[str] = None
+    price: Optional[float] = None
+    prev_close: Optional[float] = None
+    change_amt: Optional[float] = None
+    change_rate: Optional[float] = None
+    stance: Optional[str] = None
+    headline: Optional[str] = None
+    z_score: Optional[float] = None
+    ma20: Optional[float] = None
+    ma60: Optional[float] = None
+    atr: Optional[float] = None
+    swing_high: Optional[float] = None
+    swing_low: Optional[float] = None
+    buy_levels: List[StockLevel] = Field(default_factory=list)
+    sell_levels: List[StockLevel] = Field(default_factory=list)
+    session: Optional[str] = None
+    notes: List[str] = Field(default_factory=list)
+    as_of: Optional[datetime] = None
+
+
+class StockRefreshResult(BaseModel):
+    ok: bool
+    quotes: int = 0
+    bars: int = 0
+    message: str
+
+
 class HoldingSummary(BaseModel):
     lots: List[GoldLotOut]
     total_grams: float

@@ -6,6 +6,8 @@ from .analysis.refresh import refresh_attribution_data
 from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
+from .stocks.collector import collect_bars, collect_quotes
+from .stocks.universe import should_poll_quotes
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -38,6 +40,33 @@ async def job_attribution() -> None:
         logger.info("归因数据刷新：%s", result["message"])
     except Exception:
         logger.exception("归因数据刷新失败")
+        db.rollback()
+    finally:
+        db.close()
+    await job_stock_bars()
+
+
+async def job_stock_quotes() -> None:
+    if not should_poll_quotes():
+        return
+    db = SessionLocal()
+    try:
+        result = collect_quotes(db)
+        logger.info("A股报价：%s", result["message"])
+    except Exception:
+        logger.exception("A股报价采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_stock_bars() -> None:
+    db = SessionLocal()
+    try:
+        result = await collect_bars(db)
+        logger.info("A股日线：%s", result["message"])
+    except Exception:
+        logger.exception("A股日线采集失败")
         db.rollback()
     finally:
         db.close()
@@ -85,11 +114,21 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        job_stock_quotes,
+        "interval",
+        seconds=settings.stock_quote_interval_seconds,
+        id="stock-quotes",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     logger.info(
-        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线",
+        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价",
         settings.tick_interval_seconds,
         settings.curve_snapshot_interval_seconds,
+        settings.stock_quote_interval_seconds,
     )
 
 

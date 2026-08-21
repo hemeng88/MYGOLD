@@ -7,6 +7,7 @@ from ..analysis.advice import build_advice
 from ..analysis.attribution import compute_attribution
 from ..analysis.refresh import refresh_attribution_data
 from ..analysis.sessions import snapshot as session_snapshot
+from ..analysis.stock_advice import build_stock_advice, list_stocks, stock_detail
 from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
 from ..database import get_db
 from ..formula import rule_payload
@@ -25,7 +26,13 @@ from ..schemas import (
     MarketEventOut,
     RefreshResult,
     SessionSnapshot,
+    StockAdviceResponse,
+    StockDetailResponse,
+    StockListResponse,
+    StockRefreshResult,
 )
+from ..stocks.collector import refresh_stocks
+from ..stocks.universe import meta_of
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -133,3 +140,31 @@ def remove_lot(lot_id: int, db: Session = Depends(get_db)):
     except KeyError:
         raise HTTPException(status_code=404, detail="没有这条持仓记录")
     return {"ok": True}
+
+
+@router.get("/stocks", response_model=StockListResponse)
+def stocks(db: Session = Depends(get_db)):
+    return list_stocks(db)
+
+
+@router.get("/stocks/{code}", response_model=StockDetailResponse)
+def stock(code: str, db: Session = Depends(get_db)):
+    if not meta_of(code):
+        raise HTTPException(status_code=404, detail="不在当前观察池里")
+    return stock_detail(db, code)
+
+
+@router.get("/stocks/{code}/advice", response_model=StockAdviceResponse)
+def stock_advice(code: str, db: Session = Depends(get_db)):
+    if not meta_of(code):
+        raise HTTPException(status_code=404, detail="不在当前观察池里")
+    return build_stock_advice(db, code)
+
+
+@router.post("/stocks/refresh", response_model=StockRefreshResult)
+async def stock_refresh(include_bars: bool = True, db: Session = Depends(get_db)):
+    try:
+        return await refresh_stocks(db, include_bars=include_bars)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=502, detail="股票数据刷新失败：%s" % exc) from exc

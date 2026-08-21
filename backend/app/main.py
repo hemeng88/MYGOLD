@@ -11,6 +11,7 @@ from .config import settings
 from .database import SessionLocal, backfill_event_tags, ensure_schema
 from .routers.api import router as api_router
 from .scheduler import start_scheduler, stop_scheduler
+from .stocks.collector import refresh_stocks
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("mygold")
@@ -27,6 +28,15 @@ async def lifespan(_app: FastAPI):
             logger.info("启动采集：%s", result.message)
         except Exception:
             logger.exception("启动采集失败，将依赖后续定时任务")
+            db.rollback()
+        finally:
+            db.close()
+        db = SessionLocal()
+        try:
+            stock = await refresh_stocks(db, include_bars=True)
+            logger.info("启动 A 股采集：%s", stock["message"])
+        except Exception:
+            logger.exception("启动 A 股采集失败，黄金主流程不受影响")
             db.rollback()
         finally:
             db.close()

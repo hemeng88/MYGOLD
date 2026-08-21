@@ -1,4 +1,4 @@
-import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
+import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
@@ -36,4 +36,12 @@ export const api = {
     }),
   deleteLot: (id: number) => request<{ ok: boolean }>(`/api/holdings/lots/${id}`, { method: "DELETE" }),
   sessions: () => request<SessionSnapshot>("/api/sessions"),
+  stocks: () => request<StockList>("/api/stocks"),
+  stock: (code: string) => request<StockDetail>(`/api/stocks/${code}`),
+  stockAdvice: (code: string) => request<StockAdvice>(`/api/stocks/${code}/advice`),
+  refreshStocks: (includeBars = true) =>
+    request<{ ok: boolean; quotes: number; bars: number; message: string }>(
+      `/api/stocks/refresh?include_bars=${includeBars}`,
+      { method: "POST" },
+    ),
 };

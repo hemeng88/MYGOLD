@@ -272,9 +272,9 @@ body {
   border-radius: 16px;
   background: transparent;
   color: #8c8170;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .mobile-tabbar button.tab-on {

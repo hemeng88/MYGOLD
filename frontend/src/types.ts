@@ -269,6 +269,81 @@ export interface GoldLot {
   created_at: string;
 }
 
+export interface StockLevel {
+  price: number;
+  note: string;
+  gap_pct: number | null;
+  kind: string | null;
+}
+
+export interface StockItem {
+  code: string;
+  name: string | null;
+  kind: string | null;
+  price: number | null;
+  prev_close: number | null;
+  change_amt: number | null;
+  change_rate: number | null;
+  high?: number | null;
+  low?: number | null;
+  open?: number | null;
+  stance: "watch_buy" | "hold" | "no_chase" | null;
+  headline: string | null;
+  z_score: number | null;
+  as_of: string | null;
+  ready: boolean;
+}
+
+export interface StockList {
+  session: string;
+  items: StockItem[];
+}
+
+export interface StockBar {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number | null;
+}
+
+export interface StockDetail {
+  ready: boolean;
+  message?: string | null;
+  code: string | null;
+  name: string | null;
+  kind: string | null;
+  quote: StockItem | null;
+  bars: StockBar[];
+  session: string | null;
+}
+
+export interface StockAdvice {
+  ready: boolean;
+  message?: string | null;
+  code: string | null;
+  name: string | null;
+  kind: string | null;
+  price: number | null;
+  prev_close: number | null;
+  change_amt: number | null;
+  change_rate: number | null;
+  stance: "watch_buy" | "hold" | "no_chase" | null;
+  headline: string | null;
+  z_score: number | null;
+  ma20: number | null;
+  ma60: number | null;
+  atr: number | null;
+  swing_high: number | null;
+  swing_low: number | null;
+  buy_levels: StockLevel[];
+  sell_levels: StockLevel[];
+  session: string | null;
+  notes: string[];
+  as_of: string | null;
+}
+
 export interface HoldingSummary {
   lots: GoldLot[];
   total_grams: number;

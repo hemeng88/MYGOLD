@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     goldmonitor_latest_url: str = "https://jin.20021002.xyz/api.php?type=zs"
     goldmonitor_chart_url: str = "https://jin.20021002.xyz/api.php?action=chart&type=zs"
     london_gold_url: str = "https://hq.sinajs.cn/list=hf_XAU"
+    stock_hq_url: str = "https://hq.sinajs.cn/list="
+    stock_kline_url: str = (
+        "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/"
+        "CN_MarketData.getKLineData"
+    )
+    stock_quote_interval_seconds: int = 30
+    stock_kline_limit: int = 120
 
     request_timeout_seconds: float = 15.0
 

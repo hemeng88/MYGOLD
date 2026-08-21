@@ -107,6 +107,46 @@ class NewsFlash(Base):
     url: Mapped[str] = mapped_column(String(500), nullable=True)
 
 
+class StockQuote(Base):
+    """A 股自选池最新报价，和积存金报价表分开。"""
+
+    __tablename__ = "stock_quotes"
+
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    name: Mapped[str] = mapped_column(String(32), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=False)
+    prev_close: Mapped[float] = mapped_column(Float, nullable=True)
+    open_price: Mapped[float] = mapped_column(Float, nullable=True)
+    high_price: Mapped[float] = mapped_column(Float, nullable=True)
+    low_price: Mapped[float] = mapped_column(Float, nullable=True)
+    volume: Mapped[float] = mapped_column(Float, nullable=True)
+    amount: Mapped[float] = mapped_column(Float, nullable=True)
+    change_amt: Mapped[float] = mapped_column(Float, nullable=True)
+    change_rate: Mapped[float] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    source_time: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class StockBar(Base):
+    """A 股日线，用来算均线和 ATR。"""
+
+    __tablename__ = "stock_bars"
+    __table_args__ = (UniqueConstraint("code", "trade_date", name="uq_stock_bar_code_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    open_price: Mapped[float] = mapped_column(Float, nullable=True)
+    high_price: Mapped[float] = mapped_column(Float, nullable=True)
+    low_price: Mapped[float] = mapped_column(Float, nullable=True)
+    close_price: Mapped[float] = mapped_column(Float, nullable=False)
+    volume: Mapped[float] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class GoldLot(Base):
     __tablename__ = "gold_lots"
 

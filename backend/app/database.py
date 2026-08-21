@@ -14,6 +14,8 @@ class Base(DeclarativeBase):
 
 
 def ensure_schema():
+    from . import models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     if "market_events" not in inspector.get_table_names():
