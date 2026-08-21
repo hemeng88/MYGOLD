@@ -1,12 +1,38 @@
 import { useMemo } from "react";
 import { Group, Text } from "@mantine/core";
-import type { SessionExchange, SessionHour, SessionSnapshot } from "./types";
+import type { SessionExchange, SessionHour, SessionRange, SessionSnapshot } from "./types";
 
 const REGION_COLOR: Record<string, string> = {
   asia: "#7eb6d4",
   emea: "#d4af37",
   americas: "#d24b3a",
 };
+
+function rangeLabel(range: SessionRange) {
+  const end = range.end_min >= 1440 || (range.end === "00:00" && range.start_min > 0) ? "24:00" : range.end;
+  return `${range.start}–${end}`;
+}
+
+function formatRanges(ranges: SessionRange[]) {
+  if (!ranges.length) return "—";
+  const sorted = [...ranges].sort((a, b) => a.start_min - b.start_min);
+  const wraps = sorted.length >= 2 && sorted[0].start_min === 0 && sorted[sorted.length - 1].end_min >= 1440;
+  if (wraps) {
+    const morning = sorted[0];
+    const overnight = sorted[sorted.length - 1];
+    const mid = sorted.slice(1, -1).map(rangeLabel);
+    return [...mid, `${overnight.start}–${morning.end}`].join(" / ");
+  }
+  return sorted.map(rangeLabel).join(" / ");
+}
+
+function openSortKey(exchange: SessionExchange) {
+  const ranges = exchange.ranges;
+  if (!ranges.length) return 9999;
+  const wraps = ranges.some((range) => range.start_min === 0) && ranges.some((range) => range.end_min >= 1440);
+  if (wraps) return Math.max(...ranges.map((range) => range.start_min));
+  return Math.min(...ranges.map((range) => range.start_min));
+}
 
 function polar(cx: number, cy: number, r: number, minutes: number) {
   const rad = ((minutes / 1440) * 360 * Math.PI) / 180;
@@ -51,6 +77,13 @@ export function SessionClock({
         radius: outer - 28 - index * ((outer - 86) / Math.max(data.exchanges.length - 1, 1)),
       })),
     [data.exchanges, outer],
+  );
+  const schedule = useMemo(
+    () =>
+      data.exchanges
+        .map((exchange, index) => ({ exchange, index }))
+        .sort((a, b) => openSortKey(a.exchange) - openSortKey(b.exchange) || a.index - b.index),
+    [data.exchanges],
   );
 
   return (
@@ -154,6 +187,29 @@ export function SessionClock({
           ? `当前 ${data.open_count} 家开盘：${data.open_names.slice(0, 4).join("、")}${data.open_names.length > 4 ? "…" : ""}`
           : "当前主要股票市场都未开盘"}
       </Text>
+      <div className="session-schedule" onMouseLeave={onLeave}>
+        <Text size="xs" c="dimmed" mb={6}>
+          按北京时间开盘先后
+        </Text>
+        {schedule.map(({ exchange }) => {
+          const color = REGION_COLOR[exchange.region] || "#8c8170";
+          const on = highlightId === exchange.id;
+          return (
+            <div
+              key={exchange.id}
+              className={`session-row${exchange.open ? " is-open" : ""}${on ? " is-on" : ""}`}
+              onMouseEnter={() => onHoverExchange(exchange)}
+            >
+              <span className="session-time">{formatRanges(exchange.ranges)}</span>
+              <span className="session-name">
+                <i className="session-dot" style={{ background: color }} />
+                {exchange.name}
+              </span>
+              <span className="session-state">{exchange.open ? "开盘" : exchange.weekend ? "休市" : ""}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

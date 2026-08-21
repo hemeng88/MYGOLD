@@ -140,9 +140,9 @@ body {
 
 .chart-with-clock {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 12px;
-  align-items: center;
+  align-items: start;
 }
 
 .chart-stack {
@@ -171,6 +171,64 @@ body {
   fill: #c9b896;
   font-size: 11px;
   font-family: "Fraunces", serif;
+}
+
+.session-schedule {
+  margin-top: 12px;
+}
+
+.session-row {
+  display: grid;
+  grid-template-columns: minmax(108px, max-content) minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: start;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.session-row.is-open {
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.session-row.is-on,
+.session-row:hover {
+  background: rgba(212, 175, 55, 0.16);
+  border-color: rgba(212, 175, 55, 0.28);
+}
+
+.session-time {
+  color: #c9b896;
+  font-size: 11px;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.session-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #f4ead6;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.session-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 50%;
+  flex: 0 0 6px;
+}
+
+.session-state {
+  color: #d4af37;
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
 }
 
 @media (max-width: 52em) {
