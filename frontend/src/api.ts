@@ -2,7 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
-const NATIVE_DEFAULT = "https://ohmygold.icu";
+const NATIVE_DEFAULT = "http://49.232.222.121";
 
 export function apiBase(): string {
   if (typeof window !== "undefined") {
@@ -22,7 +22,12 @@ export function setApiBase(url: string) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${apiBase()}${path}`, init);
+  let res: Response;
+  try {
+    res = await fetch(`${apiBase()}${path}`, init);
+  } catch {
+    throw new Error(`连不上 ${apiBase() || "服务器"}。点顶部「改地址」选 IP 后再试。`);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `请求失败 ${res.status}`);

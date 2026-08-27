@@ -162,17 +162,17 @@ export function StocksPanel() {
 
   return (
     <Paper className="glass" p="md">
-      <Group justify="space-between" mb="sm" wrap="wrap">
-        <div>
+      <Group justify="space-between" mb="sm" wrap="wrap" gap="sm" align="flex-end">
+        <div style={{ minWidth: 0, flex: "1 1 140px" }}>
           <Text fw={600}>A股观察池</Text>
           <Text size="xs" c="dimmed" mt={4}>
-            {list?.session || "读取时段中"} · 只看一手买得起的，日线和资讯会尽量多拉
+            {list?.session || "读取时段中"} · 只看一手买得起的
           </Text>
         </div>
-        <Group gap="xs" wrap="nowrap">
+        <Group gap="xs" wrap="wrap" style={{ flex: "1 1 220px" }}>
           <NumberInput
-            size="xs"
-            w={132}
+            size="sm"
+            style={{ flex: "1 1 120px" }}
             min={1000}
             step={1000}
             thousandSeparator
@@ -189,8 +189,8 @@ export function StocksPanel() {
             disabled={savingBudget}
             aria-label="买入预算"
           />
-          <Button variant="light" color="gold" size="xs" loading={refreshing} onClick={onRefresh} leftSection={<IconRefresh size={14} />}>
-            刷新行情和消息
+          <Button variant="light" color="gold" size="sm" loading={refreshing} onClick={onRefresh} leftSection={<IconRefresh size={14} />}>
+            刷新
           </Button>
         </Group>
       </Group>
@@ -215,7 +215,7 @@ export function StocksPanel() {
           {detail?.bars?.length ? <ReactECharts option={option} style={{ height: 260 }} notMerge /> : null}
           {advice.ready ? (
             <>
-              <SimpleGrid cols={3} spacing="xs">
+              <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
                 <Paper className="stat-tile" p="xs">
                   <Text size="xs" c="dimmed">
                     {advice.horizon_days || 3}日胜率
@@ -241,7 +241,7 @@ export function StocksPanel() {
                   </Text>
                 </Paper>
               </SimpleGrid>
-              <SimpleGrid cols={3} spacing="xs">
+              <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
                 <Paper className="stat-tile" p="xs">
                   <Text size="xs" c="dimmed">
                     20 日均线
@@ -358,7 +358,7 @@ function StockRow({ item, active, onPick }: { item: StockItem; active: boolean; 
     <Paper className={active ? "day-card day-card-active" : "day-card"} p="sm" onClick={onPick}>
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <div>
-          <Group gap={6}>
+          <Group gap={6} wrap="wrap">
             <Text fw={600}>{item.name}</Text>
             <Badge size="xs" variant="light" color="gray">
               {KIND[item.kind || ""] || item.kind}

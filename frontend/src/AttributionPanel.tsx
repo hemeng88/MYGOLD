@@ -104,7 +104,7 @@ export function AttributionPanel({ tagColor }: { tagColor: (tag: string) => stri
   return (
     <Stack gap="md">
       <Paper className="panel" p={{ base: "md", sm: "lg" }} radius="lg">
-        <Group justify="space-between" align="flex-start" mb="md" wrap="nowrap">
+        <Group justify="space-between" align="flex-start" mb="md" wrap="wrap">
           <div>
             <Text className="eyebrow">Event Attribution</Text>
             <Text fw={600} size="lg">

@@ -47,10 +47,12 @@ export function AdviceModal({
   advice,
   opened,
   onClose,
+  fullScreen = false,
 }: {
   advice: Advice | null;
   opened: boolean;
   onClose: () => void;
+  fullScreen?: boolean;
 }) {
   const stance = advice?.stance ? STANCE[advice.stance] : null;
 
@@ -59,8 +61,9 @@ export function AdviceModal({
       opened={opened}
       onClose={onClose}
       title="买卖参考"
-      centered
-      radius="lg"
+      centered={!fullScreen}
+      fullScreen={fullScreen}
+      radius={fullScreen ? 0 : "lg"}
       size="md"
     >
       {!advice ? (

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@capacitor/core": "^7.4.3",
+    "@capacitor/local-notifications": "^7.0.7",
     "@mantine/core": "^7.17.8",
     "@mantine/hooks": "^7.17.8",
     "@mantine/notifications": "^7.17.8",

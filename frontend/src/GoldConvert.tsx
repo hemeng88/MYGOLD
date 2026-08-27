@@ -92,7 +92,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
       </Text>
       <SimpleGrid cols={2} spacing="xs">
         <NumberInput
-          size="xs"
+          size="sm"
           label="元 / 克"
           min={0}
           decimalScale={2}
@@ -104,7 +104,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
           }}
         />
         <NumberInput
-          size="xs"
+          size="sm"
           label="美元 / 盎司"
           min={0}
           decimalScale={2}
@@ -133,7 +133,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
       </Text>
       <SimpleGrid cols={2} spacing="xs">
         <NumberInput
-          size="xs"
+          size="sm"
           label="克"
           min={0}
           decimalScale={4}
@@ -145,7 +145,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
           }}
         />
         <NumberInput
-          size="xs"
+          size="sm"
           label="金衡盎司"
           min={0}
           decimalScale={4}
@@ -163,7 +163,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
       </Text>
       <SimpleGrid cols={2} spacing="xs">
         <NumberInput
-          size="xs"
+          size="sm"
           label="人民币"
           min={0}
           decimalScale={2}
@@ -177,7 +177,7 @@ export function GoldConvert({ latest }: { latest: LatestQuote | null }) {
           }}
         />
         <NumberInput
-          size="xs"
+          size="sm"
           label="美元"
           min={0}
           decimalScale={2}

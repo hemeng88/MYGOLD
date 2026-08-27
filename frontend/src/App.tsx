@@ -33,6 +33,7 @@ import {
   IconTargetArrow,
   IconWallet,
 } from "@tabler/icons-react";
+import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
 import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
@@ -41,6 +42,7 @@ import { SessionClock } from "./SessionClock";
 import { GoldConvert } from "./GoldConvert";
 import { InstallHint } from "./InstallHint";
 import { NativeServerBar } from "./NativeServerBar";
+import { initNativeNotify, notifyNow } from "./nativeNotify";
 import { StocksPanel } from "./StocksPanel";
 import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
@@ -175,7 +177,8 @@ export default function App() {
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
   });
-  const isMobile = useMediaQuery("(max-width: 52em)") ?? true;
+  const isNarrow = useMediaQuery("(max-width: 52em)") ?? true;
+  const isMobile = Capacitor.isNativePlatform() || isNarrow;
 
   const loadAll = useCallback(async (date?: string) => {
     const [dayList, latestQuote, feeRule, nextHoldings, nextSessions] = await Promise.all([
@@ -207,6 +210,11 @@ export default function App() {
       })
       .finally(() => setLoading(false));
   }, [loadAll]);
+
+  useEffect(() => {
+    if (!latest?.price) return;
+    void initNativeNotify(latest.price.toFixed(2));
+  }, [latest?.price]);
 
   useEffect(() => {
     const poll = window.setInterval(() => {
@@ -247,6 +255,8 @@ export default function App() {
       setStatus(result.message);
       await loadAll(selectedDate || result.tick?.trade_date);
       notifications.show({ color: "gold", title: "采集完成", message: result.message });
+      const price = result.tick?.price;
+      void notifyNow("采集完成", price != null ? `浙商 ${Number(price).toFixed(2)} 元/克` : result.message);
     } catch (err) {
       notifications.show({
         color: "red",
@@ -420,8 +430,8 @@ export default function App() {
           {days.length} 天
         </Badge>
       </Group>
-      <ScrollArea type="auto" offsetScrollbars className={isMobile ? "day-scroll-x" : undefined} h={isMobile ? undefined : 640}>
-        {isMobile ? (
+      {isMobile ? (
+        <div className="day-scroll-x">
           <Group gap={8} wrap="nowrap" className="day-row-inner">
             {loading && days.length === 0
               ? Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={64} width={120} radius="lg" />)
@@ -445,7 +455,9 @@ export default function App() {
                   );
                 })}
           </Group>
-        ) : (
+        </div>
+      ) : (
+        <ScrollArea type="auto" offsetScrollbars h={640}>
           <Stack gap={8}>
             {loading && days.length === 0
               ? Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={64} radius="lg" />)
@@ -478,8 +490,8 @@ export default function App() {
               </Text>
             )}
           </Stack>
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      )}
     </Paper>
   );
 
@@ -722,11 +734,13 @@ export default function App() {
 
   return (
     <Box className={isMobile ? "app-shell app-shell-mobile" : "app-shell"}>
-      <Group justify="space-between" align="center" mb={isMobile ? 16 : 28} wrap="nowrap" gap="sm">
+      <Group className="app-header" justify="space-between" align="center" mb={isMobile ? 10 : 28} wrap="nowrap" gap="sm">
         <div>
-          <Text className="eyebrow" mb={4}>
-            Zhejiang Gold
-          </Text>
+          {isMobile ? null : (
+            <Text className="eyebrow" mb={4}>
+              Zhejiang Gold
+            </Text>
+          )}
           <Title order={1} className="brand">
             MYGOLD
           </Title>
@@ -736,7 +750,8 @@ export default function App() {
             </Text>
           ) : null}
         </div>
-        <Group gap={8}>
+        <Group gap={8} wrap="nowrap">
+          <NativeServerBar />
           <ActionIcon variant="default" size={40} radius="xl" onClick={() => loadAll(selectedDate)} loading={loading}>
             <IconRefresh size={18} />
           </ActionIcon>
@@ -747,24 +762,25 @@ export default function App() {
       </Group>
 
       {isMobile ? (
-        <Stack gap="md" pb={88}>
-          <NativeServerBar />
-          {mobileTab === "market" && (
-            <>
-              <InstallHint />
-              {heroPanel}
-              {convertPanel}
-              {daysPanel}
-              {chartPanel}
-            </>
-          )}
-          {mobileTab === "holdings" && (
-            <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
-          )}
-          {mobileTab === "events" && eventsPanel}
-          {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
-          {mobileTab === "stocks" && <StocksPanel />}
-        </Stack>
+        <div className="app-main">
+          <Stack gap="sm">
+            {mobileTab === "market" && (
+              <>
+                <InstallHint />
+                {heroPanel}
+                {convertPanel}
+                {daysPanel}
+                {chartPanel}
+              </>
+            )}
+            {mobileTab === "holdings" && (
+              <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+            )}
+            {mobileTab === "events" && eventsPanel}
+            {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
+            {mobileTab === "stocks" && <StocksPanel />}
+          </Stack>
+        </div>
       ) : (
         <Grid gutter="lg">
           <Grid.Col span={4}>{daysPanel}</Grid.Col>
@@ -782,7 +798,7 @@ export default function App() {
         </Grid>
       )}
 
-      <AdviceModal advice={advice} opened={adviceOpen} onClose={() => setAdviceOpen(false)} />
+      <AdviceModal advice={advice} opened={adviceOpen} onClose={() => setAdviceOpen(false)} fullScreen={isMobile} />
 
       {isMobile ? (
         <nav className="mobile-tabbar">
