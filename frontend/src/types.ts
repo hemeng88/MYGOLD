@@ -477,3 +477,42 @@ export interface FundRefreshResult {
   quotes: number;
   message: string;
 }
+
+
+export interface FundRankPeriod {
+  key: string;
+  label: string;
+}
+
+export interface FundRankFund {
+  rank: number;
+  code: string;
+  name: string;
+  return_pct: number;
+  nav: number | null;
+  nav_date: string | null;
+}
+
+export interface FundRankStockItem {
+  code: string;
+  name: string | null;
+  fund_count: number;
+  weight_sum: number;
+}
+
+export interface FundRank {
+  period: string;
+  period_label: string | null;
+  periods: FundRankPeriod[];
+  as_of: string | null;
+  funds: FundRankFund[];
+  hot_stocks: FundRankStockItem[];
+  message: string | null;
+}
+
+export interface FundRankRefreshResult {
+  ok: boolean;
+  periods: number;
+  funds: number;
+  message: string;
+}

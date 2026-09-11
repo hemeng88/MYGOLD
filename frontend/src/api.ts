@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRefreshResult, FundSearchItem, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
+import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -94,4 +94,8 @@ export const api = {
     }),
   refreshFunds: (includeHoldings = false) =>
     request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
+  fundRankings: (period?: string) =>
+    request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings"),
+  refreshFundRankings: () =>
+    request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
 };

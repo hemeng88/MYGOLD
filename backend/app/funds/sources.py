@@ -362,6 +362,70 @@ def _quote_batch(client: httpx.Client, url: str, batch: List[str], now) -> List[
     return out
 
 
+# 天天基金排行榜：sc 是排序字段，对应 datas 里第几列都对不上，只能各自记住
+# datas 每行是逗号分隔：0代码 1简称 3日期 4单位净值 5累计净值 6日增长率
+#                      8近1月 9近3月 10近6月 11近1年 14今年来
+RANK_PERIODS = {
+    "1yzf": ("近1月", 8),
+    "3yzf": ("近3月", 9),
+    "6yzf": ("近6月", 10),
+    "1nzf": ("近1年", 11),
+    "jnzf": ("今年来", 14),
+}
+_RANK_DATAS = re.compile(r"datas:\[(.*?)\],allRecords", re.S)
+_RANK_ROW = re.compile(r'"([^"]+)"')
+
+
+def fetch_rankings(period: str, limit: int = 10) -> List[Dict]:
+    """按周期拉公募基金涨幅榜。period 取 RANK_PERIODS 里的键。"""
+    if period not in RANK_PERIODS:
+        raise ValueError("不认识的周期：%s" % period)
+    _label, index = RANK_PERIODS[period]
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_rank_url,
+            params={
+                "op": "ph",
+                "dt": "kf",
+                "ft": "all",
+                "rs": "",
+                "gs": 0,
+                "sc": period,
+                "st": "desc",
+                "pi": 1,
+                "pn": max(limit, 1),
+            },
+            headers={**FUND_HEADERS, "Referer": "https://fund.eastmoney.com/data/fundranking.html"},
+        )
+        response.raise_for_status()
+        text = response.text
+    body = _RANK_DATAS.search(text)
+    if not body:
+        return []
+    out: List[Dict] = []
+    for raw in _RANK_ROW.findall(body.group(1)):
+        parts = raw.split(",")
+        if len(parts) <= index:
+            continue
+        code = parts[0].strip()
+        gain = _num(parts[index])
+        if not code or gain is None:
+            continue
+        out.append(
+            {
+                "code": code,
+                "name": (parts[1] or "").strip() or code,
+                "return_pct": gain,
+                "nav": _num(parts[4]) if len(parts) > 4 else None,
+                "nav_date": (parts[3] or "").strip() or None,
+                "rank": len(out) + 1,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
 def fetch_stock_quotes(secids: Iterable[str]) -> List[Dict]:
     """按 secid 批量取持仓股行情。
 

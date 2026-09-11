@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     fund_holdings_url: str = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx"
     fund_info_url: str = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo"
     fund_search_url: str = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
+    fund_rank_url: str = "https://fund.eastmoney.com/data/rankhandler.aspx"
+    # 涨幅榜每个周期取前几名，再穿透看它们重仓的是什么方向
+    fund_rank_top_n: int = 10
     fund_stock_quote_url: str = "https://push2.eastmoney.com/api/qt/ulist.np/get"
     # push2 请求密了会直接断连，留一个镜像和新浪兜底，别让覆盖率忽高忽低
     fund_stock_quote_fallback_url: str = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"

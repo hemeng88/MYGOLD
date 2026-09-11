@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ComponentType } from "react";
 import ReactECharts from "echarts-for-react";
 import {
   ActionIcon,
@@ -46,7 +47,31 @@ import { InstallHint } from "./InstallHint";
 import { NativeServerBar } from "./NativeServerBar";
 import { initNativeNotify, notifyNow } from "./nativeNotify";
 import { StocksPanel } from "./StocksPanel";
+import { FundRankPanel } from "./FundRankPanel";
 import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
+
+type TabKey = "market" | "holdings" | "events" | "weights" | "stocks" | "funds";
+
+/**
+ * 当前开着的 tab。想恢复某个被隐藏的，把它的 key 加回这个数组就行 ——
+ * 面板组件和后端接口都还在，只是不渲染。
+ */
+const ENABLED_TABS: TabKey[] = ["market", "funds"];
+
+const TAB_META: { key: TabKey; label: string; Icon: ComponentType<{ size?: number | string }> }[] = [
+  { key: "market", label: "行情", Icon: IconChartCandle },
+  { key: "holdings", label: "持仓", Icon: IconWallet },
+  { key: "events", label: "事件", Icon: IconNews },
+  { key: "weights", label: "归因", Icon: IconChartPie },
+  { key: "stocks", label: "股票", Icon: IconChartLine },
+  { key: "funds", label: "基金", Icon: IconPigMoney },
+];
+
+const VISIBLE_TABS = TAB_META.filter((tab) => ENABLED_TABS.includes(tab.key));
+
+function tabOn(key: TabKey) {
+  return ENABLED_TABS.includes(key);
+}
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -167,7 +192,7 @@ export default function App() {
   const [rule, setRule] = useState<FeeRule | null>(null);
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
-  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events" | "weights" | "stocks" | "funds">("market");
+  const [mobileTab, setMobileTab] = useState<TabKey>(ENABLED_TABS[0] ?? "market");
   const [eventTag, setEventTag] = useState<string | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
@@ -781,7 +806,12 @@ export default function App() {
             {mobileTab === "events" && eventsPanel}
             {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
             {mobileTab === "stocks" && <StocksPanel />}
-            {mobileTab === "funds" && <FundsPanel />}
+            {mobileTab === "funds" && (
+              <>
+                <FundsPanel />
+                <FundRankPanel />
+              </>
+            )}
           </Stack>
         </div>
       ) : (
@@ -791,12 +821,15 @@ export default function App() {
             <Stack gap="lg">
               {heroPanel}
               {convertPanel}
-              <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+              {tabOn("holdings") ? (
+                <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
+              ) : null}
               {chartPanel}
-              <StocksPanel />
+              {tabOn("stocks") ? <StocksPanel /> : null}
               <FundsPanel />
-              <AttributionPanel tagColor={tagColor} />
-              {eventsPanel}
+              <FundRankPanel />
+              {tabOn("weights") ? <AttributionPanel tagColor={tagColor} /> : null}
+              {tabOn("events") ? eventsPanel : null}
             </Stack>
           </Grid.Col>
         </Grid>
@@ -806,30 +839,17 @@ export default function App() {
 
       {isMobile ? (
         <nav className="mobile-tabbar">
-          <button className={mobileTab === "market" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("market")}>
-            <IconChartCandle size={18} />
-            行情
-          </button>
-          <button className={mobileTab === "holdings" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("holdings")}>
-            <IconWallet size={18} />
-            持仓
-          </button>
-          <button className={mobileTab === "events" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("events")}>
-            <IconNews size={18} />
-            事件
-          </button>
-          <button className={mobileTab === "weights" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("weights")}>
-            <IconChartPie size={18} />
-            归因
-          </button>
-          <button className={mobileTab === "stocks" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("stocks")}>
-            <IconChartLine size={18} />
-            股票
-          </button>
-          <button className={mobileTab === "funds" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("funds")}>
-            <IconPigMoney size={18} />
-            基金
-          </button>
+          {VISIBLE_TABS.map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              className={mobileTab === key ? "tab-on" : ""}
+              type="button"
+              onClick={() => setMobileTab(key)}
+            >
+              <Icon size={18} />
+              {label}
+            </button>
+          ))}
         </nav>
       ) : null}
     </Box>

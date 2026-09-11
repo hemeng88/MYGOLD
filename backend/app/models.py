@@ -257,3 +257,40 @@ class FundNav(Base):
     nav_chg_pct: Mapped[float] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundRankEntry(Base):
+    """公募基金涨幅榜，按周期存前若干名。定时任务刷，页面只读库。"""
+
+    __tablename__ = "fund_rank_entries"
+    __table_args__ = (UniqueConstraint("period", "code", name="uq_fund_rank_period_code"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 周期键，对应 sources.RANK_PERIODS，例如 jnzf / 3yzf
+    period: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    code: Mapped[str] = mapped_column(String(12), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 该周期涨幅，百分数
+    return_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    nav: Mapped[float] = mapped_column(Float, nullable=True)
+    nav_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundRankStock(Base):
+    """把榜单基金的重仓股汇总起来，用来看这个周期领涨的是哪个方向。"""
+
+    __tablename__ = "fund_rank_stocks"
+    __table_args__ = (UniqueConstraint("period", "stock_code", name="uq_fund_rank_stock"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    period: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    stock_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    stock_name: Mapped[str] = mapped_column(String(48), nullable=True)
+    secid: Mapped[str] = mapped_column(String(24), nullable=True)
+    # 出现在榜单里几只基金的重仓中
+    fund_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 这些基金给它的权重之和，百分数
+    weight_sum: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

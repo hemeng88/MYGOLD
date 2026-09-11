@@ -547,3 +547,41 @@ class FundRefreshResult(BaseModel):
     navs: int = 0
     quotes: int = 0
     message: str
+
+
+class FundRankPeriod(BaseModel):
+    key: str
+    label: str
+
+
+class FundRankFund(BaseModel):
+    rank: int
+    code: str
+    name: str
+    return_pct: float
+    nav: Optional[float] = None
+    nav_date: Optional[str] = None
+
+
+class FundRankStockItem(BaseModel):
+    code: str
+    name: Optional[str] = None
+    fund_count: int
+    weight_sum: float
+
+
+class FundRankResponse(BaseModel):
+    period: str
+    period_label: Optional[str] = None
+    periods: List[FundRankPeriod] = Field(default_factory=list)
+    as_of: Optional[datetime] = None
+    funds: List[FundRankFund] = Field(default_factory=list)
+    hot_stocks: List[FundRankStockItem] = Field(default_factory=list)
+    message: Optional[str] = None
+
+
+class FundRankRefreshResult(BaseModel):
+    ok: bool
+    periods: int = 0
+    funds: int = 0
+    message: str

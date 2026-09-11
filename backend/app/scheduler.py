@@ -7,6 +7,7 @@ from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
+from .funds.rankings import collect_rankings
 from .stocks.collector import collect_bars, collect_quotes
 from .stocks.news import collect_news
 from .stocks.universe import should_poll_quotes
@@ -96,6 +97,19 @@ async def job_fund_quotes() -> None:
         logger.info("基金持仓股报价：%s", result["message"])
     except Exception:
         logger.exception("基金持仓股报价采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_fund_rankings() -> None:
+    """涨幅榜基于 T-1 净值，一天变一次，收盘后跑一遍就够。"""
+    db = SessionLocal()
+    try:
+        result = collect_rankings(db)
+        logger.info("基金涨幅榜：%s", result["message"])
+    except Exception:
+        logger.exception("基金涨幅榜采集失败")
         db.rollback()
     finally:
         db.close()
@@ -196,6 +210,17 @@ def start_scheduler() -> None:
         hour=16,
         minute=40,
         id="fund-holdings",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # 榜单要等当日净值出齐，放晚一点
+    scheduler.add_job(
+        job_fund_rankings,
+        "cron",
+        hour=21,
+        minute=30,
+        id="fund-rankings",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

@@ -14,6 +14,7 @@ from ..database import get_db
 from ..formula import rule_payload
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
+from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
 from ..funds.sources import search_funds
 from ..holdings import add_lot, delete_lot, list_holdings
 from ..schemas import (
@@ -28,6 +29,8 @@ from ..schemas import (
     FundFavoriteOut,
     FundListResponse,
     FundPositionIn,
+    FundRankRefreshResult,
+    FundRankResponse,
     FundRefreshResult,
     FundSearchItem,
     GoldLotIn,
@@ -216,6 +219,24 @@ def fund_search(
         raise HTTPException(status_code=502, detail="基金搜索失败：%s" % exc) from exc
     owned = set(fund_favorites.list_codes(db))
     return [dict(row, favorited=row["code"] in owned) for row in rows]
+
+
+@router.get("/funds/rankings", response_model=FundRankResponse)
+def fund_rankings(
+    period: str = Query(default=DEFAULT_PERIOD, description="周期键，见返回里的 periods"),
+    stock_limit: int = Query(default=12, ge=1, le=40),
+    db: Session = Depends(get_db),
+):
+    return list_rankings(db, period=period, stock_limit=stock_limit)
+
+
+@router.post("/funds/rankings/refresh", response_model=FundRankRefreshResult)
+def fund_rankings_refresh(db: Session = Depends(get_db)):
+    try:
+        return collect_rankings(db)
+    except Exception as exc:
+        db.rollback()
+        return {"ok": False, "periods": 0, "funds": 0, "message": "榜单刷新中断：%s" % exc}
 
 
 @router.get("/funds/favorites", response_model=List[FundFavoriteOut])
