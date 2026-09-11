@@ -412,10 +412,10 @@ export function FundsPanel() {
             </Paper>
             <Paper className="stat-tile" p="xs">
               <Text size="xs" c="dimmed">
-                估算净值
+                {detail.fund.is_cash_fund ? "万份收益" : "估算净值"}
               </Text>
               <Text fw={600} size="sm">
-                {fmt(detail.fund.estimate_nav, 4)}
+                {detail.fund.is_cash_fund ? fmt(detail.fund.yield_10k, 4) : fmt(detail.fund.estimate_nav, 4)}
               </Text>
             </Paper>
           </SimpleGrid>

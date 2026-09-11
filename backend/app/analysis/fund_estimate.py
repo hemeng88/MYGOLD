@@ -23,6 +23,16 @@ from ..stocks.universe import session_label
 from ..timeutil import now_local
 
 
+def _is_cash_fund(favorite: FundFavorite) -> bool:
+    """货币基金：单位净值恒为 1.0000，收益以份额结转。
+
+    净值接口对这类基金的 NAV 字段返回的是「万份收益」（例如 0.2486），
+    直接当单位净值去乘份额会算出巨额假亏损，所以要单独认出来。
+    """
+    text = "%s %s" % (favorite.fund_type or "", favorite.name or "")
+    return "货币" in text
+
+
 def _stale_days(report_date: Optional[str], today: datetime) -> Optional[int]:
     if not report_date:
         return None
@@ -104,7 +114,10 @@ def summarize_fund(
     today: Optional[datetime] = None,
 ) -> Dict:
     moment = today or now_local()
-    nav_value = nav.nav if nav else None
+    raw_nav = nav.nav if nav else None
+    cash_fund = _is_cash_fund(favorite)
+    # 货币基金按 1.0000 计净值，接口给的那个数是万份收益，只用来展示
+    nav_value = 1.0 if cash_fund else raw_nav
     base = {
         "code": favorite.code,
         "name": favorite.name,
@@ -112,6 +125,8 @@ def summarize_fund(
         "nav": nav_value,
         "nav_date": nav.nav_date if nav else None,
         "nav_chg_pct": nav.nav_chg_pct if nav else None,
+        "is_cash_fund": cash_fund,
+        "yield_10k": raw_nav if cash_fund else None,
         # 估不出净值时也先给一份按已公布净值算的盈亏，下面拿到估算净值再覆盖
         **_position(favorite.shares, favorite.cost_price, nav_value, None),
         "holdings_count": len(holdings),
@@ -135,7 +150,11 @@ def summarize_fund(
         "message": None,
     }
     if not holdings:
-        base["message"] = "还没有公示持仓，刷新一次或换只基金试试"
+        base["message"] = (
+            "货币基金按 1.0000 净值算，收益以份额结转，不做穿透估算"
+            if cash_fund
+            else "还没有公示持仓，刷新一次或换只基金试试"
+        )
         return base
 
     ordered = sorted(holdings, key=lambda row: (row.rank or 999, -(row.weight_pct or 0)))

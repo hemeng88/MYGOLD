@@ -408,6 +408,8 @@ export interface FundItem {
   nav: number | null;
   nav_date: string | null;
   nav_chg_pct: number | null;
+  is_cash_fund: boolean;
+  yield_10k: number | null;
   shares: number | null;
   cost_price: number | null;
   cost: number | null;

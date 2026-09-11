@@ -466,6 +466,9 @@ class FundItem(BaseModel):
     nav: Optional[float] = None
     nav_date: Optional[str] = None
     nav_chg_pct: Optional[float] = None
+    # 货币基金：净值恒为 1，收益看万份收益
+    is_cash_fund: bool = False
+    yield_10k: Optional[float] = None
     # 手填持仓，用来算盈亏金额
     shares: Optional[float] = None
     cost_price: Optional[float] = None
