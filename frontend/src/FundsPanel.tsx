@@ -217,9 +217,10 @@ export function FundsPanel() {
 
   const items = list?.items || [];
 
-  // 只统计填了持仓的基金，没填的当成自选不算钱
+  // 只统计填了持仓、而且确实算出盈亏的基金。没填份额的当自选看；
+  // 净值临时取不到的也排除，否则成本进了分母、盈亏没进分子，合计会自相矛盾。
   const totals = useMemo(() => {
-    const held = items.filter((item) => item.shares && item.cost);
+    const held = items.filter((item) => item.shares && item.cost && item.total_pnl != null);
     if (!held.length) return null;
     const sum = (pick: (item: FundItem) => number | null) =>
       held.reduce((acc, item) => acc + (pick(item) ?? 0), 0);
@@ -308,13 +309,25 @@ export function FundsPanel() {
           </Paper>
           <Paper className="stat-tile" p="xs">
             <Text size="xs" c="dimmed">
-              总成本 · {totals.count} 只
+              总成本 · {totals.count}/{items.length} 只
             </Text>
             <Text fw={600} size="sm">
               {fmt(totals.cost)} 元
             </Text>
           </Paper>
         </SimpleGrid>
+      ) : null}
+
+      {totals && totals.count < items.length ? (
+        <Text size="xs" c="yellow" mb="sm">
+          合计只算了 {totals.count} 只，还有 {items.length - totals.count} 只没填持仓或暂时取不到净值，没计入
+        </Text>
+      ) : null}
+
+      {!totals && items.length ? (
+        <Text size="xs" c="dimmed" mb="sm">
+          点开基金填上份额和成本价，这里会显示合计盈亏
+        </Text>
       ) : null}
 
       {results ? (
