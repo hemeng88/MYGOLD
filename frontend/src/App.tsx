@@ -26,6 +26,7 @@ import {
   IconChartLine,
   IconChartPie,
   IconExternalLink,
+  IconPigMoney,
   IconMinus,
   IconNews,
   IconRefresh,
@@ -37,6 +38,7 @@ import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
 import { AdviceModal } from "./AdviceModal";
 import { AttributionPanel } from "./AttributionPanel";
+import { FundsPanel } from "./FundsPanel";
 import { HoldingsPanel } from "./HoldingsPanel";
 import { SessionClock } from "./SessionClock";
 import { GoldConvert } from "./GoldConvert";
@@ -165,7 +167,7 @@ export default function App() {
   const [rule, setRule] = useState<FeeRule | null>(null);
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
-  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events" | "weights" | "stocks">("market");
+  const [mobileTab, setMobileTab] = useState<"market" | "holdings" | "events" | "weights" | "stocks" | "funds">("market");
   const [eventTag, setEventTag] = useState<string | null>(null);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
@@ -779,6 +781,7 @@ export default function App() {
             {mobileTab === "events" && eventsPanel}
             {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
             {mobileTab === "stocks" && <StocksPanel />}
+            {mobileTab === "funds" && <FundsPanel />}
           </Stack>
         </div>
       ) : (
@@ -791,6 +794,7 @@ export default function App() {
               <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
               {chartPanel}
               <StocksPanel />
+              <FundsPanel />
               <AttributionPanel tagColor={tagColor} />
               {eventsPanel}
             </Stack>
@@ -821,6 +825,10 @@ export default function App() {
           <button className={mobileTab === "stocks" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("stocks")}>
             <IconChartLine size={18} />
             股票
+          </button>
+          <button className={mobileTab === "funds" ? "tab-on" : ""} type="button" onClick={() => setMobileTab("funds")}>
+            <IconPigMoney size={18} />
+            基金
           </button>
         </nav>
       ) : null}

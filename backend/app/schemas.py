@@ -444,3 +444,85 @@ class HoldingSummary(BaseModel):
     breakeven_sell: Optional[float] = None
     needed_rise: Optional[float] = None
     sell_fee_rate: float
+
+
+class FundHoldingItem(BaseModel):
+    secid: str
+    code: str
+    name: Optional[str] = None
+    market: Optional[str] = None
+    weight_pct: float
+    rank: Optional[int] = None
+    price: Optional[float] = None
+    change_pct: Optional[float] = None
+    contrib_pct: Optional[float] = None
+    quoted: bool = False
+
+
+class FundItem(BaseModel):
+    code: str
+    name: str
+    fund_type: Optional[str] = None
+    nav: Optional[float] = None
+    nav_date: Optional[str] = None
+    nav_chg_pct: Optional[float] = None
+    holdings_count: int = 0
+    quoted_count: int = 0
+    disclosed_pct: Optional[float] = None
+    covered_pct: Optional[float] = None
+    estimate_pct: Optional[float] = None
+    conservative_pct: Optional[float] = None
+    estimate_nav: Optional[float] = None
+    report_date: Optional[str] = None
+    report_label: Optional[str] = None
+    report_age_days: Optional[int] = None
+    stale: bool = False
+    confidence: str = "low"
+    lead_name: Optional[str] = None
+    lead_contrib_pct: Optional[float] = None
+    drag_name: Optional[str] = None
+    drag_contrib_pct: Optional[float] = None
+    as_of: Optional[datetime] = None
+    ready: bool = False
+    message: Optional[str] = None
+
+
+class FundListResponse(BaseModel):
+    session: str
+    items: List[FundItem] = Field(default_factory=list)
+
+
+class FundDetailResponse(BaseModel):
+    ready: bool = False
+    message: Optional[str] = None
+    session: Optional[str] = None
+    fund: Optional[FundItem] = None
+    holdings: List[FundHoldingItem] = Field(default_factory=list)
+
+
+class FundFavoriteIn(BaseModel):
+    code: str
+
+
+class FundFavoriteOut(BaseModel):
+    code: str
+    name: str
+    fund_type: Optional[str] = None
+    added_at: datetime
+
+
+class FundSearchItem(BaseModel):
+    code: str
+    name: str
+    fund_type: Optional[str] = None
+    nav: Optional[float] = None
+    nav_date: Optional[str] = None
+    favorited: bool = False
+
+
+class FundRefreshResult(BaseModel):
+    ok: bool
+    holdings: int = 0
+    navs: int = 0
+    quotes: int = 0
+    message: str

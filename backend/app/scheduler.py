@@ -6,6 +6,7 @@ from .analysis.refresh import refresh_attribution_data
 from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
+from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .stocks.collector import collect_bars, collect_quotes
 from .stocks.news import collect_news
 from .stocks.universe import should_poll_quotes
@@ -85,6 +86,40 @@ async def job_stock_bars() -> None:
         db.close()
 
 
+async def job_fund_quotes() -> None:
+    """开盘时段刷收藏基金的持仓股报价，估值就是拿这个算的。"""
+    if not should_poll_quotes():
+        return
+    db = SessionLocal()
+    try:
+        result = collect_fund_quotes(db)
+        logger.info("基金持仓股报价：%s", result["message"])
+    except Exception:
+        logger.exception("基金持仓股报价采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_fund_holdings() -> None:
+    """季报持仓一个季度才换一次，每天收盘后对一遍就够，顺手更新官方净值。"""
+    db = SessionLocal()
+    try:
+        holdings = collect_fund_holdings(db)
+        logger.info("基金持仓：%s", holdings["message"])
+    except Exception:
+        logger.exception("基金持仓采集失败")
+        db.rollback()
+    try:
+        navs = collect_fund_navs(db)
+        logger.info("基金净值：%s", navs["message"])
+    except Exception:
+        logger.exception("基金净值采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_scheduler() -> None:
     if scheduler.running:
         return
@@ -145,13 +180,34 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        job_fund_quotes,
+        "interval",
+        seconds=settings.fund_quote_interval_seconds,
+        id="fund-quotes",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # 收盘后再对一次季报持仓，换季那几天才会真的有变化
+    scheduler.add_job(
+        job_fund_holdings,
+        "cron",
+        hour=16,
+        minute=40,
+        id="fund-holdings",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     logger.info(
-        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价，资讯每 %ss",
+        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价，资讯每 %ss，基金持仓股每 %ss",
         settings.tick_interval_seconds,
         settings.curve_snapshot_interval_seconds,
         settings.stock_quote_interval_seconds,
         settings.stock_news_interval_seconds,
+        settings.fund_quote_interval_seconds,
     )
 
 

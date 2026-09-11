@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
+import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRefreshResult, FundSearchItem, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -76,4 +76,16 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ budget }),
     }),
+  funds: () => request<FundList>("/api/funds"),
+  fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
+  searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
+  addFund: (code: string) =>
+    request<FundFavorite>("/api/funds/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }),
+  deleteFund: (code: string) => request<{ ok: boolean }>(`/api/funds/favorites/${code}`, { method: "DELETE" }),
+  refreshFunds: (includeHoldings = false) =>
+    request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
 };

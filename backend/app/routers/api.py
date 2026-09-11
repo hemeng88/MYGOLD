@@ -5,12 +5,16 @@ from sqlalchemy.orm import Session
 
 from ..analysis.advice import build_advice
 from ..analysis.attribution import compute_attribution
+from ..analysis.fund_estimate import fund_detail, list_funds
 from ..analysis.refresh import refresh_attribution_data
 from ..analysis.sessions import snapshot as session_snapshot
 from ..analysis.stock_advice import build_stock_advice, list_stocks, stock_detail
 from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
 from ..database import get_db
 from ..formula import rule_payload
+from ..funds import favorites as fund_favorites
+from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
+from ..funds.sources import search_funds
 from ..holdings import add_lot, delete_lot, list_holdings
 from ..schemas import (
     AdviceResponse,
@@ -19,6 +23,12 @@ from ..schemas import (
     CurveResponse,
     DaySummary,
     FeeRule,
+    FundDetailResponse,
+    FundFavoriteIn,
+    FundFavoriteOut,
+    FundListResponse,
+    FundRefreshResult,
+    FundSearchItem,
     GoldLotIn,
     GoldLotOut,
     HoldingSummary,
@@ -186,3 +196,77 @@ async def stock_refresh(include_bars: bool = True, db: Session = Depends(get_db)
             "news": 0,
             "message": "股票刷新中断：%s" % exc,
         }
+
+
+@router.get("/funds", response_model=FundListResponse)
+def funds(db: Session = Depends(get_db)):
+    return list_funds(db)
+
+
+@router.get("/funds/search", response_model=List[FundSearchItem])
+def fund_search(
+    q: str = Query(min_length=1, max_length=32, description="基金代码或名称关键字"),
+    limit: int = Query(default=12, ge=1, le=30),
+    db: Session = Depends(get_db),
+):
+    try:
+        rows = search_funds(q, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="基金搜索失败：%s" % exc) from exc
+    owned = set(fund_favorites.list_codes(db))
+    return [dict(row, favorited=row["code"] in owned) for row in rows]
+
+
+@router.get("/funds/favorites", response_model=List[FundFavoriteOut])
+def fund_favorite_list(db: Session = Depends(get_db)):
+    return fund_favorites.list_favorites(db)
+
+
+@router.post("/funds/favorites", response_model=FundFavoriteOut)
+def fund_favorite_add(payload: FundFavoriteIn, db: Session = Depends(get_db)):
+    try:
+        row = fund_favorites.add_favorite(db, payload.code)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 收藏完立刻补一次持仓和报价，不然要等定时任务才看得到估值
+    try:
+        sync_fund(db, row.code)
+    except Exception:
+        db.rollback()
+    return row
+
+
+@router.delete("/funds/favorites/{code}")
+def fund_favorite_remove(code: str, db: Session = Depends(get_db)):
+    try:
+        fund_favorites.delete_favorite(db, code)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="没有收藏这只基金")
+    prune_stock_quotes(db)
+    return {"ok": True}
+
+
+@router.post("/funds/refresh", response_model=FundRefreshResult)
+def fund_refresh(
+    include_holdings: bool = Query(default=False, description="是否重拉季报持仓，持仓一季度才变一次"),
+    db: Session = Depends(get_db),
+):
+    try:
+        return refresh_funds(db, include_holdings=include_holdings)
+    except Exception as exc:
+        db.rollback()
+        return {
+            "ok": False,
+            "holdings": 0,
+            "navs": 0,
+            "quotes": 0,
+            "message": "基金刷新中断：%s" % exc,
+        }
+
+
+@router.get("/funds/{code}", response_model=FundDetailResponse)
+def fund(code: str, db: Session = Depends(get_db)):
+    if not fund_favorites.get_favorite(db, code):
+        raise HTTPException(status_code=404, detail="这只基金还没收藏")
+    return fund_detail(db, code)

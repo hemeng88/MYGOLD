@@ -183,3 +183,69 @@ class GoldLot(Base):
     bought_at: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     note: Mapped[str] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundFavorite(Base):
+    """收藏的基金，单用户，代码就是主键。"""
+
+    __tablename__ = "fund_favorites"
+
+    code: Mapped[str] = mapped_column(String(12), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    fund_type: Mapped[str] = mapped_column(String(32), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundHolding(Base):
+    """基金公示的股票持仓，季报级别，只在换季或手动刷新时更新。"""
+
+    __tablename__ = "fund_holdings"
+    __table_args__ = (UniqueConstraint("fund_code", "secid", name="uq_fund_holding_fund_secid"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fund_code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    # 东方财富 secid，形如 1.600519 / 0.000568 / 116.00700，直接能拿去查行情
+    secid: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    stock_code: Mapped[str] = mapped_column(String(16), nullable=False)
+    stock_name: Mapped[str] = mapped_column(String(48), nullable=True)
+    market: Mapped[str] = mapped_column(String(8), nullable=False)
+    # 占基金净值比例，百分数，例如 17.28
+    weight_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=True)
+    report_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundStockQuote(Base):
+    """基金持仓股的最新报价，按 secid 存，和 A 股观察池那张表互不干扰。"""
+
+    __tablename__ = "fund_stock_quotes"
+
+    secid: Mapped[str] = mapped_column(String(24), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    name: Mapped[str] = mapped_column(String(48), nullable=True)
+    market: Mapped[str] = mapped_column(String(8), nullable=False)
+    price: Mapped[float] = mapped_column(Float, nullable=True)
+    prev_close: Mapped[float] = mapped_column(Float, nullable=True)
+    # 涨跌幅，百分数，例如 -0.89
+    change_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundNav(Base):
+    """基金官方净值，只留最新一条，用来把估算涨跌换算成估算净值。"""
+
+    __tablename__ = "fund_navs"
+
+    code: Mapped[str] = mapped_column(String(12), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), nullable=True)
+    nav: Mapped[float] = mapped_column(Float, nullable=True)
+    acc_nav: Mapped[float] = mapped_column(Float, nullable=True)
+    nav_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    # 官方公布的上一个净值日涨跌幅，百分数
+    nav_chg_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

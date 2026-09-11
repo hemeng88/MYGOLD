@@ -1,0 +1,396 @@
+"""基金外部数据源：天天基金季报持仓 + 东方财富持仓股行情。
+
+持仓来自 fundf10 的 `type=jjcc` 接口，返回的是 JSONP 包着一段 HTML 表格，
+所以这里只能按标签硬解。行情走 push2 的 ulist.np，secid 里已经带了市场号，
+A 股和港股一次请求就能一起取到，不用像观察池那样区分新浪代码前缀。
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Dict, Iterable, List, Optional
+
+import httpx
+
+from ..config import settings
+from ..timeutil import now_local
+
+logger = logging.getLogger("mygold.funds")
+
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://fundf10.eastmoney.com/",
+}
+EM_QUOTE_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Referer": "https://quote.eastmoney.com/",
+}
+FUND_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Referer": "https://fund.eastmoney.com/",
+}
+# 新浪 hq 不带 Referer 会 403，返回体还是 GBK
+SINA_HEADERS = {
+    "User-Agent": HEADERS["User-Agent"],
+    "Referer": "https://finance.sina.com.cn/",
+}
+
+# 一次报价请求塞多少个 secid，持仓股多的时候分批发
+QUOTE_BATCH = 100
+
+MARKET_LABEL = {
+    "0": "深",
+    "1": "沪",
+    "105": "美",
+    "106": "美",
+    "107": "美",
+    "116": "港",
+    "153": "美",
+}
+
+_HQ_LINE = re.compile(r'hq_str_([a-z]{2}\d+)="([^"]*)"')
+_CONTENT = re.compile(r'content:"(.*)",arryear', re.S)
+_ROW = re.compile(r"<tr>(.*?)</tr>", re.S)
+_SECID = re.compile(r"quote\.eastmoney\.com/unify/r/(\d+)\.([0-9A-Za-z]+)")
+_STOCK_NAME = re.compile(r"<td class='tol'>.*?>([^<>]+)</a>", re.S)
+_REPORT_DATE = re.compile(r"截止至：<font[^>]*>([\d-]{8,10})</font>")
+_TOR_CELL = re.compile(r"<td class='tor'>(.*?)</td>", re.S)
+_RANK = re.compile(r"^\s*<td>(\d+)</td>")
+_TAG = re.compile(r"<[^>]+>")
+
+
+def _num(value) -> Optional[float]:
+    try:
+        if value is None:
+            return None
+        text = str(value).replace(",", "").replace("%", "").strip()
+        if text in ("", "-", "--", "—"):
+            return None
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _strip_tags(html: str) -> str:
+    return _TAG.sub("", html).replace("&nbsp;", " ").strip()
+
+
+def market_label(market: str) -> str:
+    return MARKET_LABEL.get(str(market), "其他")
+
+
+def report_label(report_date: Optional[str]) -> Optional[str]:
+    """2026-06-30 -> 2026年2季度。"""
+    if not report_date or len(report_date) < 7:
+        return None
+    try:
+        year = int(report_date[:4])
+        month = int(report_date[5:7])
+    except ValueError:
+        return None
+    return "%d年%d季度" % (year, (month + 2) // 3)
+
+
+def _parse_holdings_row(row_html: str) -> Optional[Dict]:
+    hit = _SECID.search(row_html)
+    if not hit:
+        return None
+    market, stock_code = hit.group(1), hit.group(2)
+    # 最新价/涨跌幅那两格是空 span 靠 JS 填的，所以第一个带 % 的右对齐格就是占净值比例
+    weight = None
+    for cell in _TOR_CELL.findall(row_html):
+        text = _strip_tags(cell)
+        if text.endswith("%"):
+            weight = _num(text)
+            break
+    if weight is None or weight <= 0:
+        return None
+    name_hit = _STOCK_NAME.search(row_html)
+    rank_hit = _RANK.search(row_html)
+    return {
+        "secid": "%s.%s" % (market, stock_code),
+        "market": market,
+        "stock_code": stock_code,
+        "stock_name": _strip_tags(name_hit.group(1)) if name_hit else None,
+        "weight_pct": weight,
+        "rank": int(rank_hit.group(1)) if rank_hit else None,
+    }
+
+
+def parse_holdings(text: str) -> Dict:
+    """从 jjcc 响应里挑出报告期最新的那一块持仓。"""
+    body = _CONTENT.search(text or "")
+    if not body:
+        return {"report_date": None, "holdings": []}
+    content = body.group(1)
+    blocks = re.split(r"<div class='boxitem", content)[1:]
+    best: Dict = {"report_date": None, "holdings": []}
+    for block in blocks:
+        date_hit = _REPORT_DATE.search(block)
+        report_date = date_hit.group(1) if date_hit else None
+        rows: List[Dict] = []
+        seen = set()
+        for row_html in _ROW.findall(block):
+            item = _parse_holdings_row(row_html)
+            if not item or item["secid"] in seen:
+                continue
+            seen.add(item["secid"])
+            rows.append(item)
+        if not rows:
+            continue
+        # 同一次响应里会带好几个季度，只要最新的那个报告期
+        if best["report_date"] is None or (report_date or "") > (best["report_date"] or ""):
+            best = {"report_date": report_date, "holdings": rows}
+    return best
+
+
+def fetch_holdings(code: str) -> Dict:
+    """拉一只基金最新一期的股票持仓明细。"""
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_holdings_url,
+            params={
+                "type": "jjcc",
+                "code": code,
+                "topline": settings.fund_holdings_topline,
+                "year": "",
+                "month": "",
+                "rt": 0,
+            },
+            headers=HEADERS,
+        )
+        response.raise_for_status()
+        response.encoding = response.encoding or "utf-8"
+        text = response.text
+    parsed = parse_holdings(text)
+    for item in parsed["holdings"]:
+        item["fund_code"] = code
+        item["report_date"] = parsed["report_date"]
+        item["source"] = "em_f10_jjcc"
+        item["updated_at"] = now_local()
+    return parsed
+
+
+def fetch_fund_info(codes: Iterable[str]) -> List[Dict]:
+    """基金名称 + 官方最新净值。"""
+    wanted = [str(code) for code in codes if code]
+    if not wanted:
+        return []
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_info_url,
+            params={
+                "pageIndex": 1,
+                "pageSize": max(len(wanted), 1),
+                "plat": "Android",
+                "appType": "ttjj",
+                "product": "EFund",
+                "Fcodes": ",".join(wanted),
+                "deviceid": "1",
+                "version": "6.2.8",
+                "Uid": "",
+            },
+            headers=FUND_HEADERS,
+        )
+        response.raise_for_status()
+    rows = (response.json() or {}).get("Datas") or []
+    now = now_local()
+    out: List[Dict] = []
+    for row in rows:
+        code = str(row.get("FCODE") or "").strip()
+        if not code:
+            continue
+        out.append(
+            {
+                "code": code,
+                "name": (row.get("SHORTNAME") or "").strip() or None,
+                "nav": _num(row.get("NAV")),
+                "acc_nav": _num(row.get("ACCNAV")),
+                "nav_date": (row.get("PDATE") or None),
+                "nav_chg_pct": _num(row.get("NAVCHGRT")),
+                "source": "em_fundmob",
+                "collected_at": now,
+            }
+        )
+    return out
+
+
+def search_funds(keyword: str, limit: int = 12) -> List[Dict]:
+    """按代码或名称模糊找基金，给收藏页做候选。"""
+    query = (keyword or "").strip()
+    if not query:
+        return []
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_search_url,
+            params={"m": 1, "key": query, "_": 1},
+            headers=FUND_HEADERS,
+        )
+        response.raise_for_status()
+    rows = (response.json() or {}).get("Datas") or []
+    out: List[Dict] = []
+    for row in rows:
+        code = str(row.get("CODE") or "").strip()
+        if not code.isdigit() or len(code) != 6:
+            continue
+        # 搜「白酒」会连中证白酒这种指数一起返回，代码也是 6 位，靠 CATEGORY 才能筛掉
+        if str(row.get("CATEGORY") or "") != "700":
+            continue
+        base = row.get("FundBaseInfo") or {}
+        out.append(
+            {
+                "code": code,
+                "name": (row.get("NAME") or base.get("SHORTNAME") or "").strip() or code,
+                "fund_type": (base.get("FTYPE") or None),
+                "nav": _num(base.get("DWJZ")),
+                "nav_date": base.get("FSRQ") or None,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _sina_code(secid: str) -> Optional[str]:
+    """secid -> 新浪代码。新浪只兜底 A 股和港股，美股先不管。"""
+    market, _, code = str(secid).partition(".")
+    if market == "1":
+        return "sh" + code
+    if market == "0":
+        return "sz" + code
+    if market == "116":
+        return "hk" + code
+    return None
+
+
+def _parse_sina_line(sina_code: str, payload: str, now) -> Optional[Dict]:
+    parts = payload.split(",")
+    if sina_code.startswith("hk"):
+        # 港股：0 英文名, 1 中文名, 3 昨收, 6 现价
+        if len(parts) < 9:
+            return None
+        name, prev, price = parts[1], _num(parts[3]), _num(parts[6])
+    else:
+        # A 股：0 名称, 2 昨收, 3 现价
+        if len(parts) < 4:
+            return None
+        name, prev, price = parts[0], _num(parts[2]), _num(parts[3])
+    if price is None or price <= 0:
+        return None
+    change_pct = round((price - prev) / prev * 100, 3) if prev else None
+    return {
+        "code": sina_code[2:],
+        "name": (name or "").strip() or None,
+        "price": price,
+        "prev_close": prev,
+        "change_pct": change_pct,
+        "source": "sina_hq",
+        "collected_at": now,
+    }
+
+
+def _quote_sina(secids: List[str], now) -> List[Dict]:
+    by_sina = {}
+    for secid in secids:
+        sina_code = _sina_code(secid)
+        if sina_code:
+            by_sina[sina_code] = secid
+    if not by_sina:
+        return []
+    out: List[Dict] = []
+    codes = sorted(by_sina)
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        for start in range(0, len(codes), QUOTE_BATCH):
+            batch = codes[start : start + QUOTE_BATCH]
+            try:
+                response = client.get(settings.stock_hq_url + ",".join(batch), headers=SINA_HEADERS)
+                response.raise_for_status()
+                text = response.content.decode("gbk", errors="ignore")
+            except Exception:
+                logger.exception("新浪兜底报价失败（%d 只）", len(batch))
+                continue
+            for match in _HQ_LINE.finditer(text):
+                sina_code, payload = match.group(1), match.group(2)
+                secid = by_sina.get(sina_code)
+                if not secid:
+                    continue
+                item = _parse_sina_line(sina_code, payload, now)
+                if not item:
+                    continue
+                item["secid"] = secid
+                item["market"] = secid.split(".")[0]
+                out.append(item)
+    return out
+
+
+def _quote_batch(client: httpx.Client, url: str, batch: List[str], now) -> List[Dict]:
+    response = client.get(
+        url,
+        params={
+            "fltt": 2,
+            "invt": 2,
+            "fields": "f2,f3,f12,f13,f14,f18",
+            "secids": ",".join(batch),
+        },
+        headers=EM_QUOTE_HEADERS,
+    )
+    response.raise_for_status()
+    rows = (((response.json() or {}).get("data") or {}).get("diff")) or []
+    out: List[Dict] = []
+    for row in rows:
+        code = str(row.get("f12") or "").strip()
+        market = str(row.get("f13") if row.get("f13") is not None else "").strip()
+        if not code or not market:
+            continue
+        out.append(
+            {
+                "secid": "%s.%s" % (market, code),
+                "code": code,
+                "market": market,
+                "name": (row.get("f14") or None),
+                "price": _num(row.get("f2")),
+                "prev_close": _num(row.get("f18")),
+                "change_pct": _num(row.get("f3")),
+                "source": "em_ulist",
+                "collected_at": now,
+            }
+        )
+    return out
+
+
+def fetch_stock_quotes(secids: Iterable[str]) -> List[Dict]:
+    """按 secid 批量取持仓股行情。
+
+    push2 请求一密就会直接断连，丢一批就能让覆盖率掉几十个点、估算跟着失真，
+    所以按 push2 -> push2delay 镜像 -> 新浪 依次兜底，每一轮只补上一轮没取到的。
+    新浪只认 A 股和港股，美股取不到就让 covered_pct 老实反映出来。
+    """
+    wanted = sorted({str(secid) for secid in secids if secid})
+    if not wanted:
+        return []
+    now = now_local()
+    found: Dict[str, Dict] = {}
+    for url in (settings.fund_stock_quote_url, settings.fund_stock_quote_fallback_url):
+        missing = [secid for secid in wanted if secid not in found]
+        if not missing:
+            break
+        with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+            for start in range(0, len(missing), QUOTE_BATCH):
+                batch = missing[start : start + QUOTE_BATCH]
+                try:
+                    for item in _quote_batch(client, url, batch, now):
+                        found.setdefault(item["secid"], item)
+                except Exception:
+                    logger.warning("%s 这批报价没取到（%d 只），换下一个源", url, len(batch))
+    missing = [secid for secid in wanted if secid not in found]
+    if missing:
+        for item in _quote_sina(missing, now):
+            found.setdefault(item["secid"], item)
+    still = [secid for secid in wanted if secid not in found]
+    if still:
+        logger.warning("%d 只持仓股所有源都没取到：%s", len(still), ",".join(still[:10]))
+    return list(found.values())
