@@ -86,6 +86,12 @@ export const api = {
       body: JSON.stringify({ code }),
     }),
   deleteFund: (code: string) => request<{ ok: boolean }>(`/api/funds/favorites/${code}`, { method: "DELETE" }),
+  saveFundPosition: (code: string, shares: number | null, costPrice: number | null) =>
+    request<FundFavorite>(`/api/funds/favorites/${code}/position`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shares, cost_price: costPrice }),
+    }),
   refreshFunds: (includeHoldings = false) =>
     request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
 };

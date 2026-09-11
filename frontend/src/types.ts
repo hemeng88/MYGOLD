@@ -408,6 +408,14 @@ export interface FundItem {
   nav: number | null;
   nav_date: string | null;
   nav_chg_pct: number | null;
+  shares: number | null;
+  cost_price: number | null;
+  cost: number | null;
+  nav_value: number | null;
+  estimate_value: number | null;
+  today_pnl: number | null;
+  total_pnl: number | null;
+  total_pnl_pct: number | null;
   holdings_count: number;
   quoted_count: number;
   disclosed_pct: number | null;
@@ -446,6 +454,8 @@ export interface FundFavorite {
   code: string;
   name: string;
   fund_type: string | null;
+  shares: number | null;
+  cost_price: number | null;
   added_at: string;
 }
 

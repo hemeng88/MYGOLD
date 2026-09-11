@@ -466,6 +466,15 @@ class FundItem(BaseModel):
     nav: Optional[float] = None
     nav_date: Optional[str] = None
     nav_chg_pct: Optional[float] = None
+    # 手填持仓，用来算盈亏金额
+    shares: Optional[float] = None
+    cost_price: Optional[float] = None
+    cost: Optional[float] = None
+    nav_value: Optional[float] = None
+    estimate_value: Optional[float] = None
+    today_pnl: Optional[float] = None
+    total_pnl: Optional[float] = None
+    total_pnl_pct: Optional[float] = None
     holdings_count: int = 0
     quoted_count: int = 0
     disclosed_pct: Optional[float] = None
@@ -508,7 +517,16 @@ class FundFavoriteOut(BaseModel):
     code: str
     name: str
     fund_type: Optional[str] = None
+    shares: Optional[float] = None
+    cost_price: Optional[float] = None
     added_at: datetime
+
+
+class FundPositionIn(BaseModel):
+    """份额和成本价，都传 null 表示清空持仓，只保留收藏。"""
+
+    shares: Optional[float] = None
+    cost_price: Optional[float] = None
 
 
 class FundSearchItem(BaseModel):

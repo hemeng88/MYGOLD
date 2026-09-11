@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActionIcon,
   Badge,
   Button,
   Group,
+  NumberInput,
   Paper,
   SimpleGrid,
   Skeleton,
@@ -31,6 +32,11 @@ function tone(value: number | null | undefined) {
   return value > 0 ? "red" : "teal";
 }
 
+function money(value: number | null | undefined) {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 const CONFIDENCE: Record<string, { label: string; color: string }> = {
   high: { label: "覆盖高", color: "teal" },
   medium: { label: "覆盖中", color: "yellow" },
@@ -47,6 +53,9 @@ export function FundsPanel() {
   const [results, setResults] = useState<FundSearchItem[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [busyCode, setBusyCode] = useState<string | null>(null);
+  const [sharesInput, setSharesInput] = useState<number | string>("");
+  const [costInput, setCostInput] = useState<number | string>("");
+  const [savingPos, setSavingPos] = useState(false);
 
   const loadList = async () => {
     setList(await api.funds());
@@ -84,6 +93,19 @@ export function FundsPanel() {
         });
       });
   }, [picked, list]);
+
+  useEffect(() => {
+    if (!picked) {
+      setSharesInput("");
+      setCostInput("");
+      return;
+    }
+    const item = (list?.items || []).find((row) => row.code === picked);
+    setSharesInput(item?.shares ?? "");
+    setCostInput(item?.cost_price ?? "");
+    // 只在切换基金时回填，不跟 list 联动，否则 20 秒一次的轮询会把正在输入的内容冲掉
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked]);
 
   const onRefresh = async (includeHoldings = false) => {
     setRefreshing(true);
@@ -145,6 +167,39 @@ export function FundsPanel() {
     }
   };
 
+  const onSavePosition = async () => {
+    if (!picked) return;
+    const shares = sharesInput === "" ? null : Number(sharesInput);
+    const costPrice = costInput === "" ? null : Number(costInput);
+    if (shares !== null && (!Number.isFinite(shares) || shares < 0)) {
+      notifications.show({ color: "red", title: "份额不对", message: "填个大于 0 的数，或者留空清掉持仓" });
+      return;
+    }
+    if (shares && !costPrice) {
+      notifications.show({ color: "red", title: "还差成本价", message: "填了份额也要填成本价，不然算不出盈亏" });
+      return;
+    }
+    setSavingPos(true);
+    try {
+      await api.saveFundPosition(picked, shares, costPrice);
+      await loadList();
+      setDetail(await api.fund(picked));
+      notifications.show({
+        color: "gold",
+        title: shares ? "持仓已记下" : "已清掉持仓",
+        message: shares ? `${shares} 份 · 成本 ${costPrice}` : "只保留收藏，不算盈亏",
+      });
+    } catch (err) {
+      notifications.show({
+        color: "red",
+        title: "保存失败",
+        message: err instanceof Error ? err.message : "稍后重试",
+      });
+    } finally {
+      setSavingPos(false);
+    }
+  };
+
   const onRemove = async (code: string) => {
     try {
       await api.deleteFund(code);
@@ -161,6 +216,24 @@ export function FundsPanel() {
   };
 
   const items = list?.items || [];
+
+  // 只统计填了持仓的基金，没填的当成自选不算钱
+  const totals = useMemo(() => {
+    const held = items.filter((item) => item.shares && item.cost);
+    if (!held.length) return null;
+    const sum = (pick: (item: FundItem) => number | null) =>
+      held.reduce((acc, item) => acc + (pick(item) ?? 0), 0);
+    const cost = sum((item) => item.cost);
+    const total = sum((item) => item.total_pnl);
+    return {
+      count: held.length,
+      cost,
+      value: sum((item) => item.estimate_value ?? item.nav_value),
+      today: sum((item) => item.today_pnl),
+      total,
+      totalPct: cost ? (total / cost) * 100 : null,
+    };
+  }, [items]);
 
   return (
     <Paper className="glass" p="md">
@@ -206,6 +279,43 @@ export function FundsPanel() {
           搜索
         </Button>
       </Group>
+
+      {totals ? (
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" mb="sm">
+          <Paper className="stat-tile" p="xs">
+            <Text size="xs" c="dimmed">
+              今日估算盈亏
+            </Text>
+            <Text fw={700} size="sm" c={tone(totals.today)}>
+              {money(totals.today)} 元
+            </Text>
+          </Paper>
+          <Paper className="stat-tile" p="xs">
+            <Text size="xs" c="dimmed">
+              累计盈亏
+            </Text>
+            <Text fw={700} size="sm" c={tone(totals.total)}>
+              {money(totals.total)} 元
+            </Text>
+          </Paper>
+          <Paper className="stat-tile" p="xs">
+            <Text size="xs" c="dimmed">
+              估算总市值
+            </Text>
+            <Text fw={600} size="sm">
+              {fmt(totals.value)} 元
+            </Text>
+          </Paper>
+          <Paper className="stat-tile" p="xs">
+            <Text size="xs" c="dimmed">
+              总成本 · {totals.count} 只
+            </Text>
+            <Text fw={600} size="sm">
+              {fmt(totals.cost)} 元
+            </Text>
+          </Paper>
+        </SimpleGrid>
+      ) : null}
 
       {results ? (
         <Stack gap={6} mb="sm">
@@ -321,6 +431,83 @@ export function FundsPanel() {
             </Text>
           ) : null}
 
+          <Paper className="stat-tile" p="sm">
+            <Text size="xs" fw={600} mb={6}>
+              我的持仓
+            </Text>
+            <SimpleGrid cols={2} spacing="xs">
+              <NumberInput
+                size="sm"
+                label="持有份额"
+                placeholder="例如 1000"
+                min={0}
+                step={100}
+                decimalScale={4}
+                hideControls
+                value={sharesInput}
+                onChange={setSharesInput}
+              />
+              <NumberInput
+                size="sm"
+                label="成本价"
+                placeholder="元/份"
+                min={0}
+                decimalScale={4}
+                hideControls
+                value={costInput}
+                onChange={setCostInput}
+              />
+            </SimpleGrid>
+            <Button mt="xs" size="xs" color="gold" fullWidth loading={savingPos} onClick={onSavePosition}>
+              保存持仓
+            </Button>
+            {detail.fund.shares && detail.fund.cost ? (
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" mt="sm">
+                <div>
+                  <Text size="xs" c="dimmed">
+                    持仓成本
+                  </Text>
+                  <Text fw={600} size="sm">
+                    {fmt(detail.fund.cost)} 元
+                  </Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">
+                    估算市值
+                  </Text>
+                  <Text fw={600} size="sm">
+                    {fmt(detail.fund.estimate_value ?? detail.fund.nav_value)} 元
+                  </Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">
+                    今日估算
+                  </Text>
+                  <Text fw={700} size="sm" c={tone(detail.fund.today_pnl)}>
+                    {money(detail.fund.today_pnl)} 元
+                  </Text>
+                </div>
+                <div>
+                  <Text size="xs" c="dimmed">
+                    累计盈亏
+                  </Text>
+                  <Text fw={700} size="sm" c={tone(detail.fund.total_pnl)}>
+                    {money(detail.fund.total_pnl)} 元
+                    {detail.fund.total_pnl_pct != null ? (
+                      <Text component="span" size="xs" c="dimmed">
+                        {` ${signed(detail.fund.total_pnl_pct, 1)}%`}
+                      </Text>
+                    ) : null}
+                  </Text>
+                </div>
+              </SimpleGrid>
+            ) : (
+              <Text size="xs" c="dimmed" mt={6}>
+                填上份额和成本价，就能把估算涨跌换成具体的盈亏金额。留空则只当自选看。
+              </Text>
+            )}
+          </Paper>
+
           <Group justify="space-between" align="center">
             <Text size="xs" fw={600}>
               公示重仓 {detail.holdings.length} 只
@@ -414,9 +601,20 @@ function FundRow({
             <Text fw={700} c={tone(item.estimate_pct)}>
               {item.estimate_pct == null ? "—" : `${signed(item.estimate_pct)}%`}
             </Text>
-            <Text size="xs" c="dimmed">
-              {item.estimate_nav != null ? `估${fmt(item.estimate_nav, 4)}` : fmt(item.nav, 4)}
-            </Text>
+            {item.shares && item.cost ? (
+              <>
+                <Text size="sm" fw={600} c={tone(item.today_pnl)}>
+                  今日{money(item.today_pnl)}
+                </Text>
+                <Text size="xs" c={tone(item.total_pnl)}>
+                  累计{money(item.total_pnl)}
+                </Text>
+              </>
+            ) : (
+              <Text size="xs" c="dimmed">
+                {item.estimate_nav != null ? `估${fmt(item.estimate_nav, 4)}` : fmt(item.nav, 4)}
+              </Text>
+            )}
           </div>
           <ActionIcon
             variant="subtle"

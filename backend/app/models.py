@@ -186,7 +186,11 @@ class GoldLot(Base):
 
 
 class FundFavorite(Base):
-    """收藏的基金，单用户，代码就是主键。"""
+    """收藏的基金，单用户，代码就是主键。
+
+    shares / cost_price 是手动填的持仓，用来把估算涨跌换算成具体的盈亏金额。
+    留空表示只看不持有。
+    """
 
     __tablename__ = "fund_favorites"
 
@@ -194,6 +198,10 @@ class FundFavorite(Base):
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     fund_type: Mapped[str] = mapped_column(String(32), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 持有份额
+    shares: Mapped[float] = mapped_column(Float, nullable=True)
+    # 每份成本价（元）
+    cost_price: Mapped[float] = mapped_column(Float, nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 

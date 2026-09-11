@@ -81,6 +81,26 @@ def add_favorite(db: Session, code: str) -> FundFavorite:
     return row
 
 
+def set_position(
+    db: Session, code: str, shares: Optional[float], cost_price: Optional[float]
+) -> FundFavorite:
+    """填持仓份额和成本价。两个都留空就是清掉持仓，只保留收藏。"""
+    row = db.get(FundFavorite, code)
+    if not row:
+        raise KeyError(code)
+    if shares is not None and shares < 0:
+        raise ValueError("份额不能是负数")
+    if cost_price is not None and cost_price < 0:
+        raise ValueError("成本价不能是负数")
+    if shares is not None and shares > 0 and not cost_price:
+        raise ValueError("填了份额也要填成本价，不然算不出盈亏")
+    row.shares = round(shares, 4) if shares else None
+    row.cost_price = round(cost_price, 4) if cost_price else None
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 def delete_favorite(db: Session, code: str) -> None:
     row = db.get(FundFavorite, code)
     if not row:

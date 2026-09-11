@@ -43,6 +43,42 @@ def _confidence(covered_pct: float, stale: bool) -> str:
     return "low"
 
 
+def _position(
+    shares: Optional[float],
+    cost_price: Optional[float],
+    nav: Optional[float],
+    estimate_nav: Optional[float],
+) -> Dict:
+    """把估算净值换算成具体的盈亏金额。没填份额就全是 None。"""
+    out = {
+        "shares": shares,
+        "cost_price": cost_price,
+        "cost": None,
+        "nav_value": None,
+        "estimate_value": None,
+        "today_pnl": None,
+        "total_pnl": None,
+        "total_pnl_pct": None,
+    }
+    if not shares or shares <= 0:
+        return out
+    if cost_price is not None and cost_price > 0:
+        out["cost"] = round(shares * cost_price, 2)
+    if nav:
+        out["nav_value"] = round(shares * nav, 2)
+    if estimate_nav:
+        out["estimate_value"] = round(shares * estimate_nav, 2)
+    # 今日估算盈亏：估算净值和最近一次公布净值的差
+    if estimate_nav and nav:
+        out["today_pnl"] = round(shares * (estimate_nav - nav), 2)
+    # 累计盈亏优先按估算净值算，估不出来就退回已公布净值
+    basis = estimate_nav or nav
+    if basis and out["cost"]:
+        out["total_pnl"] = round(shares * basis - out["cost"], 2)
+        out["total_pnl_pct"] = round(out["total_pnl"] / out["cost"] * 100, 3)
+    return out
+
+
 def _holding_row(holding: FundHolding, quote: Optional[FundStockQuote]) -> Dict:
     change_pct = quote.change_pct if quote else None
     return {
@@ -68,13 +104,16 @@ def summarize_fund(
     today: Optional[datetime] = None,
 ) -> Dict:
     moment = today or now_local()
+    nav_value = nav.nav if nav else None
     base = {
         "code": favorite.code,
         "name": favorite.name,
         "fund_type": favorite.fund_type,
-        "nav": nav.nav if nav else None,
+        "nav": nav_value,
         "nav_date": nav.nav_date if nav else None,
         "nav_chg_pct": nav.nav_chg_pct if nav else None,
+        # 估不出净值时也先给一份按已公布净值算的盈亏，下面拿到估算净值再覆盖
+        **_position(favorite.shares, favorite.cost_price, nav_value, None),
         "holdings_count": len(holdings),
         "quoted_count": 0,
         "disclosed_pct": None,
@@ -137,6 +176,7 @@ def summarize_fund(
 
     conservative = round(contrib, 3)
     estimate = round(contrib / (covered / 100.0), 3)
+    estimate_nav = round(nav_value * (1 + estimate / 100.0), 4) if nav_value else None
     lead = max(priced, key=lambda row: row["contrib_pct"])
     drag = min(priced, key=lambda row: row["contrib_pct"])
     base.update(
@@ -144,7 +184,9 @@ def summarize_fund(
             "ready": True,
             "conservative_pct": conservative,
             "estimate_pct": estimate,
-            "estimate_nav": round(nav.nav * (1 + estimate / 100.0), 4) if nav and nav.nav else None,
+            "estimate_nav": estimate_nav,
+            # 有了估算净值再算一遍盈亏，这时才有今日估算这一项
+            **_position(favorite.shares, favorite.cost_price, nav_value, estimate_nav),
             "confidence": _confidence(covered, stale),
             "lead_name": lead["name"] if lead["contrib_pct"] > 0 else None,
             "lead_contrib_pct": lead["contrib_pct"] if lead["contrib_pct"] > 0 else None,

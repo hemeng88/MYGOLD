@@ -27,6 +27,7 @@ from ..schemas import (
     FundFavoriteIn,
     FundFavoriteOut,
     FundListResponse,
+    FundPositionIn,
     FundRefreshResult,
     FundSearchItem,
     GoldLotIn,
@@ -235,6 +236,17 @@ def fund_favorite_add(payload: FundFavoriteIn, db: Session = Depends(get_db)):
     except Exception:
         db.rollback()
     return row
+
+
+@router.put("/funds/favorites/{code}/position", response_model=FundFavoriteOut)
+def fund_position_save(code: str, payload: FundPositionIn, db: Session = Depends(get_db)):
+    try:
+        return fund_favorites.set_position(db, code, payload.shares, payload.cost_price)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="没有收藏这只基金")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.delete("/funds/favorites/{code}")
