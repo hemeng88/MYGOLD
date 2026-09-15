@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { Advice, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
+import type { CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -46,7 +46,6 @@ export const api = {
   rules: () => request<FeeRule>("/api/rules"),
   events: (date?: string) =>
     request<MarketEvent[]>(date ? `/api/events?date=${date}` : "/api/events"),
-  advice: () => request<Advice>("/api/advice"),
   sessions: () => request<SessionSnapshot>("/api/sessions"),
   funds: () => request<FundList>("/api/funds"),
   fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),

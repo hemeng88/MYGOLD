@@ -92,67 +92,6 @@ export interface MarketEvent {
   summary: string | null;
   tags: string[];
 }
-
-export interface AdviceLevel {
-  price: number;
-  note: string;
-  gap_pct: number | null;
-  kind: string | null;
-}
-
-export interface AdviceFactor {
-  name: string;
-  label: string;
-  detail: string;
-  score: number;
-  win_rate?: number | null;
-  mean_next?: number | null;
-  days: number;
-  kind?: string;
-}
-
-export interface Advice {
-  ready: boolean;
-  message: string | null;
-  as_of: string | null;
-  price: number | null;
-  trade_date: string | null;
-  stance: "accumulate" | "hold" | "reduce" | "wait" | null;
-  headline: string | null;
-  score: number | null;
-  factors: AdviceFactor[];
-  mood_label: string | null;
-  polarity: number | null;
-  volume_rank_pct: number | null;
-  z_score: number | null;
-  ma20: number | null;
-  ma60: number | null;
-  atr: number | null;
-  swing_high: number | null;
-  swing_low: number | null;
-  breakeven: number | null;
-  avg_cost: number | null;
-  total_grams: number | null;
-  net_if_sell_now: number | null;
-  buy_levels: AdviceLevel[];
-  sell_levels: AdviceLevel[];
-  drivers: { tag: string; share_pct: number }[];
-  notes: string[];
-  session?: AdviceSession | null;
-}
-
-export interface AdviceSession {
-  band: string | null;
-  band_label: string | null;
-  clock: string | null;
-  open_count: number;
-  open_names: string[];
-  hour_vol_rank_pct: number | null;
-  profile_days: number;
-  hot_names?: string[];
-  hot_open?: string[];
-}
-
 export interface SessionRange {
   start: string;
   end: string;

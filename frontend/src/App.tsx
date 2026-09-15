@@ -28,11 +28,9 @@ import {
   IconMinus,
   IconRefresh,
   IconSparkles,
-  IconTargetArrow,
 } from "@tabler/icons-react";
 import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
-import { AdviceModal } from "./AdviceModal";
 import { FundsPanel } from "./FundsPanel";
 import { SessionClock } from "./SessionClock";
 import { GoldConvert } from "./GoldConvert";
@@ -40,7 +38,7 @@ import { InstallHint } from "./InstallHint";
 import { NativeServerBar } from "./NativeServerBar";
 import { initNativeNotify, notifyNow } from "./nativeNotify";
 import { FundRankPanel } from "./FundRankPanel";
-import type { Advice, CurveResponse, DaySummary, FeeRule, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
+import type { CurveResponse, DaySummary, FeeRule, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
 type TabKey = "funds" | "market";
 
@@ -145,9 +143,7 @@ export default function App() {
   // 事件不再单独成页，但金价图上还要打事件标记
   const [events, setEvents] = useState<MarketEvent[]>([]);
   const [mobileTab, setMobileTab] = useState<TabKey>(TAB_META[0].key);
-  const [advice, setAdvice] = useState<Advice | null>(null);
-  const [adviceOpen, setAdviceOpen] = useState(false);
-  const [advising, setAdvising] = useState(false);
+
   const [sessions, setSessions] = useState<SessionSnapshot | null>(null);
   const [hoverExchange, setHoverExchange] = useState<SessionExchange | null>(null);
   const [hoverClockMin, setHoverClockMin] = useState<number | null>(null);
@@ -241,24 +237,6 @@ export default function App() {
       });
     } finally {
       setCollecting(false);
-    }
-  };
-
-  const onAdvise = async () => {
-    setAdvising(true);
-    setAdvice(null);
-    setAdviceOpen(true);
-    try {
-      setAdvice(await api.advice());
-    } catch (err) {
-      setAdviceOpen(false);
-      notifications.show({
-        color: "red",
-        title: "算不出来",
-        message: err instanceof Error ? err.message : "稍后重试",
-      });
-    } finally {
-      setAdvising(false);
     }
   };
 
@@ -532,18 +510,6 @@ export default function App() {
           </Paper>
         ))}
       </SimpleGrid>
-      <Button
-        fullWidth
-        mt="md"
-        color="gold"
-        variant="light"
-        size={isMobile ? "md" : "sm"}
-        loading={advising}
-        onClick={onAdvise}
-        leftSection={<IconTargetArrow size={16} />}
-      >
-        算一下该买还是该卖
-      </Button>
     </Paper>
   );
 
@@ -671,7 +637,6 @@ export default function App() {
         </Grid>
       )}
 
-      <AdviceModal advice={advice} opened={adviceOpen} onClose={() => setAdviceOpen(false)} fullScreen={isMobile} />
 
       {isMobile ? (
         <nav className="mobile-tabbar">

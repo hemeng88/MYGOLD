@@ -2,15 +2,12 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from .analysis.refresh import refresh_attribution_data
 from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .funds.rankings import collect_rankings
-from .stocks.collector import collect_bars, collect_quotes
-from .stocks.news import collect_news
-from .stocks.universe import should_poll_quotes
+from .market_session import should_poll_quotes
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -34,57 +31,6 @@ async def job_tick() -> None:
 
 async def job_curve() -> None:
     await _run_collect(include_chart=True)
-
-
-async def job_attribution() -> None:
-    db = SessionLocal()
-    try:
-        result = await refresh_attribution_data(db)
-        logger.info("归因数据刷新：%s", result["message"])
-    except Exception:
-        logger.exception("归因数据刷新失败")
-        db.rollback()
-    finally:
-        db.close()
-    await job_stock_bars()
-
-
-async def job_stock_quotes() -> None:
-    if not should_poll_quotes():
-        return
-    db = SessionLocal()
-    try:
-        result = collect_quotes(db)
-        logger.info("A股报价：%s", result["message"])
-    except Exception:
-        logger.exception("A股报价采集失败")
-        db.rollback()
-    finally:
-        db.close()
-
-
-async def job_stock_news() -> None:
-    db = SessionLocal()
-    try:
-        result = await collect_news(db)
-        logger.info("股票资讯：%s", result["message"])
-    except Exception:
-        logger.exception("股票资讯采集失败")
-        db.rollback()
-    finally:
-        db.close()
-
-
-async def job_stock_bars() -> None:
-    db = SessionLocal()
-    try:
-        result = await collect_bars(db)
-        logger.info("A股日线：%s", result["message"])
-    except Exception:
-        logger.exception("A股日线采集失败")
-        db.rollback()
-    finally:
-        db.close()
 
 
 async def job_fund_quotes() -> None:
@@ -165,35 +111,6 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
     )
-    # 收盘后更新一次归因数据：日线出完、当天快讯也齐了
-    scheduler.add_job(
-        job_attribution,
-        "cron",
-        hour=16,
-        minute=20,
-        id="attribution",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        job_stock_quotes,
-        "interval",
-        seconds=settings.stock_quote_interval_seconds,
-        id="stock-quotes",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        job_stock_news,
-        "interval",
-        seconds=settings.stock_news_interval_seconds,
-        id="stock-news",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
     scheduler.add_job(
         job_fund_quotes,
         "interval",
@@ -227,11 +144,9 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "调度已启动：每 %ss 采价，每 %ss 同步当日曲线，A股开盘每 %ss 刷报价，资讯每 %ss，基金持仓股每 %ss",
+        "调度已启动：每 %ss 采金价，每 %ss 同步当日曲线，A股盘中每 %ss 刷基金持仓股",
         settings.tick_interval_seconds,
         settings.curve_snapshot_interval_seconds,
-        settings.stock_quote_interval_seconds,
-        settings.stock_news_interval_seconds,
         settings.fund_quote_interval_seconds,
     )
 

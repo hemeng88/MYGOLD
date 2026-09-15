@@ -19,7 +19,7 @@ from ..config import settings
 from ..funds.favorites import list_favorites
 from ..funds.sources import market_label, report_label
 from ..models import FundFavorite, FundHolding, FundNav, FundStockQuote
-from ..stocks.universe import session_label
+from ..market_session import session_label
 from ..timeutil import now_local
 
 
