@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
+import type { FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -36,17 +36,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  latest: () => request<LatestQuote>("/api/quote/latest"),
-  days: () => request<DaySummary[]>("/api/days"),
-  curve: (date?: string) => request<CurveResponse>(date ? `/api/curve?date=${date}` : "/api/curve"),
-  collect: () =>
-    request<CollectResult>("/api/collect", {
-      method: "POST",
-    }),
-  rules: () => request<FeeRule>("/api/rules"),
-  events: (date?: string) =>
-    request<MarketEvent[]>(date ? `/api/events?date=${date}` : "/api/events"),
-  sessions: () => request<SessionSnapshot>("/api/sessions"),
   funds: () => request<FundList>("/api/funds"),
   fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),

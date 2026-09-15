@@ -2,7 +2,6 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from .collectors.service import collect_once
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
@@ -11,26 +10,6 @@ from .market_session import should_poll_quotes
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
-
-
-async def _run_collect(include_chart: bool) -> None:
-    db = SessionLocal()
-    try:
-        result = await collect_once(db, include_chart=include_chart)
-        logger.info("%s upserted=%s", result.message, result.curve_points_upserted)
-    except Exception:
-        logger.exception("定时采集失败")
-        db.rollback()
-    finally:
-        db.close()
-
-
-async def job_tick() -> None:
-    await _run_collect(include_chart=False)
-
-
-async def job_curve() -> None:
-    await _run_collect(include_chart=True)
 
 
 async def job_fund_quotes() -> None:
@@ -84,34 +63,6 @@ def start_scheduler() -> None:
     if scheduler.running:
         return
     scheduler.add_job(
-        job_tick,
-        "interval",
-        seconds=settings.tick_interval_seconds,
-        id="tick",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    scheduler.add_job(
-        job_curve,
-        "interval",
-        seconds=settings.curve_snapshot_interval_seconds,
-        id="curve",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
-    # 收盘前再固化一次当日曲线，避免跨日后第三方接口只剩新一天数据
-    scheduler.add_job(
-        job_curve,
-        "cron",
-        hour=23,
-        minute=55,
-        id="finalize-curve",
-        replace_existing=True,
-        max_instances=1,
-    )
-    scheduler.add_job(
         job_fund_quotes,
         "interval",
         seconds=settings.fund_quote_interval_seconds,
@@ -144,9 +95,7 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "调度已启动：每 %ss 采金价，每 %ss 同步当日曲线，A股盘中每 %ss 刷基金持仓股",
-        settings.tick_interval_seconds,
-        settings.curve_snapshot_interval_seconds,
+        "调度已启动：A股盘中每 %ss 刷持仓股报价，16:40 对季报持仓，21:30 拉涨幅榜",
         settings.fund_quote_interval_seconds,
     )
 

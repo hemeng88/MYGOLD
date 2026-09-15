@@ -1,22 +1,15 @@
-from typing import List, Optional
+from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..analysis.fund_estimate import fund_detail, list_funds
-from ..analysis.sessions import snapshot as session_snapshot
-from ..collectors.service import collect_once, get_curve, get_latest_quote, list_days, list_events
 from ..database import get_db
-from ..formula import rule_payload
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
 from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
 from ..funds.sources import search_funds
 from ..schemas import (
-    CollectResult,
-    CurveResponse,
-    DaySummary,
-    FeeRule,
     FundDetailResponse,
     FundFavoriteIn,
     FundFavoriteOut,
@@ -26,9 +19,6 @@ from ..schemas import (
     FundRankResponse,
     FundRefreshResult,
     FundSearchItem,
-    LatestQuote,
-    MarketEventOut,
-    SessionSnapshot,
 )
 from ..timeutil import now_local, trade_date_today
 
@@ -38,56 +28,6 @@ router = APIRouter()
 @router.get("/health")
 def health():
     return {"ok": True, "time": now_local().isoformat(timespec="seconds"), "today": trade_date_today()}
-
-
-@router.get("/quote/latest", response_model=LatestQuote)
-def latest_quote(db: Session = Depends(get_db)):
-    quote = get_latest_quote(db)
-    if not quote:
-        raise HTTPException(status_code=404, detail="还没有采集到价格，请先触发一次采集")
-    return quote
-
-
-@router.get("/curve", response_model=CurveResponse)
-def curve(date: Optional[str] = Query(default=None, description="交易日 YYYY-MM-DD"), db: Session = Depends(get_db)):
-    return get_curve(db, date)
-
-
-@router.get("/days", response_model=List[DaySummary])
-def days(db: Session = Depends(get_db)):
-    return list_days(db)
-
-
-@router.post("/collect", response_model=CollectResult)
-async def collect(include_chart: bool = True, db: Session = Depends(get_db)):
-    try:
-        return await collect_once(db, include_chart=include_chart)
-    except Exception as exc:
-        db.rollback()
-        raise HTTPException(status_code=502, detail="采集失败：%s" % exc) from exc
-
-
-@router.get("/rules", response_model=FeeRule)
-def rules(buy_price: Optional[float] = Query(default=None), db: Session = Depends(get_db)):
-    price = buy_price
-    if price is None:
-        quote = get_latest_quote(db)
-        price = quote.price if quote else None
-    return FeeRule(**rule_payload(price))
-
-
-@router.get("/events", response_model=List[MarketEventOut])
-def events(
-    date: Optional[str] = Query(default=None, description="交易日 YYYY-MM-DD，缺省为全部"),
-    limit: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_db),
-):
-    return list_events(db, date, limit)
-
-
-@router.get("/sessions", response_model=SessionSnapshot)
-def sessions(db: Session = Depends(get_db)):
-    return session_snapshot(db)
 
 
 @router.get("/funds", response_model=FundListResponse)

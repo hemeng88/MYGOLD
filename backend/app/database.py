@@ -32,31 +32,9 @@ def ensure_schema():
 
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
-    _ensure_column(inspector, "market_events", "tags", "tags VARCHAR(200) DEFAULT ''")
     # 基金持仓份额和成本价是后加的，老库要补列
     _ensure_column(inspector, "fund_favorites", "shares", "shares FLOAT")
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
-
-
-def backfill_event_tags():
-    from sqlalchemy import select
-
-    from .collectors.news import classify_tags
-    from .models import MarketEvent
-
-    db = SessionLocal()
-    try:
-        rows = db.scalars(select(MarketEvent)).all()
-        changed = False
-        for row in rows:
-            if row.tags:
-                continue
-            row.tags = ",".join(classify_tags("%s %s" % (row.headline, row.summary or "")))
-            changed = True
-        if changed:
-            db.commit()
-    finally:
-        db.close()
 
 
 def get_db():

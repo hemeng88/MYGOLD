@@ -261,42 +261,6 @@ body {
   }
 }
 
-.mobile-tabbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 40;
-  display: flex;
-  gap: 4px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
-  background: rgba(12, 10, 7, 0.94);
-  border-top: 1px solid rgba(212, 175, 55, 0.16);
-  backdrop-filter: blur(18px);
-}
-
-.mobile-tabbar button {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 48px;
-  border: 0;
-  border-radius: 16px;
-  background: transparent;
-  color: #8c8170;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.mobile-tabbar button.tab-on {
-  color: #f6edd4;
-  background: rgba(212, 175, 55, 0.12);
-}
-
 @media (max-width: 52em) {
   .app-shell:not(.app-shell-mobile) {
     padding: 18px 14px 32px;

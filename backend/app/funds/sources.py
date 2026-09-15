@@ -307,7 +307,7 @@ def _quote_sina(secids: List[str], now) -> List[Dict]:
         for start in range(0, len(codes), QUOTE_BATCH):
             batch = codes[start : start + QUOTE_BATCH]
             try:
-                response = client.get(settings.stock_hq_url + ",".join(batch), headers=SINA_HEADERS)
+                response = client.get(settings.fund_stock_sina_url + ",".join(batch), headers=SINA_HEADERS)
                 response.raise_for_status()
                 text = response.content.decode("gbk", errors="ignore")
             except Exception:

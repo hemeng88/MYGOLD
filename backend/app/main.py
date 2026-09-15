@@ -6,9 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .collectors.service import collect_once
 from .config import settings
-from .database import SessionLocal, backfill_event_tags, ensure_schema
+from .database import ensure_schema
 from .routers.api import router as api_router
 from .scheduler import start_scheduler, stop_scheduler
 
@@ -19,23 +18,12 @@ logger = logging.getLogger("mygold")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_schema()
-    backfill_event_tags()
-    if settings.startup_collect:
-        db = SessionLocal()
-        try:
-            result = await collect_once(db, include_chart=True)
-            logger.info("启动采集：%s", result.message)
-        except Exception:
-            logger.exception("启动采集失败，将依赖后续定时任务")
-            db.rollback()
-        finally:
-            db.close()
     start_scheduler()
     yield
     stop_scheduler()
 
 
-app = FastAPI(title=settings.app_name, description="浙商积存金每日价格曲线归档", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, description="基金实时估值：公示仓位穿透持仓股", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
