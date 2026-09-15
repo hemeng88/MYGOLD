@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { Advice, Attribution, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, GoldLot, HoldingSummary, LatestQuote, MarketEvent, SessionSnapshot, StockAdvice, StockDetail, StockList } from "./types";
+import type { Advice, CollectResult, CurveResponse, DaySummary, FeeRule, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LatestQuote, MarketEvent, SessionSnapshot } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -47,35 +47,7 @@ export const api = {
   events: (date?: string) =>
     request<MarketEvent[]>(date ? `/api/events?date=${date}` : "/api/events"),
   advice: () => request<Advice>("/api/advice"),
-  attribution: (windowDays = 180) =>
-    request<Attribution>(`/api/analysis/weights?window_days=${windowDays}`),
-  refreshAttribution: (windowDays = 180) =>
-    request<{ ok: boolean; message: string }>(`/api/analysis/refresh?window_days=${windowDays}`, {
-      method: "POST",
-    }),
-  holdings: () => request<HoldingSummary>("/api/holdings"),
-  addLot: (payload: { grams: number; buy_price: number; bought_at: string; note?: string }) =>
-    request<GoldLot>("/api/holdings/lots", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }),
-  deleteLot: (id: number) => request<{ ok: boolean }>(`/api/holdings/lots/${id}`, { method: "DELETE" }),
   sessions: () => request<SessionSnapshot>("/api/sessions"),
-  stocks: () => request<StockList>("/api/stocks"),
-  stock: (code: string) => request<StockDetail>(`/api/stocks/${code}`),
-  stockAdvice: (code: string) => request<StockAdvice>(`/api/stocks/${code}/advice`),
-  refreshStocks: (includeBars = true) =>
-    request<{ ok: boolean; quotes: number; bars: number; news?: number; message: string }>(
-      `/api/stocks/refresh?include_bars=${includeBars}`,
-      { method: "POST" },
-    ),
-  saveStockSettings: (budget: number) =>
-    request<{ budget: number }>("/api/stocks/settings", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ budget }),
-    }),
   funds: () => request<FundList>("/api/funds"),
   fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),

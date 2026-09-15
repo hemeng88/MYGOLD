@@ -24,54 +24,31 @@ import {
   IconArrowDownRight,
   IconArrowUpRight,
   IconChartCandle,
-  IconChartLine,
-  IconChartPie,
-  IconExternalLink,
   IconPigMoney,
   IconMinus,
-  IconNews,
   IconRefresh,
   IconSparkles,
   IconTargetArrow,
-  IconWallet,
 } from "@tabler/icons-react";
 import { Capacitor } from "@capacitor/core";
 import { api } from "./api";
 import { AdviceModal } from "./AdviceModal";
-import { AttributionPanel } from "./AttributionPanel";
 import { FundsPanel } from "./FundsPanel";
-import { HoldingsPanel } from "./HoldingsPanel";
 import { SessionClock } from "./SessionClock";
 import { GoldConvert } from "./GoldConvert";
 import { InstallHint } from "./InstallHint";
 import { NativeServerBar } from "./NativeServerBar";
 import { initNativeNotify, notifyNow } from "./nativeNotify";
-import { StocksPanel } from "./StocksPanel";
 import { FundRankPanel } from "./FundRankPanel";
-import type { Advice, CurveResponse, DaySummary, FeeRule, HoldingSummary, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
+import type { Advice, CurveResponse, DaySummary, FeeRule, LatestQuote, MarketEvent, SessionExchange, SessionSnapshot } from "./types";
 
-type TabKey = "market" | "holdings" | "events" | "weights" | "stocks" | "funds";
+type TabKey = "funds" | "market";
 
-/**
- * 当前开着的 tab。想恢复某个被隐藏的，把它的 key 加回这个数组就行 ——
- * 面板组件和后端接口都还在，只是不渲染。
- */
-const ENABLED_TABS: TabKey[] = ["market", "funds"];
-
+// 底部 tab，顺序即显示顺序，第一个是默认选中的
 const TAB_META: { key: TabKey; label: string; Icon: ComponentType<{ size?: number | string }> }[] = [
-  { key: "market", label: "行情", Icon: IconChartCandle },
-  { key: "holdings", label: "持仓", Icon: IconWallet },
-  { key: "events", label: "事件", Icon: IconNews },
-  { key: "weights", label: "归因", Icon: IconChartPie },
-  { key: "stocks", label: "股票", Icon: IconChartLine },
   { key: "funds", label: "基金", Icon: IconPigMoney },
+  { key: "market", label: "行情", Icon: IconChartCandle },
 ];
-
-const VISIBLE_TABS = TAB_META.filter((tab) => ENABLED_TABS.includes(tab.key));
-
-function tabOn(key: TabKey) {
-  return ENABLED_TABS.includes(key);
-}
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -154,31 +131,6 @@ function mergeRanges(exchanges: SessionExchange[], region?: string) {
   return merged;
 }
 
-function tagColor(tag: string) {
-  switch (tag) {
-    case "美联储":
-      return "gold";
-    case "汇率":
-      return "cyan";
-    case "石油":
-      return "orange";
-    case "通胀":
-      return "pink";
-    case "就业":
-      return "teal";
-    case "地缘":
-      return "grape";
-    case "央行":
-      return "violet";
-    case "利率":
-      return "yellow";
-    case "金市":
-      return "gold";
-    default:
-      return "gray";
-  }
-}
-
 export default function App() {
   const [days, setDays] = useState<DaySummary[]>([]);
   const [selectedDate, setSelectedDate] = useState("");
@@ -190,10 +142,9 @@ export default function App() {
   const [collecting, setCollecting] = useState(false);
   const [status, setStatus] = useState("正在读取已归档曲线…");
   const [rule, setRule] = useState<FeeRule | null>(null);
+  // 事件不再单独成页，但金价图上还要打事件标记
   const [events, setEvents] = useState<MarketEvent[]>([]);
-  const [holdings, setHoldings] = useState<HoldingSummary | null>(null);
-  const [mobileTab, setMobileTab] = useState<TabKey>(ENABLED_TABS[0] ?? "market");
-  const [eventTag, setEventTag] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<TabKey>(TAB_META[0].key);
   const [advice, setAdvice] = useState<Advice | null>(null);
   const [adviceOpen, setAdviceOpen] = useState(false);
   const [advising, setAdvising] = useState(false);
@@ -208,18 +159,16 @@ export default function App() {
   const isMobile = Capacitor.isNativePlatform() || isNarrow;
 
   const loadAll = useCallback(async (date?: string) => {
-    const [dayList, latestQuote, feeRule, nextHoldings, nextSessions] = await Promise.all([
+    const [dayList, latestQuote, feeRule, nextSessions] = await Promise.all([
       api.days(),
       api.latest().catch(() => null),
       api.rules().catch(() => null),
-      api.holdings().catch(() => null),
       api.sessions().catch(() => null),
     ]);
     setSessions(nextSessions);
     setDays(dayList);
     setLatest(latestQuote);
     setRule(feeRule);
-    setHoldings(nextHoldings);
     const nextDate = date || dayList[0]?.date || latestQuote?.trade_date || "";
     setSelectedDate(nextDate);
     if (nextDate) {
@@ -658,107 +607,6 @@ export default function App() {
     </Paper>
   );
 
-  const eventsPanel = (
-    <Paper className="glass" p={isMobile ? "md" : "lg"}>
-      <Group justify="space-between" mb="md" wrap="wrap">
-        <div>
-          <Group gap={8}>
-            <IconNews size={16} />
-            <Text fw={600}>行情事件</Text>
-          </Group>
-          <Text size="xs" c="dimmed" mt={4}>
-            涨跌持续超过保本幅度时自动记录
-          </Text>
-        </div>
-        <Group gap={8}>
-          {isMobile ? (
-            <Select
-              placeholder="日期"
-              w={140}
-              value={selectedDate || null}
-              onChange={(value) => value && onSelectDay(value)}
-              data={days.map((d) => d.date)}
-            />
-          ) : null}
-          <Badge variant="light" color="gray">
-            {events.length} 条
-          </Badge>
-        </Group>
-      </Group>
-      <Stack gap="sm">
-        {events.length === 0 && (
-          <Text ta="center" c="dimmed" py="md">
-            这一天还没有触发记录。
-          </Text>
-        )}
-        {Array.from(new Set(events.flatMap((event) => event.tags || []))).length > 1 ? (
-          <Group gap={6}>
-            <Badge
-              variant={eventTag ? "outline" : "filled"}
-              color="gray"
-              style={{ cursor: "pointer" }}
-              onClick={() => setEventTag(null)}
-            >
-              全部
-            </Badge>
-            {Array.from(new Set(events.flatMap((event) => event.tags || []))).map((tag) => (
-              <Badge
-                key={tag}
-                variant={eventTag === tag ? "filled" : "light"}
-                color={tagColor(tag)}
-                style={{ cursor: "pointer" }}
-                onClick={() => setEventTag(eventTag === tag ? null : tag)}
-              >
-                {tag}
-              </Badge>
-            ))}
-          </Group>
-        ) : null}
-        {events
-          .filter((event) => !eventTag || (event.tags || []).includes(eventTag))
-          .map((event) => (
-          <Paper key={event.id} className="stat-tile" p="md">
-            <Group justify="space-between" align="flex-start" wrap="wrap">
-              <div>
-                <Group gap={8} mb={6}>
-                  <Badge variant="light" color={event.direction === "up" ? "red" : "teal"}>
-                    {event.direction === "up" ? "上涨" : "下跌"} {signed(event.change_rate)}%
-                  </Badge>
-                  {(event.tags || []).map((tag) => (
-                    <Badge key={tag} variant="light" color={tagColor(tag)}>
-                      {tag}
-                    </Badge>
-                  ))}
-                  <Text size="xs" c="dimmed">
-                    {event.triggered_at.replace("T", " ")}
-                  </Text>
-                </Group>
-                <Text fw={600}>{event.headline}</Text>
-                <Text size="xs" c="dimmed" mt={4}>
-                  {fmt(event.start_price)} → {fmt(event.end_price)}
-                </Text>
-              </div>
-              {event.url ? (
-                <Button
-                  component="a"
-                  href={event.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  variant="subtle"
-                  color="gold"
-                  size="xs"
-                  rightSection={<IconExternalLink size={14} />}
-                >
-                  原文
-                </Button>
-              ) : null}
-            </Group>
-          </Paper>
-        ))}
-      </Stack>
-    </Paper>
-  );
-
   return (
     <Box className={isMobile ? "app-shell app-shell-mobile" : "app-shell"}>
       <Group className="app-header" justify="space-between" align="center" mb={isMobile ? 10 : 28} wrap="nowrap" gap="sm">
@@ -800,12 +648,6 @@ export default function App() {
                 {chartPanel}
               </>
             )}
-            {mobileTab === "holdings" && (
-              <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
-            )}
-            {mobileTab === "events" && eventsPanel}
-            {mobileTab === "weights" && <AttributionPanel tagColor={tagColor} />}
-            {mobileTab === "stocks" && <StocksPanel />}
             {mobileTab === "funds" && (
               <>
                 <FundsPanel />
@@ -819,17 +661,11 @@ export default function App() {
           <Grid.Col span={4}>{daysPanel}</Grid.Col>
           <Grid.Col span={8}>
             <Stack gap="lg">
-              {heroPanel}
-              {convertPanel}
-              {tabOn("holdings") ? (
-                <HoldingsPanel holdings={holdings} onChanged={async () => setHoldings(await api.holdings())} />
-              ) : null}
-              {chartPanel}
-              {tabOn("stocks") ? <StocksPanel /> : null}
               <FundsPanel />
               <FundRankPanel />
-              {tabOn("weights") ? <AttributionPanel tagColor={tagColor} /> : null}
-              {tabOn("events") ? eventsPanel : null}
+              {heroPanel}
+              {convertPanel}
+              {chartPanel}
             </Stack>
           </Grid.Col>
         </Grid>
@@ -839,7 +675,7 @@ export default function App() {
 
       {isMobile ? (
         <nav className="mobile-tabbar">
-          {VISIBLE_TABS.map(({ key, label, Icon }) => (
+          {TAB_META.map(({ key, label, Icon }) => (
             <button
               key={key}
               className={mobileTab === key ? "tab-on" : ""}
