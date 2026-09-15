@@ -115,3 +115,15 @@ class FundRankStock(Base):
     # 这些基金给它的权重之和，百分数
     weight_sum: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class User(Base):
+    """登录账号。密码只存 PBKDF2 加盐哈希，格式见 users.py。"""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_login_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)

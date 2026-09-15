@@ -1,5 +1,6 @@
 import { Capacitor } from "@capacitor/core";
-import type { FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem } from "./types";
+import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
+import type { FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -22,11 +23,20 @@ export function setApiBase(url: string) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers || {});
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
   let res: Response;
   try {
-    res = await fetch(`${apiBase()}${path}`, init);
+    res = await fetch(`${apiBase()}${path}`, { ...init, headers });
   } catch {
-    throw new Error(`连不上 ${apiBase() || "服务器"}。点顶部「改地址」选 IP 后再试。`);
+    throw new Error(`连不上 ${apiBase() || "服务器"}，检查网络或服务器状态。`);
+  }
+  if (res.status === 401) {
+    // 令牌过期或被改过，清掉并让 App 切回登录页
+    clearToken();
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    throw new Error("登录已过期，请重新登录");
   }
   if (!res.ok) {
     const text = await res.text();
@@ -36,6 +46,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: async (username: string, password: string) => {
+    const result = await request<LoginResult>("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    setToken(result.token);
+    return result;
+  },
+  me: () => request<Me>("/api/auth/me"),
+  logout: () => clearToken(),
   funds: () => request<FundList>("/api/funds"),
   fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),

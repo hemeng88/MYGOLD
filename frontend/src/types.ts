@@ -126,3 +126,13 @@ export interface FundRankRefreshResult {
   funds: number;
   message: string;
 }
+
+
+export interface LoginResult {
+  token: string;
+  username: string;
+}
+
+export interface Me {
+  username: string;
+}

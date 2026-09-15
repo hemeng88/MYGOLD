@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +35,21 @@ class Settings(BaseSettings):
     fund_min_coverage_pct: float = 20.0
     # 涨幅榜每个周期取前几名，再穿透看它们重仓的是什么方向
     fund_rank_top_n: int = 10
+
+    # 账号密码存在数据库 users 表里。下面两个只在「库里一个账号都没有」时用来建初始账号，
+    # 之后改了密码不会被启动流程覆盖回去。
+    #
+    # bootstrap_password 故意没有默认值：任何写进代码的密码都等于公开密码，
+    # 不填就不自动建号，改用 backend/scripts/set_password.py 手动建。
+    #
+    # 这几个字段显式指定 MYGOLD_ 前缀别名：本项目没有配 env_prefix，
+    # 默认 bootstrap_password 读的是 BOOTSTRAP_PASSWORD，太通用容易撞，
+    # 而 .env 里既有的 MYGOLD_DOMAIN 是 deploy.sh 在用，保持同一套命名。
+    bootstrap_username: str = Field(default="hemeng", validation_alias="MYGOLD_BOOTSTRAP_USERNAME")
+    bootstrap_password: str = Field(default="", validation_alias="MYGOLD_BOOTSTRAP_PASSWORD")
+    # 留空则每次启动随机生成，令牌不跨重启；想跨重启就在 .env 里设一个长随机串
+    auth_secret: str = Field(default="", validation_alias="MYGOLD_AUTH_SECRET")
+    auth_token_days: int = 30
 
     request_timeout_seconds: float = 15.0
 

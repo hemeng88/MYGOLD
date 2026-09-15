@@ -143,3 +143,17 @@ class FundRankRefreshResult(BaseModel):
     periods: int = 0
     funds: int = 0
     message: str
+
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+
+class LoginOut(BaseModel):
+    token: str
+    username: str
+
+
+class MeOut(BaseModel):
+    username: str

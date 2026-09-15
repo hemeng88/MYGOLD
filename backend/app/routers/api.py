@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..analysis.fund_estimate import fund_detail, list_funds
+from ..auth import login as auth_login
+from ..auth import require_auth
 from ..database import get_db
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
@@ -19,10 +21,18 @@ from ..schemas import (
     FundRankResponse,
     FundRefreshResult,
     FundSearchItem,
+    LoginIn,
+    LoginOut,
+    MeOut,
 )
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
+
+# 基金相关全部要登录。挂在子路由上，省得每个接口单独写一遍依赖。
+# /api/health 和 /api/auth/login 必须留在免鉴权的 router 上：
+# 前者是 docker healthcheck 在打，加了鉴权容器会一直 unhealthy。
+guarded = APIRouter(dependencies=[Depends(require_auth)])
 
 
 @router.get("/health")
@@ -30,12 +40,27 @@ def health():
     return {"ok": True, "time": now_local().isoformat(timespec="seconds"), "today": trade_date_today()}
 
 
-@router.get("/funds", response_model=FundListResponse)
+@router.post("/auth/login", response_model=LoginOut)
+def auth_login_route(payload: LoginIn, db: Session = Depends(get_db)):
+    try:
+        token, username = auth_login(db, payload.username, payload.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return {"token": token, "username": username}
+
+
+@router.get("/auth/me", response_model=MeOut)
+def auth_me(username: str = Depends(require_auth)):
+    """前端启动时拿本地令牌来问一下还有效没，有效就不用再登录。"""
+    return {"username": username}
+
+
+@guarded.get("/funds", response_model=FundListResponse)
 def funds(db: Session = Depends(get_db)):
     return list_funds(db)
 
 
-@router.get("/funds/search", response_model=List[FundSearchItem])
+@guarded.get("/funds/search", response_model=List[FundSearchItem])
 def fund_search(
     q: str = Query(min_length=1, max_length=32, description="基金代码或名称关键字"),
     limit: int = Query(default=12, ge=1, le=30),
@@ -49,7 +74,7 @@ def fund_search(
     return [dict(row, favorited=row["code"] in owned) for row in rows]
 
 
-@router.get("/funds/rankings", response_model=FundRankResponse)
+@guarded.get("/funds/rankings", response_model=FundRankResponse)
 def fund_rankings(
     period: str = Query(default=DEFAULT_PERIOD, description="周期键，见返回里的 periods"),
     stock_limit: int = Query(default=12, ge=1, le=40),
@@ -58,7 +83,7 @@ def fund_rankings(
     return list_rankings(db, period=period, stock_limit=stock_limit)
 
 
-@router.post("/funds/rankings/refresh", response_model=FundRankRefreshResult)
+@guarded.post("/funds/rankings/refresh", response_model=FundRankRefreshResult)
 def fund_rankings_refresh(db: Session = Depends(get_db)):
     try:
         return collect_rankings(db)
@@ -67,12 +92,12 @@ def fund_rankings_refresh(db: Session = Depends(get_db)):
         return {"ok": False, "periods": 0, "funds": 0, "message": "榜单刷新中断：%s" % exc}
 
 
-@router.get("/funds/favorites", response_model=List[FundFavoriteOut])
+@guarded.get("/funds/favorites", response_model=List[FundFavoriteOut])
 def fund_favorite_list(db: Session = Depends(get_db)):
     return fund_favorites.list_favorites(db)
 
 
-@router.post("/funds/favorites", response_model=FundFavoriteOut)
+@guarded.post("/funds/favorites", response_model=FundFavoriteOut)
 def fund_favorite_add(payload: FundFavoriteIn, db: Session = Depends(get_db)):
     try:
         row = fund_favorites.add_favorite(db, payload.code)
@@ -87,7 +112,7 @@ def fund_favorite_add(payload: FundFavoriteIn, db: Session = Depends(get_db)):
     return row
 
 
-@router.put("/funds/favorites/{code}/position", response_model=FundFavoriteOut)
+@guarded.put("/funds/favorites/{code}/position", response_model=FundFavoriteOut)
 def fund_position_save(code: str, payload: FundPositionIn, db: Session = Depends(get_db)):
     try:
         return fund_favorites.set_position(db, code, payload.shares, payload.cost_price)
@@ -98,7 +123,7 @@ def fund_position_save(code: str, payload: FundPositionIn, db: Session = Depends
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.delete("/funds/favorites/{code}")
+@guarded.delete("/funds/favorites/{code}")
 def fund_favorite_remove(code: str, db: Session = Depends(get_db)):
     try:
         fund_favorites.delete_favorite(db, code)
@@ -108,7 +133,7 @@ def fund_favorite_remove(code: str, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-@router.post("/funds/refresh", response_model=FundRefreshResult)
+@guarded.post("/funds/refresh", response_model=FundRefreshResult)
 def fund_refresh(
     include_holdings: bool = Query(default=False, description="是否重拉季报持仓，持仓一季度才变一次"),
     db: Session = Depends(get_db),
@@ -126,8 +151,11 @@ def fund_refresh(
         }
 
 
-@router.get("/funds/{code}", response_model=FundDetailResponse)
+@guarded.get("/funds/{code}", response_model=FundDetailResponse)
 def fund(code: str, db: Session = Depends(get_db)):
     if not fund_favorites.get_favorite(db, code):
         raise HTTPException(status_code=404, detail="这只基金还没收藏")
     return fund_detail(db, code)
+
+
+router.include_router(guarded)
