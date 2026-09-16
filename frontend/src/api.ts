@@ -22,7 +22,23 @@ export function setApiBase(url: string) {
   else window.localStorage.removeItem(STORAGE_KEY);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** 后端错误体是 {"detail":"..."}，直接抛原文会把 JSON 弹到界面上。 */
+function errorMessage(text: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed?.detail === "string" && parsed.detail) return parsed.detail;
+  } catch {
+    // 不是 JSON 就按纯文本处理
+  }
+  return text || fallback;
+}
+
+/**
+ * isLogin 用来区分两种 401：
+ * 登录接口的 401 是「密码错」，不能当成登录过期去清令牌、跳登录页，
+ * 否则输错密码会看到「登录已过期」这种莫名其妙的提示。
+ */
+async function request<T>(path: string, init?: RequestInit, isLogin = false): Promise<T> {
   const headers = new Headers(init?.headers || {});
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -32,26 +48,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   } catch {
     throw new Error(`连不上 ${apiBase() || "服务器"}，检查网络或服务器状态。`);
   }
-  if (res.status === 401) {
-    // 令牌过期或被改过，清掉并让 App 切回登录页
+  if (res.status === 401 && !isLogin) {
+    // 令牌过期、被改过或账号已不存在：清掉并让 App 切回登录页
     clearToken();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
     throw new Error("登录已过期，请重新登录");
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `请求失败 ${res.status}`);
+    throw new Error(errorMessage(text, isLogin ? "账号或密码不对" : `请求失败 ${res.status}`));
   }
   return res.json() as Promise<T>;
 }
 
 export const api = {
   login: async (username: string, password: string) => {
-    const result = await request<LoginResult>("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
+    const result = await request<LoginResult>(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      },
+      true,
+    );
     setToken(result.token);
     return result;
   },

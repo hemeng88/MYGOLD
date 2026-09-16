@@ -51,6 +51,24 @@ app.add_middleware(
 )
 app.include_router(api_router, prefix="/api")
 
+
+@app.middleware("http")
+async def cache_headers(request, call_next):
+    """index.html 禁缓存，带 hash 的静态资源长期缓存。
+
+    Vite 产物的 JS/CSS 文件名带内容 hash，可以放心长缓存；但 index.html 不能，
+    它一旦被缓存住，手机上就会一直加载旧版前端 —— 部署了也看不到变化，
+    加了登录也跳不到登录页。这个坑已经踩过几次，所以在这里显式修掉。
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path == "/" or path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 if frontend_dist.exists():
     app.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")

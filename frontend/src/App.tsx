@@ -3,6 +3,7 @@ import { ActionIcon, Box, Center, Group, Loader, Stack, Text, Title, Tooltip } f
 import { useMediaQuery } from "@mantine/hooks";
 import { Capacitor } from "@capacitor/core";
 import { IconLogout } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
 import { api } from "./api";
 import { UNAUTHORIZED_EVENT, getToken } from "./auth";
 import { FundRankPanel } from "./FundRankPanel";
@@ -25,17 +26,35 @@ export default function App() {
     try {
       await api.me();
       setState("in");
-    } catch {
-      // 令牌无效时 api 层已经清掉了，这里只管切页面
-      setState("out");
+    } catch (err) {
+      // 401 时 api 层已经清掉令牌了。但连不上服务器也会走到这里，
+      // 那种情况令牌还在，不该把人踢去登录页，否则断网就等于被登出。
+      setState(getToken() ? "in" : "out");
+      if (getToken()) {
+        notifications.show({
+          color: "yellow",
+          title: "连不上服务器",
+          message: err instanceof Error ? err.message : "稍后重试",
+        });
+      }
     }
   }, []);
 
   useEffect(() => {
     void check();
+    // 任何接口拿到 401 都会派发这个事件，收到就立刻切回登录页
     const onUnauthorized = () => setState("out");
+    // 加到主屏幕的用法常常是挂后台好几天再切回来，这时令牌可能已经过期，
+    // 重新可见时复查一次，别等到下一次轮询才发现
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [check]);
 
   if (state === "checking") {
