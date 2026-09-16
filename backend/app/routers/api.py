@@ -80,11 +80,18 @@ def fund_search(
 def fund_rankings(
     period: str = Query(default=DEFAULT_PERIOD, description="周期键，见返回里的 periods"),
     stock_limit: int = Query(default=12, ge=1, le=40),
-    holder_limit: int = Query(default=5, ge=1, le=10, description="持仓最集中的基金取前几名"),
+    holder_limit: int = Query(default=5, ge=1, le=10, description="押注最重的基金取前几名"),
+    fund_limit: int = Query(default=10, ge=1, le=50, description="涨幅榜列前几名，计算仍用全部"),
     db: Session = Depends(get_db),
     _user: User = Depends(require_auth),
 ):
-    return list_rankings(db, period=period, stock_limit=stock_limit, holder_limit=holder_limit)
+    return list_rankings(
+        db,
+        period=period,
+        stock_limit=stock_limit,
+        holder_limit=holder_limit,
+        fund_limit=fund_limit,
+    )
 
 
 @guarded.post("/funds/rankings/refresh", response_model=FundRankRefreshResult)

@@ -136,7 +136,7 @@ class User(Base):
 
 
 class FundRankHolder(Base):
-    """在榜单基金里，谁把最多仓位压在这个周期的前十大重仓股上。
+    """在榜单基金里，谁的仓位最集中在这个周期的主线上。
 
     和 FundRankStock 是同一次采集的两个产物：那张表按股票聚合，这张表按基金聚合。
     采集时逐只基金的持仓只存在内存里，所以名次必须在那时算完落库，页面只读。
@@ -150,10 +150,15 @@ class FundRankHolder(Base):
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     fund_code: Mapped[str] = mapped_column(String(12), nullable=False)
     fund_name: Mapped[str] = mapped_column(String(64), nullable=True)
-    # 压在这个周期前十大重仓股上的权重合计，百分数
-    hit_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    # 十只里命中了几只
-    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 主线得分 = Σ(持仓权重 × 该股共识度)，共识度 = 多少只榜单基金重仓它 / 榜单总数。
+    # 不用「前 N 大重仓股集合」那种口径：集合放大后会覆盖几乎所有持仓，榜会退化成
+    # 「谁满仓程度最高」。加权方式让全榜数据都参与，又不需要人为截断。
+    theme_score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # 得分占自身披露仓位的比例，衡量这个组合有多随大流
+    consensus_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # 持仓里和别的榜单基金抱团的只数 / 公示持仓总只数
+    shared_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    holding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # 该基金公示持仓的总权重，用来看这个集中度占它披露仓位的多少
     disclosed_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     # 持仓完全相同的同门份额（A/C 类），逗号分隔。合并进这一行，免得挤占名次

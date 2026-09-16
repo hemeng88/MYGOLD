@@ -132,9 +132,12 @@ class FundRankHolderItem(BaseModel):
     rank: int
     code: str
     name: Optional[str] = None
-    # 压在该周期前 hot_top_n 大重仓股上的权重合计，百分数
-    hit_weight: float
-    hit_count: int
+    # 主线得分 = Σ(持仓权重 × 该股共识度)
+    theme_score: float
+    # 得分占自身披露仓位的比例，越高说明越随大流
+    consensus_pct: float
+    shared_count: int
+    holding_count: int
     disclosed_pct: float
     # 持仓相同的同门份额（A/C 类），已合并到本行
     alt_codes: List[str] = Field(default_factory=list)
@@ -147,9 +150,11 @@ class FundRankResponse(BaseModel):
     as_of: Optional[datetime] = None
     funds: List[FundRankFund] = Field(default_factory=list)
     hot_stocks: List[FundRankStockItem] = Field(default_factory=list)
-    # top_holders 是按前几大重仓股算命中权重的
-    hot_top_n: int = 10
-    # 参与比较的基金数量：各周期榜首基金的并集，不是全市场
+    # 该周期实际采集了多少只基金（展示的 funds 可能只是前几名）
+    board_size: int = 0
+    # 被两只以上榜单基金共同重仓的股票数，说明这条主线有多集中
+    theme_stock_count: int = 0
+    # 参与比较的基金数量：各周期榜单基金的并集，不是全市场
     holder_universe: int = 0
     top_holders: List[FundRankHolderItem] = Field(default_factory=list)
     message: Optional[str] = None

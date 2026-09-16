@@ -150,7 +150,8 @@ export function FundRankPanel() {
                 押注这条主线最重的基金
               </Text>
               <Text size="xs" c="dimmed" mb={6}>
-                在 {data.holder_universe} 只上榜基金里，比谁把最多仓位压在上面前 {data.hot_top_n} 只股票上
+                比较 {data.holder_universe} 只上榜基金。得分 = Σ(持仓权重 × 该股被多少只榜单基金共同重仓)，
+                全榜 {data.theme_stock_count} 只抱团股都参与，不做前几名截断
               </Text>
               <Stack gap={6}>
                 {data.top_holders.map((holder) => (
@@ -166,17 +167,17 @@ export function FundRankPanel() {
                           </Text>
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {holder.code} · 命中 {holder.hit_count}/{data.hot_top_n} 只 · 披露仓位
+                          {holder.code} · 抱团 {holder.shared_count}/{holder.holding_count} 只 · 披露仓位
                           {fmt(holder.disclosed_pct, 1)}%
                           {holder.alt_codes.length ? ` · 同门份额 ${holder.alt_codes.join("、")}` : ""}
                         </Text>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
                         <Text fw={700} size="sm" c="gold">
-                          {fmt(holder.hit_weight, 1)}%
+                          {fmt(holder.theme_score, 1)}
                         </Text>
                         <Text size="xs" c="dimmed">
-                          仓位命中
+                          抱团度 {fmt(holder.consensus_pct, 0)}%
                         </Text>
                       </div>
                     </Group>

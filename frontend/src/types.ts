@@ -114,8 +114,10 @@ export interface FundRankHolderItem {
   rank: number;
   code: string;
   name: string | null;
-  hit_weight: number;
-  hit_count: number;
+  theme_score: number;
+  consensus_pct: number;
+  shared_count: number;
+  holding_count: number;
   disclosed_pct: number;
   alt_codes: string[];
 }
@@ -127,7 +129,8 @@ export interface FundRank {
   as_of: string | null;
   funds: FundRankFund[];
   hot_stocks: FundRankStockItem[];
-  hot_top_n: number;
+  board_size: number;
+  theme_stock_count: number;
   holder_universe: number;
   top_holders: FundRankHolderItem[];
   message: string | null;
