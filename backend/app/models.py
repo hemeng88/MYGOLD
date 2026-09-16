@@ -133,3 +133,29 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_login_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+
+class FundRankHolder(Base):
+    """在榜单基金里，谁把最多仓位压在这个周期的前十大重仓股上。
+
+    和 FundRankStock 是同一次采集的两个产物：那张表按股票聚合，这张表按基金聚合。
+    采集时逐只基金的持仓只存在内存里，所以名次必须在那时算完落库，页面只读。
+    """
+
+    __tablename__ = "fund_rank_holders"
+    __table_args__ = (UniqueConstraint("period", "fund_code", name="uq_fund_rank_holder"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    period: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    fund_code: Mapped[str] = mapped_column(String(12), nullable=False)
+    fund_name: Mapped[str] = mapped_column(String(64), nullable=True)
+    # 压在这个周期前十大重仓股上的权重合计，百分数
+    hit_weight: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # 十只里命中了几只
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 该基金公示持仓的总权重，用来看这个集中度占它披露仓位的多少
+    disclosed_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # 持仓完全相同的同门份额（A/C 类），逗号分隔。合并进这一行，免得挤占名次
+    alt_codes: Mapped[str] = mapped_column(String(120), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -128,6 +128,18 @@ class FundRankStockItem(BaseModel):
     weight_sum: float
 
 
+class FundRankHolderItem(BaseModel):
+    rank: int
+    code: str
+    name: Optional[str] = None
+    # 压在该周期前 hot_top_n 大重仓股上的权重合计，百分数
+    hit_weight: float
+    hit_count: int
+    disclosed_pct: float
+    # 持仓相同的同门份额（A/C 类），已合并到本行
+    alt_codes: List[str] = Field(default_factory=list)
+
+
 class FundRankResponse(BaseModel):
     period: str
     period_label: Optional[str] = None
@@ -135,6 +147,11 @@ class FundRankResponse(BaseModel):
     as_of: Optional[datetime] = None
     funds: List[FundRankFund] = Field(default_factory=list)
     hot_stocks: List[FundRankStockItem] = Field(default_factory=list)
+    # top_holders 是按前几大重仓股算命中权重的
+    hot_top_n: int = 10
+    # 参与比较的基金数量：各周期榜首基金的并集，不是全市场
+    holder_universe: int = 0
+    top_holders: List[FundRankHolderItem] = Field(default_factory=list)
     message: Optional[str] = None
 
 

@@ -144,6 +144,48 @@ export function FundRankPanel() {
             </div>
           ) : null}
 
+          {data?.top_holders?.length ? (
+            <div>
+              <Text size="xs" fw={600} mb={2}>
+                押注这条主线最重的基金
+              </Text>
+              <Text size="xs" c="dimmed" mb={6}>
+                在 {data.holder_universe} 只上榜基金里，比谁把最多仓位压在上面前 {data.hot_top_n} 只股票上
+              </Text>
+              <Stack gap={6}>
+                {data.top_holders.map((holder) => (
+                  <Paper key={holder.code} className="stat-tile" p="xs">
+                    <Group justify="space-between" wrap="nowrap" gap="xs">
+                      <div style={{ minWidth: 0 }}>
+                        <Group gap={6} wrap="nowrap">
+                          <Badge size="xs" variant="light" color="gray">
+                            {holder.rank}
+                          </Badge>
+                          <Text size="sm" fw={600} truncate>
+                            {holder.name || holder.code}
+                          </Text>
+                        </Group>
+                        <Text size="xs" c="dimmed" mt={2}>
+                          {holder.code} · 命中 {holder.hit_count}/{data.hot_top_n} 只 · 披露仓位
+                          {fmt(holder.disclosed_pct, 1)}%
+                          {holder.alt_codes.length ? ` · 同门份额 ${holder.alt_codes.join("、")}` : ""}
+                        </Text>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <Text fw={700} size="sm" c="gold">
+                          {fmt(holder.hit_weight, 1)}%
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                          仓位命中
+                        </Text>
+                      </div>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </div>
+          ) : null}
+
           {data?.funds?.length ? (
             <div>
               <Text size="xs" fw={600} mb={6}>

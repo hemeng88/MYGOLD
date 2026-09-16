@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     fund_min_coverage_pct: float = 20.0
     # 涨幅榜每个周期取前几名，再穿透看它们重仓的是什么方向
     fund_rank_top_n: int = 10
+    # 「谁最集中押注这条主线」是按这个周期的前几大重仓股来算命中权重的
+    fund_rank_hot_top_n: int = 10
+    # 这个榜最多存几名，接口再按需要截取
+    fund_rank_holder_top_n: int = 10
 
     # 账号密码存在数据库 users 表里。下面两个只在「库里一个账号都没有」时用来建初始账号，
     # 之后改了密码不会被启动流程覆盖回去。

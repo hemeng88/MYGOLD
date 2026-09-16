@@ -17,7 +17,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import FundRankEntry, FundRankStock
+from ..models import FundRankEntry, FundRankHolder, FundRankStock
 from ..timeutil import now_local
 from . import sources
 from .sources import RANK_PERIODS
@@ -52,6 +52,7 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
 
     # 各周期榜单高度重叠，持仓按代码去重只拉一次
     codes = sorted({row["code"] for rows in boards.values() for row in rows})
+    names = {row["code"]: row["name"] for rows in boards.values() for row in rows}
     holdings: Dict[str, List[Dict]] = {}
     for code in codes:
         try:
@@ -65,6 +66,7 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
     for period, rows in boards.items():
         db.execute(delete(FundRankEntry).where(FundRankEntry.period == period))
         db.execute(delete(FundRankStock).where(FundRankStock.period == period))
+        db.execute(delete(FundRankHolder).where(FundRankHolder.period == period))
         for row in rows:
             db.add(
                 FundRankEntry(
@@ -105,6 +107,55 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
                     updated_at=now,
                 )
             )
+
+        # 反过来按基金聚合：谁把最多仓位压在这个周期的前十大重仓股上。
+        # 比较范围是所有周期榜首基金的并集（去重后就是上面拉过持仓的那些），
+        # 不是全市场 —— 全市场要另一套「个股被哪些基金持有」的数据。
+        hot = sorted(
+            agg.items(),
+            key=lambda kv: (-kv[1]["fund_count"], -kv[1]["weight_sum"]),
+        )[: settings.fund_rank_hot_top_n]
+        hot_codes = {code for code, _ in hot}
+        holders = []
+        # A 类和 C 类是同一个组合的两种份额，持仓一模一样。不合并的话「前五」里
+        # 会有一半是同门份额，白占名次。用持仓指纹判断，代码小的那只留下当代表。
+        by_portfolio: Dict[tuple, Dict] = {}
+        for code in codes:
+            items = holdings.get(code) or []
+            if not items:
+                continue
+            hit = [item for item in items if item["stock_code"] in hot_codes]
+            if not hit:
+                continue
+            signature = tuple(sorted((item["stock_code"], round(item["weight_pct"], 2)) for item in items))
+            twin = by_portfolio.get(signature)
+            if twin is not None:
+                twin["alt"].append(code)
+                continue
+            row = {
+                "fund_code": code,
+                "hit_weight": round(sum(item["weight_pct"] for item in hit), 2),
+                "hit_count": len(hit),
+                "disclosed_pct": round(sum(item["weight_pct"] for item in items), 2),
+                "alt": [],
+            }
+            by_portfolio[signature] = row
+            holders.append(row)
+        holders.sort(key=lambda row: (-row["hit_weight"], -row["hit_count"]))
+        for index, row in enumerate(holders[: settings.fund_rank_holder_top_n], start=1):
+            db.add(
+                FundRankHolder(
+                    period=period,
+                    rank=index,
+                    fund_code=row["fund_code"],
+                    fund_name=names.get(row["fund_code"]),
+                    hit_weight=row["hit_weight"],
+                    hit_count=row["hit_count"],
+                    disclosed_pct=row["disclosed_pct"],
+                    alt_codes=",".join(row["alt"]) or None,
+                    updated_at=now,
+                )
+            )
     db.commit()
 
     message = "涨幅榜 %d 个周期、%d 条记录，穿透 %d 只基金" % (len(boards), total_funds, len(codes))
@@ -113,7 +164,9 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
     return {"ok": total_funds > 0, "periods": len(boards), "funds": total_funds, "message": message}
 
 
-def list_rankings(db: Session, period: str = DEFAULT_PERIOD, stock_limit: int = 12) -> Dict:
+def list_rankings(
+    db: Session, period: str = DEFAULT_PERIOD, stock_limit: int = 12, holder_limit: int = 5
+) -> Dict:
     if period not in RANK_PERIODS:
         period = DEFAULT_PERIOD
     funds = list(
@@ -129,6 +182,14 @@ def list_rankings(db: Session, period: str = DEFAULT_PERIOD, stock_limit: int = 
             .where(FundRankStock.period == period)
             .order_by(FundRankStock.fund_count.desc(), FundRankStock.weight_sum.desc())
             .limit(stock_limit)
+        ).all()
+    )
+    holders = list(
+        db.scalars(
+            select(FundRankHolder)
+            .where(FundRankHolder.period == period)
+            .order_by(FundRankHolder.rank.asc())
+            .limit(holder_limit)
         ).all()
     )
     return {
@@ -155,6 +216,21 @@ def list_rankings(db: Session, period: str = DEFAULT_PERIOD, stock_limit: int = 
                 "weight_sum": row.weight_sum,
             }
             for row in stocks
+        ],
+        "hot_top_n": settings.fund_rank_hot_top_n,
+        # 参与比较的是所有周期榜首基金的并集，去重后就是采集时拉过持仓的那些
+        "holder_universe": len(set(db.scalars(select(FundRankEntry.code).distinct()).all())),
+        "top_holders": [
+            {
+                "rank": row.rank,
+                "code": row.fund_code,
+                "name": row.fund_name,
+                "hit_weight": row.hit_weight,
+                "hit_count": row.hit_count,
+                "disclosed_pct": row.disclosed_pct,
+                "alt_codes": [c for c in (row.alt_codes or "").split(",") if c],
+            }
+            for row in holders
         ],
         "message": None if funds else "还没有榜单数据，刷新一次",
     }
