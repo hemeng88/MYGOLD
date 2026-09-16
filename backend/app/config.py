@@ -41,8 +41,9 @@ class Settings(BaseSettings):
     # 不能用「聚合出的全部股票」——那样榜单基金自己的持仓全在集合里，
     # 命中权重≈它的披露总仓位，这个榜会退化成涨幅榜本身。
     fund_rank_theme_min_funds: int = 2
-    # 这个榜最多存几名，接口再按需要截取
-    fund_rank_holder_top_n: int = 10
+    # 按抱团度排序时，披露仓位低于这个比例的不参与 ——
+    # 只持一点点仓、但全押在抱团股上的基金会把榜刷掉，那不叫押注最重
+    fund_rank_consensus_min_disclosed: float = 50.0
 
     # 账号密码存在数据库 users 表里。下面两个只在「库里一个账号都没有」时用来建初始账号，
     # 之后改了密码不会被启动流程覆盖回去。

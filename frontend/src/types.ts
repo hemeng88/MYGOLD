@@ -132,6 +132,8 @@ export interface FundRank {
   board_size: number;
   theme_stock_count: number;
   holder_universe: number;
+  sort: "score" | "consensus";
+  consensus_min_disclosed: number;
   top_holders: FundRankHolderItem[];
   message: string | null;
 }

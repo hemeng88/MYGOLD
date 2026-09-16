@@ -149,8 +149,10 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
             }
             by_portfolio[signature] = row
             holders.append(row)
+        # 存全量：页面支持按得分或按抱团度切换排序，只存按得分的前几名的话，
+        # 换成抱团度排序时真正的前几名可能根本没被存下来
         holders.sort(key=lambda row: (-row["theme_score"], -row["consensus_pct"]))
-        for index, row in enumerate(holders[: settings.fund_rank_holder_top_n], start=1):
+        for index, row in enumerate(holders, start=1):
             db.add(
                 FundRankHolder(
                     period=period,
@@ -180,6 +182,7 @@ def list_rankings(
     stock_limit: int = 12,
     holder_limit: int = 5,
     fund_limit: int = 10,
+    sort: str = "score",
 ) -> Dict:
     if period not in RANK_PERIODS:
         period = DEFAULT_PERIOD
@@ -212,14 +215,15 @@ def list_rankings(
             .limit(stock_limit)
         ).all()
     )
-    holders = list(
-        db.scalars(
-            select(FundRankHolder)
-            .where(FundRankHolder.period == period)
-            .order_by(FundRankHolder.rank.asc())
-            .limit(holder_limit)
-        ).all()
-    )
+    # sort=score 按主线得分（含仓位规模），sort=consensus 按抱团度（纯集中度）
+    holder_query = select(FundRankHolder).where(FundRankHolder.period == period)
+    if sort == "consensus":
+        holder_query = holder_query.where(
+            FundRankHolder.disclosed_pct >= settings.fund_rank_consensus_min_disclosed
+        ).order_by(FundRankHolder.consensus_pct.desc(), FundRankHolder.theme_score.desc())
+    else:
+        holder_query = holder_query.order_by(FundRankHolder.rank.asc())
+    holders = list(db.scalars(holder_query.limit(holder_limit)).all())
     return {
         "period": period,
         "period_label": period_label(period),
@@ -251,9 +255,12 @@ def list_rankings(
         "theme_min_funds": settings.fund_rank_theme_min_funds,
         # 参与比较的是所有周期榜单基金的并集，去重后就是采集时拉过持仓的那些
         "holder_universe": len(set(db.scalars(select(FundRankEntry.code).distinct()).all())),
+        "sort": sort if sort in ("score", "consensus") else "score",
+        "consensus_min_disclosed": settings.fund_rank_consensus_min_disclosed,
         "top_holders": [
             {
-                "rank": row.rank,
+                # 名次按当前排序重新编号，存的 rank 是按得分的
+                "rank": index,
                 "code": row.fund_code,
                 "name": row.fund_name,
                 "theme_score": row.theme_score,
@@ -263,7 +270,7 @@ def list_rankings(
                 "disclosed_pct": row.disclosed_pct,
                 "alt_codes": [c for c in (row.alt_codes or "").split(",") if c],
             }
-            for row in holders
+            for index, row in enumerate(holders, start=1)
         ],
         "message": None if funds else "还没有榜单数据，刷新一次",
     }

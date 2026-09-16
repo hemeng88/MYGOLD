@@ -156,6 +156,10 @@ class FundRankResponse(BaseModel):
     theme_stock_count: int = 0
     # 参与比较的基金数量：各周期榜单基金的并集，不是全市场
     holder_universe: int = 0
+    # 当前排序：score 按主线得分，consensus 按抱团度
+    sort: str = "score"
+    # 按抱团度排序时的披露仓位门槛
+    consensus_min_disclosed: float = 50.0
     top_holders: List[FundRankHolderItem] = Field(default_factory=list)
     message: Optional[str] = None
 
