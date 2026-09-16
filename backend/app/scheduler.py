@@ -27,6 +27,24 @@ async def job_fund_quotes() -> None:
         db.close()
 
 
+async def job_fund_navs() -> None:
+    """开盘前刷一次官方净值。
+
+    16:40 那一轮抓不到当天净值 —— 基金净值要到晚上 20-21 点才公布，
+    所以那时拿到的是前一天的。如果只靠它，盘中用的基准就永远差一天。
+    早上开盘前再抓一次，此时最新公布的正好是上一交易日，才是当天估值的正确基准。
+    """
+    db = SessionLocal()
+    try:
+        result = collect_fund_navs(db)
+        logger.info("基金净值（开盘前）：%s", result["message"])
+    except Exception:
+        logger.exception("开盘前基金净值刷新失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def job_fund_rankings() -> None:
     """涨幅榜基于 T-1 净值，一天变一次，收盘后跑一遍就够。"""
     db = SessionLocal()
@@ -67,6 +85,18 @@ def start_scheduler() -> None:
         "interval",
         seconds=settings.fund_quote_interval_seconds,
         id="fund-quotes",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    # 开盘前把净值基准对齐到上一交易日，见 job_fund_navs 的说明
+    scheduler.add_job(
+        job_fund_navs,
+        "cron",
+        day_of_week="mon-fri",
+        hour=9,
+        minute=10,
+        id="fund-navs",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
