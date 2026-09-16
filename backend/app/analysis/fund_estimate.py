@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..funds.favorites import list_favorites
+from ..funds.favorites import get_favorite, list_favorites
 from ..funds.sources import market_label, report_label
 from ..models import FundFavorite, FundHolding, FundNav, FundStockQuote
 from ..market_session import session_label
@@ -246,8 +246,8 @@ def _load(db: Session, codes: List[str]):
     return holdings, quotes, navs
 
 
-def list_funds(db: Session) -> Dict:
-    favorites = list_favorites(db)
+def list_funds(db: Session, user_id: int) -> Dict:
+    favorites = list_favorites(db, user_id)
     codes = [row.code for row in favorites]
     holdings, quotes, navs = _load(db, codes)
     moment = now_local()
@@ -262,8 +262,8 @@ def list_funds(db: Session) -> Dict:
     return {"session": session_label(moment), "items": items}
 
 
-def fund_detail(db: Session, code: str) -> Dict:
-    favorite = db.get(FundFavorite, code)
+def fund_detail(db: Session, user_id: int, code: str) -> Dict:
+    favorite = get_favorite(db, user_id, code)
     if not favorite:
         return {"ready": False, "message": "这只基金还没收藏", "session": session_label()}
     holdings, quotes, navs = _load(db, [code])

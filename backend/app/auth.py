@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .database import get_db
+from .models import User
 from .users import get_user, touch_login, verify_password
 
 _SECRET = (settings.auth_secret or secrets.token_urlsafe(32)).encode("utf-8")
@@ -84,17 +85,21 @@ def login(db: Session, username: str, password: str) -> tuple[str, str]:
 def require_auth(
     authorization: str = Header(default=""),
     db: Session = Depends(get_db),
-) -> str:
-    """挂在需要登录的路由上。前端在 Authorization 头里带 Bearer 令牌。"""
+) -> User:
+    """挂在需要登录的路由上，返回当前账号。
+
+    返回整个 User 而不只是用户名：收藏和持仓按 user_id 隔离，路由要拿它去过滤。
+    """
     prefix = "bearer "
     token = authorization[len(prefix) :] if authorization[: len(prefix)].lower() == prefix else ""
     username = verify_token(token.strip())
     if not username:
         raise HTTPException(status_code=401, detail="需要登录")
     # 令牌签名有效不代表账号还在：账号被删或改名后，旧令牌应立即失效
-    if get_user(db, username) is None:
+    user = get_user(db, username)
+    if user is None:
         raise HTTPException(status_code=401, detail="账号不存在，请重新登录")
-    return username
+    return user
 
 
 # 账号不存在时拿来充数的哈希，密码是一串随机值，永远不会被猜中

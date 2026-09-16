@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal, ensure_schema  # noqa: E402
-from app.users import count_users, get_user, set_password  # noqa: E402
+from app.users import claim_orphan_favorites, count_users, get_user, set_password  # noqa: E402
 
 
 def main() -> int:
@@ -40,6 +40,10 @@ def main() -> int:
         existed = get_user(db, args.username) is not None
         set_password(db, args.username, password)
         print("%s 账号 %s，当前共 %d 个账号" % ("已更新" if existed else "已新建", args.username, count_users(db)))
+        # 建的是第一个账号时，把加账号之前留下的收藏认领过来
+        claimed = claim_orphan_favorites(db)
+        if claimed:
+            print("已把 %d 条旧收藏归到这个账号名下" % claimed)
     except ValueError as exc:
         print("失败：%s" % exc)
         return 1

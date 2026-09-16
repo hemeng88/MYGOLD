@@ -18,7 +18,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import User
+from .models import FundFavorite, User
 from .timeutil import now_local
 
 ALGORITHM = "pbkdf2_sha256"
@@ -92,3 +92,21 @@ def ensure_bootstrap_user(db: Session, username: str, password: str) -> Optional
 def touch_login(db: Session, user: User) -> None:
     user.last_login_at = now_local()
     db.commit()
+
+
+def claim_orphan_favorites(db: Session) -> int:
+    """把加账号之前留下的、没有归属的收藏认领给唯一的那个账号。
+
+    只在系统里恰好有一个账号时执行 —— 有多个账号就无法判断这批数据该归谁，
+    硬塞给某一个等于把别人的持仓给错人。
+    """
+    users = db.scalars(select(User)).all()
+    if len(users) != 1:
+        return 0
+    orphans = db.scalars(select(FundFavorite).where(FundFavorite.user_id.is_(None))).all()
+    if not orphans:
+        return 0
+    for row in orphans:
+        row.user_id = users[0].id
+    db.commit()
+    return len(orphans)

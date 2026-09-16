@@ -7,15 +7,21 @@ from .database import Base
 
 
 class FundFavorite(Base):
-    """收藏的基金，单用户，代码就是主键。
+    """某个账号收藏的基金。这是唯一按账号隔离的表。
 
     shares / cost_price 是手动填的持仓，用来把估算涨跌换算成具体的盈亏金额。
     留空表示只看不持有。
+
+    user_id 可空只是为了兼容加账号之前的老数据：那些行迁移后先挂空，
+    等系统里只有一个账号时由 users.claim_orphan_favorites 认领过去。
     """
 
     __tablename__ = "fund_favorites"
+    __table_args__ = (UniqueConstraint("user_id", "code", name="uq_fund_favorite_user_code"),)
 
-    code: Mapped[str] = mapped_column(String(12), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     fund_type: Mapped[str] = mapped_column(String(32), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

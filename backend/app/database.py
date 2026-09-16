@@ -1,7 +1,11 @@
+import logging
+
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from .config import settings
+
+logger = logging.getLogger("mygold.database")
 
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
@@ -27,6 +31,43 @@ def _ensure_column(inspector, table: str, column: str, ddl: str) -> None:
         conn.execute(text("ALTER TABLE %s ADD COLUMN %s" % (table, ddl)))
 
 
+def _migrate_fund_favorites_to_users() -> None:
+    """给 fund_favorites 加 user_id。
+
+    加账号之前这张表以 code 为主键，一个基金只能被收藏一次。多账号下必须换成
+    代理主键 + (user_id, code) 唯一，而 SQLite 改不了主键，只能整表重建。
+
+    老数据的 user_id 先留空，因为这个函数跑在建初始账号之前、此时可能还没有账号。
+    之后由 users.claim_orphan_favorites 认领。重建后再次调用会因为已有 user_id 列而直接跳过。
+    """
+    inspector = inspect(engine)
+    if "fund_favorites" not in inspector.get_table_names():
+        return
+    old_columns = {col["name"] for col in inspector.get_columns("fund_favorites")}
+    if "user_id" in old_columns:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE fund_favorites RENAME TO fund_favorites_legacy"))
+    # 重命名之后 create_all 才会按新模型把 fund_favorites 建出来
+    Base.metadata.create_all(bind=engine)
+
+    # 只搬两边都有的列，别假设老表长什么样
+    new_columns = {col["name"] for col in inspect(engine).get_columns("fund_favorites")}
+    carried = [c for c in ("code", "name", "fund_type", "sort_order", "shares", "cost_price", "added_at") if c in old_columns and c in new_columns]
+    columns_sql = ", ".join(carried)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO fund_favorites (user_id, %s) SELECT NULL, %s FROM fund_favorites_legacy"
+                % (columns_sql, columns_sql)
+            )
+        )
+        moved = conn.execute(text("SELECT COUNT(*) FROM fund_favorites")).scalar() or 0
+        conn.execute(text("DROP TABLE fund_favorites_legacy"))
+    logger.info("fund_favorites 已加上 user_id，搬运 %d 条老收藏，等账号建好后认领", moved)
+
+
 def ensure_schema():
     from . import models  # noqa: F401
 
@@ -35,6 +76,8 @@ def ensure_schema():
     # 基金持仓份额和成本价是后加的，老库要补列
     _ensure_column(inspector, "fund_favorites", "shares", "shares FLOAT")
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
+    # 补完列再整表重建，保证老列都能搬过去
+    _migrate_fund_favorites_to_users()
 
 
 def get_db():

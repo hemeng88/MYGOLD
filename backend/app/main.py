@@ -10,7 +10,7 @@ from .config import settings
 from .database import SessionLocal, ensure_schema
 from .routers.api import router as api_router
 from .scheduler import start_scheduler, stop_scheduler
-from .users import count_users, ensure_bootstrap_user
+from .users import claim_orphan_favorites, count_users, ensure_bootstrap_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("mygold")
@@ -31,6 +31,10 @@ async def lifespan(_app: FastAPI):
                 "或执行：docker compose exec mygold python backend/scripts/set_password.py %s",
                 settings.bootstrap_username,
             )
+        # 加账号之前的收藏没有归属，系统里只有一个账号时认领给它
+        claimed = claim_orphan_favorites(db)
+        if claimed:
+            logger.info("已把 %d 条旧收藏归到唯一账号名下", claimed)
     except Exception:
         logger.exception("初始账号创建失败")
         db.rollback()
