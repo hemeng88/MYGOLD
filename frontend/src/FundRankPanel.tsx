@@ -150,8 +150,10 @@ export function FundRankPanel() {
                 全市场押注这条主线最重的基金
               </Text>
               <Text size="xs" c="dimmed" mb={8}>
-                主线仓位 = 该基金净值里压在这条主线 {data.theme_stock_n} 只代表股上的比例。
-                候选来自全市场按股票反查（{data.holder_report_date} 季报），不局限于上榜基金
+                主线仓位 = 该基金净值里压在这条主线
+                {data.theme_stock_n > 0 ? ` ${data.theme_stock_n} ` : ""}
+                只代表股上的比例。候选来自全市场按股票反查
+                {data.holder_report_date ? `（${data.holder_report_date} 季报）` : ""}，不局限于上榜基金
               </Text>
               <Stack gap={6}>
                 {data.top_holders.map((holder) => (
@@ -167,19 +169,28 @@ export function FundRankPanel() {
                           </Text>
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {holder.code} · 命中 {holder.hit_count}/{holder.theme_stock_count} 只
-                          {holder.fund_type ? ` · ${holder.fund_type}` : ""}
-                          {holder.alt_codes.length ? ` · 同门份额 ${holder.alt_codes.join("、")}` : ""}
+                          {[
+                            holder.code,
+                            holder.hit_count > 0 && holder.theme_stock_count > 0
+                              ? `命中 ${holder.hit_count}/${holder.theme_stock_count} 只`
+                              : null,
+                            holder.fund_type || null,
+                            holder.alt_codes.length ? `同门份额 ${holder.alt_codes.join("、")}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </Text>
                       </div>
-                      <div style={{ textAlign: "right", flexShrink: 0 }}>
-                        <Text fw={700} size="sm" c="gold">
-                          {fmt(holder.theme_pct, 1)}%
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          主线仓位
-                        </Text>
-                      </div>
+                      {holder.theme_pct > 0 ? (
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <Text fw={700} size="sm" c="gold">
+                            {fmt(holder.theme_pct, 1)}%
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            主线仓位
+                          </Text>
+                        </div>
+                      ) : null}
                     </Group>
                   </Paper>
                 ))}
