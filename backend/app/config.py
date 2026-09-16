@@ -60,7 +60,8 @@ class Settings(BaseSettings):
     # 而 .env 里既有的 MYGOLD_DOMAIN 是 deploy.sh 在用，保持同一套命名。
     bootstrap_username: str = Field(default="hemeng", validation_alias="MYGOLD_BOOTSTRAP_USERNAME")
     bootstrap_password: str = Field(default="", validation_alias="MYGOLD_BOOTSTRAP_PASSWORD")
-    # 留空则每次启动随机生成，令牌不跨重启；想跨重启就在 .env 里设一个长随机串
+    # 令牌签名密钥。留空则在 data/auth_secret 里自动生成一次并复用，登录状态跨重启保留；
+    # 想集中管理或多实例共享时才需要在 .env 里显式设置。
     auth_secret: str = Field(default="", validation_alias="MYGOLD_AUTH_SECRET")
     auth_token_days: int = 30
 

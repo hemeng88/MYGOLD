@@ -14,6 +14,8 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
+import os
 import secrets
 import time
 from typing import Optional
@@ -21,12 +23,45 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from .config import settings
+from .config import DATA_DIR, settings
 from .database import get_db
 from .models import User
 from .users import get_user, touch_login, verify_password
 
-_SECRET = (settings.auth_secret or secrets.token_urlsafe(32)).encode("utf-8")
+logger = logging.getLogger("mygold.auth")
+
+_SECRET_FILE = DATA_DIR / "auth_secret"
+
+
+def _load_secret() -> bytes:
+    """令牌签名密钥：优先环境变量，否则在数据目录里生成一次并留着。
+
+    不能把密钥写进代码 —— 仓库是公开的，密钥泄露比密码泄露更糟，
+    别人不用知道密码就能伪造令牌。
+
+    但也不该每次启动随机生成：数据目录是 bind mount，容器重建也在，
+    而 update.sh 每次都会重建容器，随机密钥意味着每次更新代码都要重新登录。
+    落盘一次两边都满足。
+    """
+    if settings.auth_secret:
+        return settings.auth_secret.encode("utf-8")
+    try:
+        if _SECRET_FILE.exists():
+            saved = _SECRET_FILE.read_text(encoding="utf-8").strip()
+            if saved:
+                return saved.encode("utf-8")
+        value = secrets.token_urlsafe(32)
+        _SECRET_FILE.write_text(value, encoding="utf-8")
+        os.chmod(_SECRET_FILE, 0o600)
+        logger.info("已在 %s 生成令牌签名密钥，登录状态可以跨重启保留", _SECRET_FILE)
+        return value.encode("utf-8")
+    except OSError:
+        # 数据目录不可写时退回进程内随机：功能正常，只是重启后要重新登录
+        logger.warning("写不了 %s，本次启动用临时密钥，重启后需要重新登录", _SECRET_FILE)
+        return secrets.token_urlsafe(32).encode("utf-8")
+
+
+_SECRET = _load_secret()
 
 
 def _b64(raw: bytes) -> str:
