@@ -11,13 +11,14 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Dict, List, Optional
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import FundRankEntry, FundRankHolder, FundRankStock
+from ..models import FundRankEntry, FundRankStock, FundThemeHolder
 from ..timeutil import now_local
 from . import sources
 from .sources import RANK_PERIODS
@@ -54,19 +55,26 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
     codes = sorted({row["code"] for rows in boards.values() for row in rows})
     names = {row["code"]: row["name"] for rows in boards.values() for row in rows}
     holdings: Dict[str, List[Dict]] = {}
+    report_dates: List[str] = []
     for code in codes:
         try:
-            holdings[code] = sources.fetch_holdings(code)["holdings"]
+            parsed = sources.fetch_holdings(code)
+            holdings[code] = parsed["holdings"]
+            if parsed.get("report_date"):
+                report_dates.append(parsed["report_date"])
         except Exception:
             logger.exception("穿透 %s 持仓失败", code)
             holdings[code] = []
 
+    # 反查接口按报告期过滤，填错会直接返回 0 条，所以用榜单基金里最新的那个报告期
+    report_date = max(report_dates) if report_dates else None
+
     now = now_local()
     total_funds = 0
+    theme: Dict[str, List] = {}
     for period, rows in boards.items():
         db.execute(delete(FundRankEntry).where(FundRankEntry.period == period))
         db.execute(delete(FundRankStock).where(FundRankStock.period == period))
-        db.execute(delete(FundRankHolder).where(FundRankHolder.period == period))
         for row in rows:
             db.add(
                 FundRankEntry(
@@ -108,72 +116,119 @@ def collect_rankings(db: Session, periods: Optional[List[str]] = None) -> Dict:
                 )
             )
 
-        # 反过来按基金聚合：谁的仓位最集中在这条主线上。
-        #
-        # 不用「主线成分股集合 + 落在集合里就计入」那种算法：集合一放大就会覆盖
-        # 榜单基金持有的几乎所有股票，命中权重恒等于披露仓位，榜就退化成
-        # 「谁满仓程度最高」。这里改成给每只股票一个共识度权重：
-        #     共识度 = 该周期有多少只榜单基金重仓它 / 榜单基金总数
-        #     主线得分 = Σ(该基金在这只股票上的权重 × 这只股票的共识度)
-        # 全榜数据都参与，没有人为截断；抱团股贡献大，个性选股贡献小。
-        board_total = len(rows) or 1
-        consensus = {code: slot["fund_count"] / board_total for code, slot in agg.items()}
-        holders = []
-        # A 类和 C 类是同一个组合的两种份额，持仓一模一样。不合并的话「前五」里
-        # 会有一半是同门份额，白占名次。用持仓指纹判断，代码小的那只留下当代表。
-        by_portfolio: Dict[tuple, Dict] = {}
-        for code in codes:
-            items = holdings.get(code) or []
-            if not items:
-                continue
-            score = sum(item["weight_pct"] * consensus.get(item["stock_code"], 0.0) for item in items)
-            if score <= 0:
-                continue
-            disclosed = sum(item["weight_pct"] for item in items)
-            shared = [item for item in items if consensus.get(item["stock_code"], 0.0) > 1 / board_total]
-            signature = tuple(sorted((item["stock_code"], round(item["weight_pct"], 2)) for item in items))
-            twin = by_portfolio.get(signature)
-            if twin is not None:
-                twin["alt"].append(code)
-                continue
-            row = {
-                "fund_code": code,
-                "theme_score": round(score, 2),
-                # 持仓里有多少只是和别的榜单基金抱团的
-                "shared_count": len(shared),
-                "holding_count": len(items),
-                "disclosed_pct": round(disclosed, 2),
-                # 得分占自身披露仓位的比例，衡量这个组合有多「随大流」
-                "consensus_pct": round(score / disclosed * 100, 1) if disclosed else 0.0,
-                "alt": [],
-            }
-            by_portfolio[signature] = row
-            holders.append(row)
-        # 存全量：页面支持按得分或按抱团度切换排序，只存按得分的前几名的话，
-        # 换成抱团度排序时真正的前几名可能根本没被存下来
-        holders.sort(key=lambda row: (-row["theme_score"], -row["consensus_pct"]))
-        for index, row in enumerate(holders, start=1):
-            db.add(
-                FundRankHolder(
-                    period=period,
-                    rank=index,
-                    fund_code=row["fund_code"],
-                    fund_name=names.get(row["fund_code"]),
-                    theme_score=row["theme_score"],
-                    consensus_pct=row["consensus_pct"],
-                    shared_count=row["shared_count"],
-                    holding_count=row["holding_count"],
-                    disclosed_pct=row["disclosed_pct"],
-                    alt_codes=",".join(row["alt"]) or None,
-                    updated_at=now,
-                )
-            )
+        # 挑出这条主线的代表股，交给下面的全市场反查
+        theme[period] = sorted(
+            agg.items(), key=lambda kv: (-kv[1]["fund_count"], -kv[1]["weight_sum"])
+        )[: settings.fund_theme_stock_n]
     db.commit()
 
+    holder_result = _collect_theme_holders(db, theme, report_date, now)
+
     message = "涨幅榜 %d 个周期、%d 条记录，穿透 %d 只基金" % (len(boards), total_funds, len(codes))
+    message += "；%s" % holder_result
     if failed:
         message += "，%s 没取到" % "、".join(failed)
     return {"ok": total_funds > 0, "periods": len(boards), "funds": total_funds, "message": message}
+
+
+_CLASS_SUFFIX = re.compile(r"(?:[（(](?:LOF|QDII|FOF)[）)])*\s*[ABCDEHIOR]$")
+
+
+def _merge_key(name: Optional[str], code: str) -> str:
+    """按「去掉尾部份额字母的名字」归并同门份额（A/C 类）。
+
+    实测这个反查接口每个组合只报一条（药明康德 800 条里归并不出任何一组同门份额，
+    中欧医疗健康只出现 003095 A 类），所以这里基本不会触发。
+    留着是防止接口哪天改成按份额逐条返回，那时「前五」会被同门份额挤占。
+    """
+    base = _CLASS_SUFFIX.sub("", (name or code).strip())
+    return base or code
+
+
+def _collect_theme_holders(
+    db: Session, theme: Dict[str, List], report_date: Optional[str], now
+) -> str:
+    """全市场反查：谁把最多净值压在这条主线的代表股上。
+
+    和之前两版的区别是比较范围。之前只能在「因为押中主线而上榜」的那些基金里比，
+    是循环论证；反查按股票问「全市场哪些基金持有它」，主线仍由涨幅榜识别，
+    候选基金则来自全市场。得分直接是占净值比例之和，能验算也能横向比。
+    """
+    db.execute(delete(FundThemeHolder))
+    if not report_date:
+        db.commit()
+        return "反查跳过：拿不到报告期"
+
+    # 各周期主线股高度重叠，按股票去重只反查一次
+    wanted = sorted({code for rows in theme.values() for code, _slot in rows})
+    holders_by_stock: Dict[str, List[Dict]] = {}
+    failed = 0
+    for stock_code in wanted:
+        try:
+            holders_by_stock[stock_code] = sources.fetch_stock_fund_holders(stock_code, report_date)
+        except Exception:
+            logger.exception("反查 %s 的持有基金失败", stock_code)
+            holders_by_stock[stock_code] = []
+            failed += 1
+
+    written = 0
+    for period, rows in theme.items():
+        consensus = {code: slot["fund_count"] for code, slot in rows}
+        merged: Dict[str, Dict] = {}
+        for stock_code, _slot in rows:
+            for item in holders_by_stock.get(stock_code) or []:
+                key = _merge_key(item["fund_name"], item["fund_code"])
+                slot = merged.setdefault(
+                    key,
+                    {
+                        "fund_code": item["fund_code"],
+                        "fund_name": item["fund_name"],
+                        "fund_type": item.get("fund_type"),
+                        "theme_pct": 0.0,
+                        "hit": set(),
+                        "alt": set(),
+                        # 命中股票被多少只榜单基金重仓，用来看押的是不是最抱团的那几只
+                        "consensus_hits": 0,
+                    },
+                )
+                if item["fund_code"] != slot["fund_code"]:
+                    # 同门份额：留代码小的当代表，其余记进 alt
+                    if item["fund_code"] < slot["fund_code"]:
+                        slot["alt"].add(slot["fund_code"])
+                        slot["fund_code"] = item["fund_code"]
+                        slot["fund_name"] = item["fund_name"]
+                    else:
+                        slot["alt"].add(item["fund_code"])
+                        continue
+                if stock_code in slot["hit"]:
+                    continue
+                slot["hit"].add(stock_code)
+                slot["theme_pct"] += item["netvalue_ratio"]
+                slot["consensus_hits"] += consensus.get(stock_code, 0)
+        ranked = sorted(merged.values(), key=lambda row: (-row["theme_pct"], -len(row["hit"])))
+        for index, row in enumerate(ranked[: settings.fund_theme_holder_top_n], start=1):
+            db.add(
+                FundThemeHolder(
+                    period=period,
+                    rank=index,
+                    fund_code=row["fund_code"],
+                    fund_name=row["fund_name"],
+                    fund_type=row["fund_type"],
+                    theme_pct=round(row["theme_pct"], 2),
+                    hit_count=len(row["hit"]),
+                    theme_stock_count=len(rows),
+                    consensus_hits=row["consensus_hits"],
+                    alt_codes=",".join(sorted(row["alt"])) or None,
+                    report_date=report_date,
+                    updated_at=now,
+                )
+            )
+            written += 1
+    db.commit()
+    note = "反查 %d 只主线股（%s），写入 %d 条持有榜" % (len(wanted), report_date, written)
+    if failed:
+        note += "，%d 只没查到" % failed
+    return note
 
 
 def list_rankings(
@@ -182,7 +237,6 @@ def list_rankings(
     stock_limit: int = 12,
     holder_limit: int = 5,
     fund_limit: int = 10,
-    sort: str = "score",
 ) -> Dict:
     if period not in RANK_PERIODS:
         period = DEFAULT_PERIOD
@@ -215,15 +269,14 @@ def list_rankings(
             .limit(stock_limit)
         ).all()
     )
-    # sort=score 按主线得分（含仓位规模），sort=consensus 按抱团度（纯集中度）
-    holder_query = select(FundRankHolder).where(FundRankHolder.period == period)
-    if sort == "consensus":
-        holder_query = holder_query.where(
-            FundRankHolder.disclosed_pct >= settings.fund_rank_consensus_min_disclosed
-        ).order_by(FundRankHolder.consensus_pct.desc(), FundRankHolder.theme_score.desc())
-    else:
-        holder_query = holder_query.order_by(FundRankHolder.rank.asc())
-    holders = list(db.scalars(holder_query.limit(holder_limit)).all())
+    holders = list(
+        db.scalars(
+            select(FundThemeHolder)
+            .where(FundThemeHolder.period == period)
+            .order_by(FundThemeHolder.rank.asc())
+            .limit(holder_limit)
+        ).all()
+    )
     return {
         "period": period,
         "period_label": period_label(period),
@@ -253,24 +306,22 @@ def list_rankings(
         # 主线成分股数量，以及判定门槛：至少几只榜单基金共同重仓
         "theme_stock_count": theme_stock_count,
         "theme_min_funds": settings.fund_rank_theme_min_funds,
-        # 参与比较的是所有周期榜单基金的并集，去重后就是采集时拉过持仓的那些
-        "holder_universe": len(set(db.scalars(select(FundRankEntry.code).distinct()).all())),
-        "sort": sort if sort in ("score", "consensus") else "score",
-        "consensus_min_disclosed": settings.fund_rank_consensus_min_disclosed,
+        # 持有榜的比较范围是全市场，这里给出这条主线用了几只代表股
+        "theme_stock_n": holders[0].theme_stock_count if holders else 0,
+        "holder_report_date": holders[0].report_date if holders else None,
         "top_holders": [
             {
-                # 名次按当前排序重新编号，存的 rank 是按得分的
-                "rank": index,
+                "rank": row.rank,
                 "code": row.fund_code,
                 "name": row.fund_name,
-                "theme_score": row.theme_score,
-                "consensus_pct": row.consensus_pct,
-                "shared_count": row.shared_count,
-                "holding_count": row.holding_count,
-                "disclosed_pct": row.disclosed_pct,
+                "fund_type": row.fund_type,
+                "theme_pct": row.theme_pct,
+                "hit_count": row.hit_count,
+                "theme_stock_count": row.theme_stock_count,
+                "consensus_hits": row.consensus_hits,
                 "alt_codes": [c for c in (row.alt_codes or "").split(",") if c],
             }
-            for index, row in enumerate(holders, start=1)
+            for row in holders
         ],
         "message": None if funds else "还没有榜单数据，刷新一次",
     }

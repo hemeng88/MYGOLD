@@ -426,6 +426,54 @@ def fetch_rankings(period: str, limit: int = 10) -> List[Dict]:
     return out
 
 
+def fetch_stock_fund_holders(stock_code: str, report_date: str, limit: int = 800) -> List[Dict]:
+    """反查：某只股票被全市场哪些基金持有。
+
+    和 type=jjcc 正好相反 —— 那个是「基金 -> 它的重仓股」，只能覆盖我们主动去拉的基金；
+    这个是「股票 -> 持有它的基金」，一次就能拿到全市场（热门股上千只）。
+
+    关键字段 NETVALUE_RATIO 是该股占这只基金净值的比例，正好当权重用。
+    ORG_TYPE="01" 是基金，不加会混进保险、社保、券商等其它机构。
+    """
+    if not stock_code or not report_date:
+        return []
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_stock_holder_url,
+            params={
+                "sortColumns": "NETVALUE_RATIO",
+                "sortTypes": "-1",
+                "pageSize": limit,
+                "pageNumber": 1,
+                "reportName": "RPT_MAIN_ORGHOLDDETAIL",
+                "columns": "SECURITY_CODE,HOLDER_NAME,FUND_CODE,NETVALUE_RATIO,FUND_TYPE",
+                "filter": '(SECURITY_CODE="%s")(REPORT_DATE=\'%s\')(ORG_TYPE="01")'
+                % (stock_code, report_date),
+            },
+            headers={**FUND_HEADERS, "Referer": "https://data.eastmoney.com/zlsj/"},
+        )
+        response.raise_for_status()
+    payload = response.json() or {}
+    rows = ((payload.get("result") or {}).get("data")) or []
+    out: List[Dict] = []
+    for row in rows:
+        code = str(row.get("FUND_CODE") or "").strip()
+        ratio = _num(row.get("NETVALUE_RATIO"))
+        if not code or ratio is None or ratio <= 0:
+            continue
+        out.append(
+            {
+                "stock_code": str(row.get("SECURITY_CODE") or "").strip(),
+                "fund_code": code,
+                "fund_name": (row.get("HOLDER_NAME") or "").strip() or None,
+                "fund_type": (row.get("FUND_TYPE") or "").strip() or None,
+                # 占该基金净值的比例，百分数
+                "netvalue_ratio": ratio,
+            }
+        )
+    return out
+
+
 def fetch_stock_quotes(secids: Iterable[str]) -> List[Dict]:
     """按 secid 批量取持仓股行情。
 

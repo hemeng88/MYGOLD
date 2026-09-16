@@ -132,14 +132,14 @@ class FundRankHolderItem(BaseModel):
     rank: int
     code: str
     name: Optional[str] = None
-    # 主线得分 = Σ(持仓权重 × 该股共识度)
-    theme_score: float
-    # 得分占自身披露仓位的比例，越高说明越随大流
-    consensus_pct: float
-    shared_count: int
-    holding_count: int
-    disclosed_pct: float
-    # 持仓相同的同门份额（A/C 类），已合并到本行
+    fund_type: Optional[str] = None
+    # 该基金净值里有多少比例压在这条主线的代表股上，百分数
+    theme_pct: float
+    hit_count: int
+    theme_stock_count: int
+    # 命中股票被多少只榜单基金重仓的累计数
+    consensus_hits: int
+    # 同门份额（A/C 类），已合并到本行
     alt_codes: List[str] = Field(default_factory=list)
 
 
@@ -154,12 +154,10 @@ class FundRankResponse(BaseModel):
     board_size: int = 0
     # 被两只以上榜单基金共同重仓的股票数，说明这条主线有多集中
     theme_stock_count: int = 0
-    # 参与比较的基金数量：各周期榜单基金的并集，不是全市场
-    holder_universe: int = 0
-    # 当前排序：score 按主线得分，consensus 按抱团度
-    sort: str = "score"
-    # 按抱团度排序时的披露仓位门槛
-    consensus_min_disclosed: float = 50.0
+    # 这条主线用了几只代表股去做全市场反查
+    theme_stock_n: int = 0
+    # 反查用的报告期
+    holder_report_date: Optional[str] = None
     top_holders: List[FundRankHolderItem] = Field(default_factory=list)
     message: Optional[str] = None
 

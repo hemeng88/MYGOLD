@@ -134,33 +134,33 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_login_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
+class FundThemeHolder(Base):
+    """全市场反查：谁把最多净值压在这个周期的主线代表股上。
 
-class FundRankHolder(Base):
-    """在榜单基金里，谁的仓位最集中在这个周期的主线上。
+    比较范围是全市场，不再局限于涨幅榜里的基金 —— 之前用「因为押中主线而上榜」的
+    基金去衡量谁押中主线，是循环论证。主线仍由涨幅榜识别，候选基金来自
+    RPT_MAIN_ORGHOLDDETAIL 的股票反查。
 
-    和 FundRankStock 是同一次采集的两个产物：那张表按股票聚合，这张表按基金聚合。
-    采集时逐只基金的持仓只存在内存里，所以名次必须在那时算完落库，页面只读。
+    theme_pct 直接是「占该基金净值比例」之和，是个能验算、能横向比的百分数。
     """
 
-    __tablename__ = "fund_rank_holders"
-    __table_args__ = (UniqueConstraint("period", "fund_code", name="uq_fund_rank_holder"),)
+    __tablename__ = "fund_theme_holders"
+    __table_args__ = (UniqueConstraint("period", "fund_code", name="uq_fund_theme_holder"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     period: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
     rank: Mapped[int] = mapped_column(Integer, nullable=False)
     fund_code: Mapped[str] = mapped_column(String(12), nullable=False)
-    fund_name: Mapped[str] = mapped_column(String(64), nullable=True)
-    # 主线得分 = Σ(持仓权重 × 该股共识度)，共识度 = 多少只榜单基金重仓它 / 榜单总数。
-    # 不用「前 N 大重仓股集合」那种口径：集合放大后会覆盖几乎所有持仓，榜会退化成
-    # 「谁满仓程度最高」。加权方式让全榜数据都参与，又不需要人为截断。
-    theme_score: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    # 得分占自身披露仓位的比例，衡量这个组合有多随大流
-    consensus_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    # 持仓里和别的榜单基金抱团的只数 / 公示持仓总只数
-    shared_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    holding_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    # 该基金公示持仓的总权重，用来看这个集中度占它披露仓位的多少
-    disclosed_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
-    # 持仓完全相同的同门份额（A/C 类），逗号分隔。合并进这一行，免得挤占名次
+    fund_name: Mapped[str] = mapped_column(String(80), nullable=True)
+    fund_type: Mapped[str] = mapped_column(String(32), nullable=True)
+    # 该基金净值里有多少比例压在这条主线的代表股上，百分数
+    theme_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    # 命中了几只代表股 / 这条主线一共几只代表股
+    hit_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    theme_stock_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 命中股票被多少只榜单基金重仓的累计数，看押的是不是最抱团的那几只
+    consensus_hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 同门份额（A/C 类），按去掉尾部份额字母的名字归并
     alt_codes: Mapped[str] = mapped_column(String(120), nullable=True)
+    report_date: Mapped[str] = mapped_column(String(10), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

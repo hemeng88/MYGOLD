@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Badge, Button, Group, Paper, SegmentedControl, Select, Skeleton, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Paper, Select, Skeleton, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconRefresh } from "@tabler/icons-react";
 import { api } from "./api";
@@ -23,17 +23,16 @@ function tone(value: number | null | undefined) {
 export function FundRankPanel() {
   const [data, setData] = useState<FundRank | null>(null);
   const [period, setPeriod] = useState<string>("jnzf");
-  const [sort, setSort] = useState<"score" | "consensus">("score");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = async (nextPeriod: string, nextSort: "score" | "consensus") => {
-    setData(await api.fundRankings(nextPeriod, nextSort));
+  const load = async (nextPeriod: string) => {
+    setData(await api.fundRankings(nextPeriod));
     setLoading(false);
   };
 
   useEffect(() => {
-    load(period, sort).catch((err) => {
+    load(period).catch((err) => {
       setLoading(false);
       notifications.show({
         color: "red",
@@ -41,13 +40,13 @@ export function FundRankPanel() {
         message: err instanceof Error ? err.message : "稍后重试",
       });
     });
-  }, [period, sort]);
+  }, [period]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
       const result = await api.refreshFundRankings();
-      await load(period, sort);
+      await load(period);
       notifications.show({
         color: result.ok ? "teal" : "yellow",
         title: result.ok ? "榜单已更新" : "只更新了一部分",
@@ -148,25 +147,12 @@ export function FundRankPanel() {
           {data?.top_holders?.length ? (
             <div>
               <Text size="xs" fw={600} mb={2}>
-                押注这条主线最重的基金
+                全市场押注这条主线最重的基金
               </Text>
-              <Text size="xs" c="dimmed" mb={6}>
-                {sort === "score"
-                  ? `比较 ${data.holder_universe} 只上榜基金。得分 = Σ(持仓权重 × 该股被多少只榜单基金共同重仓)，全榜 ${data.theme_stock_count} 只抱团股都参与`
-                  : `抱团度 = 得分 ÷ 自身披露仓位，只看持仓有多随大流、不受满仓程度影响。已排除披露仓位低于 ${fmt(data.consensus_min_disclosed, 0)}% 的`}
+              <Text size="xs" c="dimmed" mb={8}>
+                主线仓位 = 该基金净值里压在这条主线 {data.theme_stock_n} 只代表股上的比例。
+                候选来自全市场按股票反查（{data.holder_report_date} 季报），不局限于上榜基金
               </Text>
-              <SegmentedControl
-                size="xs"
-                fullWidth
-                mb={8}
-                color="gold"
-                value={sort}
-                onChange={(value) => setSort(value as "score" | "consensus")}
-                data={[
-                  { label: "按主线得分", value: "score" },
-                  { label: "按抱团度", value: "consensus" },
-                ]}
-              />
               <Stack gap={6}>
                 {data.top_holders.map((holder) => (
                   <Paper key={holder.code} className="stat-tile" p="xs">
@@ -181,19 +167,17 @@ export function FundRankPanel() {
                           </Text>
                         </Group>
                         <Text size="xs" c="dimmed" mt={2}>
-                          {holder.code} · 抱团 {holder.shared_count}/{holder.holding_count} 只 · 披露仓位
-                          {fmt(holder.disclosed_pct, 1)}%
+                          {holder.code} · 命中 {holder.hit_count}/{holder.theme_stock_count} 只
+                          {holder.fund_type ? ` · ${holder.fund_type}` : ""}
                           {holder.alt_codes.length ? ` · 同门份额 ${holder.alt_codes.join("、")}` : ""}
                         </Text>
                       </div>
                       <div style={{ textAlign: "right", flexShrink: 0 }}>
                         <Text fw={700} size="sm" c="gold">
-                          {sort === "score" ? fmt(holder.theme_score, 1) : `${fmt(holder.consensus_pct, 1)}%`}
+                          {fmt(holder.theme_pct, 1)}%
                         </Text>
                         <Text size="xs" c="dimmed">
-                          {sort === "score"
-                            ? `抱团度 ${fmt(holder.consensus_pct, 0)}%`
-                            : `得分 ${fmt(holder.theme_score, 1)}`}
+                          主线仓位
                         </Text>
                       </div>
                     </Group>

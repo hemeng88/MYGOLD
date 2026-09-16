@@ -95,11 +95,8 @@ export const api = {
     }),
   refreshFunds: (includeHoldings = false) =>
     request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
-  fundRankings: (period?: string, sort: "score" | "consensus" = "score") => {
-    const query = new URLSearchParams({ sort });
-    if (period) query.set("period", period);
-    return request<FundRank>(`/api/funds/rankings?${query.toString()}`);
-  },
+  fundRankings: (period?: string) =>
+    request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings"),
   refreshFundRankings: () =>
     request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
 };

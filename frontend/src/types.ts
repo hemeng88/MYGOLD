@@ -114,11 +114,11 @@ export interface FundRankHolderItem {
   rank: number;
   code: string;
   name: string | null;
-  theme_score: number;
-  consensus_pct: number;
-  shared_count: number;
-  holding_count: number;
-  disclosed_pct: number;
+  fund_type: string | null;
+  theme_pct: number;
+  hit_count: number;
+  theme_stock_count: number;
+  consensus_hits: number;
   alt_codes: string[];
 }
 
@@ -131,9 +131,8 @@ export interface FundRank {
   hot_stocks: FundRankStockItem[];
   board_size: number;
   theme_stock_count: number;
-  holder_universe: number;
-  sort: "score" | "consensus";
-  consensus_min_disclosed: number;
+  theme_stock_n: number;
+  holder_report_date: string | null;
   top_holders: FundRankHolderItem[];
   message: string | null;
 }

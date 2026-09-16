@@ -78,24 +78,21 @@ def ensure_schema():
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
     # 补完列再整表重建，保证老列都能搬过去
     _migrate_fund_favorites_to_users()
-    _drop_stale_rank_holders()
+    _drop_legacy_rank_holders()
 
 
-def _drop_stale_rank_holders() -> None:
-    """主线得分换算法后 fund_rank_holders 的列变了，旧表直接丢掉重建。
+def _drop_legacy_rank_holders() -> None:
+    """旧的 fund_rank_holders 已被 fund_theme_holders 取代，直接丢掉。
 
-    这张表纯粹是采集结果的缓存，下一次刷新榜单就会重新写满，不存在数据丢失。
+    那张表是采集结果的缓存，口径换过两次（前十截断、共识度加权），
+    现在换成全市场反查，列和含义都不一样了，留着只会占地方。
     """
     inspector = inspect(engine)
     if "fund_rank_holders" not in inspector.get_table_names():
         return
-    columns = {col["name"] for col in inspector.get_columns("fund_rank_holders")}
-    if "theme_score" in columns:
-        return
     with engine.begin() as conn:
         conn.execute(text("DROP TABLE fund_rank_holders"))
-    Base.metadata.create_all(bind=engine)
-    logger.info("fund_rank_holders 口径已变更，旧缓存表已重建，刷新榜单后恢复")
+    logger.info("已删除旧表 fund_rank_holders，改用全市场反查的 fund_theme_holders")
 
 
 def get_db():

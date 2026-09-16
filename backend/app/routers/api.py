@@ -82,7 +82,6 @@ def fund_rankings(
     stock_limit: int = Query(default=12, ge=1, le=40),
     holder_limit: int = Query(default=5, ge=1, le=10, description="押注最重的基金取前几名"),
     fund_limit: int = Query(default=10, ge=1, le=50, description="涨幅榜列前几名，计算仍用全部"),
-    sort: str = Query(default="score", pattern="^(score|consensus)$", description="score 按主线得分，consensus 按抱团度"),
     db: Session = Depends(get_db),
     _user: User = Depends(require_auth),
 ):
@@ -92,7 +91,6 @@ def fund_rankings(
         stock_limit=stock_limit,
         holder_limit=holder_limit,
         fund_limit=fund_limit,
-        sort=sort,
     )
 
 
