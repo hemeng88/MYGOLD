@@ -3,7 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..analysis.fund_estimate import fund_detail, list_funds
+from ..analysis.fund_estimate import exposure, fund_detail, list_funds
 from ..auth import login as auth_login
 from ..auth import require_auth
 from ..models import User
@@ -13,6 +13,7 @@ from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
 from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
 from ..funds.sources import search_funds
 from ..schemas import (
+    ExposureResponse,
     FundDetailResponse,
     FundFavoriteIn,
     FundFavoriteOut,
@@ -59,6 +60,12 @@ def auth_me(user: User = Depends(require_auth)):
 @guarded.get("/funds", response_model=FundListResponse)
 def funds(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     return list_funds(db, user.id)
+
+
+@guarded.get("/funds/exposure", response_model=ExposureResponse)
+def fund_exposure(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    """把基金持仓穿透成每只股票对应多少钱，同一只股票跨基金合并。"""
+    return exposure(db, user.id)
 
 
 @guarded.get("/funds/search", response_model=List[FundSearchItem])

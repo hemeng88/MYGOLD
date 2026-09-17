@@ -153,3 +153,37 @@ export interface LoginResult {
 export interface Me {
   username: string;
 }
+
+
+export interface ExposureFundItem {
+  code: string;
+  name: string | null;
+  weight_pct: number;
+  value: number;
+}
+
+export interface ExposureItem {
+  code: string;
+  name: string | null;
+  market: string | null;
+  value: number;
+  pct_of_total: number | null;
+  change_pct: number | null;
+  today_pnl: number | null;
+  fund_count: number;
+  funds: ExposureFundItem[];
+}
+
+export interface Exposure {
+  session: string;
+  as_of: string | null;
+  fund_count: number;
+  total_value: number | null;
+  disclosed_value: number | null;
+  coverage_pct: number | null;
+  today_pnl: number | null;
+  stock_count: number;
+  items: ExposureItem[];
+  ready: boolean;
+  message: string | null;
+}

@@ -181,3 +181,43 @@ class LoginOut(BaseModel):
 
 class MeOut(BaseModel):
     username: str
+
+
+class ExposureFundItem(BaseModel):
+    """某只股票的持仓金额来自哪只基金。"""
+
+    code: str
+    name: Optional[str] = None
+    # 该股占这只基金净值的比例，百分数
+    weight_pct: float
+    value: float
+
+
+class ExposureItem(BaseModel):
+    code: str
+    name: Optional[str] = None
+    market: Optional[str] = None
+    # 穿透后你在这只股票上对应多少钱
+    value: float
+    # 占你全部基金市值的比例
+    pct_of_total: Optional[float] = None
+    change_pct: Optional[float] = None
+    # 今天这只股票给你带来的盈亏金额
+    today_pnl: Optional[float] = None
+    fund_count: int = 0
+    funds: List[ExposureFundItem] = Field(default_factory=list)
+
+
+class ExposureResponse(BaseModel):
+    session: str
+    as_of: Optional[datetime] = None
+    fund_count: int = 0
+    total_value: Optional[float] = None
+    # 能穿透到个股的金额，和总市值的差额是未公示仓位加债券现金
+    disclosed_value: Optional[float] = None
+    coverage_pct: Optional[float] = None
+    today_pnl: Optional[float] = None
+    stock_count: int = 0
+    items: List[ExposureItem] = Field(default_factory=list)
+    ready: bool = False
+    message: Optional[str] = None

@@ -224,6 +224,109 @@ def summarize_fund(
     return base
 
 
+def exposure(db: Session, user_id: int) -> Dict:
+    """把基金持仓穿透成「你实际持有多少钱的某只股票」。
+
+    份额 × 净值 = 这只基金值多少钱，再按季报公示的占净值比例摊到每只股票上，
+    同一只股票被多只基金持有时合并 —— 这才是重点：分散买几只基金，
+    穿透后往往发现钱集中压在同一批股票上。
+
+    分摊基数用**已公布净值**而不是估算净值，这样每只股票的今日盈亏
+    （金额 × 该股涨跌幅）加起来正好等于各基金「保守估算」口径的今日盈亏，
+    数字可以自己验算。用估算净值会把估算误差再乘一遍。
+    """
+    favorites = [row for row in list_favorites(db, user_id) if row.shares and row.shares > 0]
+    codes = [row.code for row in favorites]
+    holdings, quotes, navs = _load(db, codes)
+    moment = now_local()
+
+    total_value = 0.0
+    disclosed_value = 0.0
+    merged: Dict[str, Dict] = {}
+    stale_funds: List[str] = []
+    no_nav: List[str] = []
+
+    for favorite in favorites:
+        nav_row = navs.get(favorite.code)
+        cash_fund = _is_cash_fund(favorite)
+        nav_value = 1.0 if cash_fund else (nav_row.nav if nav_row else None)
+        if not nav_value:
+            no_nav.append(favorite.name)
+            continue
+        fund_value = favorite.shares * nav_value
+        total_value += fund_value
+        rows = holdings.get(favorite.code) or []
+        report_date = next((row.report_date for row in rows if row.report_date), None)
+        age = _stale_days(report_date, moment)
+        if age is not None and age > settings.fund_report_stale_days:
+            stale_funds.append(favorite.name)
+        for row in rows:
+            stock_value = fund_value * row.weight_pct / 100.0
+            disclosed_value += stock_value
+            quote = quotes.get(row.secid)
+            slot = merged.setdefault(
+                row.secid,
+                {
+                    "code": row.stock_code,
+                    "name": row.stock_name or (quote.name if quote else None) or row.stock_code,
+                    "market": market_label(row.market),
+                    "value": 0.0,
+                    "change_pct": quote.change_pct if quote else None,
+                    "funds": [],
+                },
+            )
+            slot["value"] += stock_value
+            slot["funds"].append(
+                {
+                    "code": favorite.code,
+                    "name": favorite.name,
+                    "weight_pct": round(row.weight_pct, 2),
+                    "value": round(stock_value, 2),
+                }
+            )
+
+    items = []
+    for slot in merged.values():
+        change_pct = slot["change_pct"]
+        items.append(
+            {
+                "code": slot["code"],
+                "name": slot["name"],
+                "market": slot["market"],
+                "value": round(slot["value"], 2),
+                "pct_of_total": round(slot["value"] / total_value * 100, 2) if total_value else None,
+                "change_pct": change_pct,
+                # 今天这只股票给你带来多少钱
+                "today_pnl": round(slot["value"] * change_pct / 100.0, 2)
+                if change_pct is not None
+                else None,
+                "fund_count": len(slot["funds"]),
+                "funds": sorted(slot["funds"], key=lambda row: -row["value"]),
+            }
+        )
+    items.sort(key=lambda row: -row["value"])
+
+    notes = []
+    if no_nav:
+        notes.append("%d 只取不到净值，没算进去" % len(no_nav))
+    if stale_funds:
+        notes.append("%d 只的季报已过期，穿透结果只能当参考" % len(stale_funds))
+    return {
+        "session": session_label(moment),
+        "as_of": max((row.collected_at for row in quotes.values()), default=None),
+        "fund_count": len(favorites),
+        "total_value": round(total_value, 2) if total_value else None,
+        "disclosed_value": round(disclosed_value, 2) if disclosed_value else None,
+        # 能穿透到个股的占总市值多少，剩下的是未公示仓位加债券现金
+        "coverage_pct": round(disclosed_value / total_value * 100, 2) if total_value else None,
+        "today_pnl": round(sum(row["today_pnl"] or 0 for row in items), 2) if items else None,
+        "stock_count": len(items),
+        "items": items,
+        "ready": bool(items),
+        "message": "；".join(notes) or (None if items else "没有填了份额、又能拿到公示持仓的基金"),
+    }
+
+
 def _load(db: Session, codes: List[str]):
     holdings: Dict[str, List[FundHolding]] = {code: [] for code in codes}
     if codes:

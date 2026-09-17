@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
-import type { FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, Me } from "./types";
+import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -78,6 +78,7 @@ export const api = {
   me: () => request<Me>("/api/auth/me"),
   logout: () => clearToken(),
   funds: () => request<FundList>("/api/funds"),
+  exposure: () => request<Exposure>("/api/funds/exposure"),
   fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
   addFund: (code: string) =>

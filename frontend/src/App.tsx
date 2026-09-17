@@ -6,6 +6,7 @@ import { IconLogout } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api } from "./api";
 import { UNAUTHORIZED_EVENT, getToken } from "./auth";
+import { ExposurePanel } from "./ExposurePanel";
 import { FundRankPanel } from "./FundRankPanel";
 import { FundsPanel } from "./FundsPanel";
 import { InstallHint } from "./InstallHint";
@@ -105,6 +106,7 @@ export default function App() {
         <Stack gap="sm">
           <InstallHint />
           <FundsPanel />
+          <ExposurePanel />
           <FundRankPanel />
         </Stack>
       </div>
