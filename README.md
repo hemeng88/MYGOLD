@@ -121,6 +121,20 @@ chmod +x start.sh
 
 已知短板：站点目前是明文 HTTP，密码和令牌明文传输；没有登录失败次数限制。详见 [部署说明.md](./部署说明.md) 第 6 节。
 
+## OpenClaw / 飞书提醒
+
+后端可以把持仓基金的盘中估算涨跌转发给你的 OpenClaw 助手，再由 OpenClaw 投递到飞书。每分钟报价采集后检查一次；默认估算涨跌达到 **+1% 或 -1%** 时提醒，同一基金在同一交易日同一方向只提醒一次。只有填写了份额的基金会参与提醒。
+
+在服务器 `.env` 中填写：
+
+```dotenv
+MYGOLD_OPENCLAW_WEBHOOK_URL=https://你的-openclaw-webhook
+MYGOLD_OPENCLAW_WEBHOOK_TOKEN=可选的BearerToken
+MYGOLD_FUND_ALERT_THRESHOLD_PCT=1.0
+```
+
+项目向 webhook 发 `POST` JSON，包含 `text`、`fund`、`trade_date`、`direction`、`estimate_pct`、`today_pnl` 等字段。OpenClaw 可以直接转发 `text`，也可以按这些字段编排飞书卡片。配置完成后执行 `sudo ./update.sh`，重建容器即可。
+
 ## 这不是投资建议
 
 这里算的是**估算值**，不是官方净值。季报持仓有滞后（超过 150 天会标记为过期报告），未公示的仓位只能靠假设，估算和实际净值必然有偏差。所有数字仅供参考。

@@ -168,3 +168,19 @@ class FundThemeHolder(Base):
     alt_codes: Mapped[str] = mapped_column(String(120), nullable=True)
     report_date: Mapped[str] = mapped_column(String(10), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class FundAlertEvent(Base):
+    """记录已发送的基金阈值提醒，避免同一交易日反复轰炸飞书。"""
+
+    __tablename__ = "fund_alert_events"
+    __table_args__ = (UniqueConstraint("user_id", "fund_code", "trade_date", "direction", name="uq_fund_alert_event"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    fund_code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    fund_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    estimate_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

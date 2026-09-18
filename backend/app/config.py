@@ -80,6 +80,12 @@ class Settings(BaseSettings):
 
     request_timeout_seconds: float = 15.0
 
+    # OpenClaw / 飞书提醒。留空 webhook 时不发送任何外部请求。
+    openclaw_webhook_url: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_URL")
+    openclaw_webhook_token: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_TOKEN")
+    fund_alert_threshold_pct: float = Field(default=1.0, validation_alias="MYGOLD_FUND_ALERT_THRESHOLD_PCT")
+    fund_alert_timeout_seconds: float = Field(default=8.0, validation_alias="MYGOLD_FUND_ALERT_TIMEOUT_SECONDS")
+
 
 settings = Settings()
 DATA_DIR.mkdir(parents=True, exist_ok=True)

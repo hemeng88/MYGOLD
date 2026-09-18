@@ -2,6 +2,7 @@ import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from .alerts import check_fund_alerts
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
@@ -20,6 +21,7 @@ async def job_fund_quotes() -> None:
     try:
         result = collect_fund_quotes(db)
         logger.info("基金持仓股报价：%s", result["message"])
+        check_fund_alerts(db)
     except Exception:
         logger.exception("基金持仓股报价采集失败")
         db.rollback()

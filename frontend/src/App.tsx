@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActionIcon, Box, Center, Group, Loader, Stack, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Center, Group, Loader, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { Capacitor } from "@capacitor/core";
-import { IconLogout } from "@tabler/icons-react";
+import { IconChartLine, IconLogout, IconTrophy, IconWallet } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api } from "./api";
 import { UNAUTHORIZED_EVENT, getToken } from "./auth";
@@ -18,6 +18,7 @@ export default function App() {
   const isMobile = Capacitor.isNativePlatform() || isNarrow;
   // checking: 本地有令牌，正在问后端还有效没
   const [state, setState] = useState<"checking" | "in" | "out">(getToken() ? "checking" : "out");
+  const [activeTab, setActiveTab] = useState<string | null>("funds");
 
   const check = useCallback(async () => {
     if (!getToken()) {
@@ -105,9 +106,35 @@ export default function App() {
       <div className="app-main">
         <Stack gap="sm">
           <InstallHint />
-          <FundsPanel />
-          <ExposurePanel />
-          <FundRankPanel />
+          <Tabs
+            value={activeTab}
+            onChange={setActiveTab}
+            className="feature-tabs"
+            keepMounted={false}
+            variant="none"
+          >
+            <Tabs.List grow aria-label="选择功能">
+              <Tabs.Tab value="funds" leftSection={<IconWallet size={16} />}>
+                基金估值
+              </Tabs.Tab>
+              <Tabs.Tab value="exposure" leftSection={<IconChartLine size={16} />}>
+                持仓穿透
+              </Tabs.Tab>
+              <Tabs.Tab value="rankings" leftSection={<IconTrophy size={16} />}>
+                涨幅榜
+              </Tabs.Tab>
+            </Tabs.List>
+
+            <Tabs.Panel value="funds" pt="sm">
+              <FundsPanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="exposure" pt="sm">
+              <ExposurePanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="rankings" pt="sm">
+              <FundRankPanel />
+            </Tabs.Panel>
+          </Tabs>
         </Stack>
       </div>
     </Box>

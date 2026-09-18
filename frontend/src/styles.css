@@ -306,3 +306,41 @@ html.native-app .mantine-Modal-inner {
 html.native-app .mantine-Popover-dropdown {
   max-width: calc(100vw - 24px);
 }
+
+.feature-tabs .mantine-Tabs-list {
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(212, 175, 55, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.feature-tabs .mantine-Tabs-tab {
+  min-height: 42px;
+  border-radius: 10px;
+  color: #b9ad99;
+  font-weight: 600;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.feature-tabs .mantine-Tabs-tab:hover {
+  color: #f6edd4;
+  background: rgba(212, 175, 55, 0.08);
+}
+
+.feature-tabs .mantine-Tabs-tab[data-active] {
+  color: #1a1610;
+  background: var(--gold);
+}
+
+@media (max-width: 52em) {
+  .feature-tabs .mantine-Tabs-tab {
+    min-height: 40px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+
+  .feature-tabs .mantine-Tabs-tabSection {
+    margin-inline-end: 5px;
+  }
+}
