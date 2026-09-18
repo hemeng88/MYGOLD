@@ -76,6 +76,9 @@ def ensure_schema():
     # 基金持仓份额和成本价是后加的，老库要补列
     _ensure_column(inspector, "fund_favorites", "shares", "shares FLOAT")
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
+    # 报价所属交易日，用来判断净值是否已经把这段涨跌算进去。
+    # 老库补出来是 NULL，下一轮报价采集就会填上，在那之前按老逻辑走。
+    _ensure_column(inspector, "fund_stock_quotes", "trade_date", "trade_date VARCHAR(10)")
     # 补完列再整表重建，保证老列都能搬过去
     _migrate_fund_favorites_to_users()
     _drop_legacy_rank_holders()

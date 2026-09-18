@@ -47,6 +47,8 @@ class FundItem(BaseModel):
     report_label: Optional[str] = None
     report_age_days: Optional[int] = None
     stale: bool = False
+    # 最新净值日已经追上报价所属交易日，这段涨跌已计入净值，不再给估算
+    settled: bool = False
     confidence: str = "low"
     lead_name: Optional[str] = None
     lead_contrib_pct: Optional[float] = None
@@ -217,6 +219,8 @@ class ExposureResponse(BaseModel):
     disclosed_value: Optional[float] = None
     coverage_pct: Optional[float] = None
     today_pnl: Optional[float] = None
+    # 所有基金的最新净值都已结算上一个交易日，今日盈亏要等开盘
+    settled: bool = False
     stock_count: int = 0
     items: List[ExposureItem] = Field(default_factory=list)
     ready: bool = False

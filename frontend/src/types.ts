@@ -39,6 +39,8 @@ export interface FundItem {
   report_label: string | null;
   report_age_days: number | null;
   stale: boolean;
+  // 最新净值已把报价那个交易日算进去，此时不给估算，避免同一段行情算两遍
+  settled: boolean;
   confidence: "high" | "medium" | "low";
   lead_name: string | null;
   lead_contrib_pct: number | null;
@@ -182,6 +184,7 @@ export interface Exposure {
   disclosed_value: number | null;
   coverage_pct: number | null;
   today_pnl: number | null;
+  settled: boolean;
   stock_count: number;
   items: ExposureItem[];
   ready: boolean;

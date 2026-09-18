@@ -327,6 +327,105 @@ def _quote_sina(secids: List[str], now) -> List[Dict]:
     return out
 
 
+_KLINE_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+# 交易日缓存：{"value": "2026-09-18", "at": datetime}
+_trade_date_cache: Dict = {"value": None, "at": None}
+
+
+def _trade_date_from_em() -> Optional[str]:
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_kline_url,
+            params={
+                "secid": settings.fund_calendar_secid,
+                "klt": 101,
+                "fqt": 1,
+                "end": "20500101",
+                "lmt": 1,
+                # fields1/fields2 不给全会返回空 klines
+                "fields1": "f1,f2,f3,f4,f5,f6",
+                "fields2": "f51,f52,f53,f54,f55,f56,f57,f58",
+            },
+            headers=EM_QUOTE_HEADERS,
+        )
+        response.raise_for_status()
+    klines = (((response.json() or {}).get("data") or {}).get("klines")) or []
+    return _last_kline_date(klines[-1] if klines else None)
+
+
+def _trade_date_from_tencent() -> Optional[str]:
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_kline_tencent_url,
+            params={"param": "%s,day,,,2,qfq" % settings.fund_calendar_symbol},
+            headers={"User-Agent": HEADERS["User-Agent"], "Referer": "https://gu.qq.com/"},
+        )
+        response.raise_for_status()
+    block = ((response.json() or {}).get("data") or {}).get(settings.fund_calendar_symbol) or {}
+    bars = block.get("qfqday") or block.get("day") or []
+    return _last_kline_date(bars[-1][0] if bars and bars[-1] else None)
+
+
+def _trade_date_from_sina() -> Optional[str]:
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            settings.fund_kline_sina_url,
+            params={"symbol": settings.fund_calendar_symbol, "scale": 240, "ma": "no", "datalen": 2},
+            headers=SINA_HEADERS,
+        )
+        response.raise_for_status()
+    bars = response.json() or []
+    return _last_kline_date(bars[-1].get("day") if bars else None)
+
+
+def _last_kline_date(raw) -> Optional[str]:
+    hit = _KLINE_DATE.search(str(raw or ""))
+    return hit.group(1) if hit else None
+
+
+def fetch_market_trade_date(max_age_seconds: float = 60.0) -> Optional[str]:
+    """A 股最近一个交易日，形如 2026-09-18。取不到返回 None。
+
+    这个日期是把「持仓股涨跌幅」和「基金净值日」对上的唯一凭据：
+    收盘后、周末、节假日行情接口照样返回上一场的涨跌幅，一旦净值日也推进到同一天，
+    再拿涨跌幅去乘净值就是把同一段行情算两遍。见 analysis/fund_estimate.py。
+
+    只能用日 K 来定：日 K 在非交易日不会多出一根，节假日也骗不过去。
+    行情快照里的时间字段都不行 —— 东方财富 f86/f124、腾讯第 30 段都是服务器当前时间，
+    收盘后照样往前跑；新浪快照的日期字段拿不准会不会在非交易日跳成当天。
+
+    三家日 K 取最大值，只要有一家已经出了今天那根就算今天。任何一家挂掉都不影响结论，
+    这点很关键：拿不到日期就只能保守地停掉估算，不能让它取决于单个接口的心情。
+
+    缓存：已经等于今天就不可能再往前，整天复用；还落在过去（周末、节假日、开盘前）
+    则最多 max_age_seconds 秒后重试。
+    """
+    today = now_local().date().isoformat()
+    cached, at = _trade_date_cache["value"], _trade_date_cache["at"]
+    if cached:
+        if cached == today:
+            return cached
+        if at and (now_local() - at).total_seconds() < max_age_seconds:
+            return cached
+    best = None
+    for loader in (_trade_date_from_tencent, _trade_date_from_sina, _trade_date_from_em):
+        try:
+            value = loader()
+        except Exception:
+            logger.warning("%s 取交易日失败，换下一家", loader.__name__)
+            continue
+        # 日期比今天还大只能是脏数据
+        if value and value <= today and (best is None or value > best):
+            best = value
+        if best == today:
+            break
+    if best:
+        _trade_date_cache.update({"value": best, "at": now_local()})
+        return best
+    logger.warning("三家日 K 都没给出交易日，本轮报价不带 trade_date，沿用库里上一次的")
+    return cached
+
+
 def _quote_batch(client: httpx.Client, url: str, batch: List[str], now) -> List[Dict]:
     response = client.get(
         url,
@@ -480,11 +579,15 @@ def fetch_stock_quotes(secids: Iterable[str]) -> List[Dict]:
     push2 请求一密就会直接断连，丢一批就能让覆盖率掉几十个点、估算跟着失真，
     所以按 push2 -> push2delay 镜像 -> 新浪 依次兜底，每一轮只补上一轮没取到的。
     新浪只认 A 股和港股，美股取不到就让 covered_pct 老实反映出来。
+
+    每条报价都盖上 trade_date（这批涨跌幅属于哪个交易日）。取不到就不带这个键，
+    让 upsert 保留库里原来的值，别把已知的日期抹成 None。
     """
     wanted = sorted({str(secid) for secid in secids if secid})
     if not wanted:
         return []
     now = now_local()
+    trade_date = fetch_market_trade_date()
     found: Dict[str, Dict] = {}
     for url in (settings.fund_stock_quote_url, settings.fund_stock_quote_fallback_url):
         missing = [secid for secid in wanted if secid not in found]
@@ -505,4 +608,7 @@ def fetch_stock_quotes(secids: Iterable[str]) -> List[Dict]:
     still = [secid for secid in wanted if secid not in found]
     if still:
         logger.warning("%d 只持仓股所有源都没取到：%s", len(still), ",".join(still[:10]))
+    if trade_date:
+        for item in found.values():
+            item["trade_date"] = trade_date
     return list(found.values())

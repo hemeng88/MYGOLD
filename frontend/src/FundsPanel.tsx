@@ -226,11 +226,15 @@ export function FundsPanel() {
       held.reduce((acc, item) => acc + (pick(item) ?? 0), 0);
     const cost = sum((item) => item.cost);
     const total = sum((item) => item.total_pnl);
+    // 净值已经把上一个交易日结算进去时后端不给 today_pnl，这时合计要显示「—」，
+    // 不能当 0 加进去 —— 那样看着像今天真的没涨没跌
+    const live = held.filter((item) => item.today_pnl != null);
     return {
       count: held.length,
       cost,
       value: sum((item) => item.estimate_value ?? item.nav_value),
-      today: sum((item) => item.today_pnl),
+      today: live.length ? live.reduce((acc, item) => acc + (item.today_pnl ?? 0), 0) : null,
+      settled: held.every((item) => item.settled),
       total,
       totalPct: cost ? (total / cost) * 100 : null,
     };
@@ -301,7 +305,7 @@ export function FundsPanel() {
           </Paper>
           <Paper className="stat-tile" p="xs">
             <Text size="xs" c="dimmed">
-              估算总市值
+              {totals.settled ? "最新净值市值" : "估算总市值"}
             </Text>
             <Text fw={600} size="sm">
               {fmt(totals.value)} 元
@@ -321,6 +325,13 @@ export function FundsPanel() {
       {totals && totals.count < items.length ? (
         <Text size="xs" c="yellow" mb="sm">
           合计只算了 {totals.count} 只，还有 {items.length - totals.count} 只没填持仓或暂时取不到净值，没计入
+        </Text>
+      ) : null}
+
+      {totals?.settled ? (
+        <Text size="xs" c="dimmed" mb="sm">
+          上一个交易日的净值已经公布，涨跌都算进净值里了，所以现在的累计盈亏是准确值，
+          今日估算要等下一个交易日开盘才有。
         </Text>
       ) : null}
 

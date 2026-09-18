@@ -89,6 +89,29 @@ def _position(
     return out
 
 
+def _quote_trade_date(holdings: List[FundHolding], quotes: Dict[str, FundStockQuote]) -> Optional[str]:
+    """这批报价的涨跌幅属于哪个交易日。老库里还没有这个字段时返回 None。"""
+    dates = [
+        quotes[row.secid].trade_date
+        for row in holdings
+        if row.secid in quotes and quotes[row.secid].trade_date
+    ]
+    return max(dates) if dates else None
+
+
+def _is_settled(nav: Optional[FundNav], quote_trade_date: Optional[str]) -> bool:
+    """净值日已经追上报价所属交易日 —— 这段涨跌已经结算进净值，不能再乘一遍。
+
+    收盘后行情接口不会把涨跌幅清零，返回的一直是上一场的数。基金当晚 20-21 点
+    公布当日净值，我们下一次抓到之后，库里就同时存着「已经含这段涨跌的净值」和
+    「这段涨跌本身」，相乘就是把同一天算两遍：周末从周六 16:40 一直错到周一开盘，
+    工作日则是 9:10 刷净值到 9:15 第一次刷报价之间，手动点刷新会让这个窗口提前到凌晨。
+    """
+    if not nav or not nav.nav_date or not quote_trade_date:
+        return False
+    return nav.nav_date >= quote_trade_date
+
+
 def _holding_row(holding: FundHolding, quote: Optional[FundStockQuote]) -> Dict:
     change_pct = quote.change_pct if quote else None
     return {
@@ -140,6 +163,7 @@ def summarize_fund(
         "report_label": None,
         "report_age_days": None,
         "stale": False,
+        "settled": False,
         "confidence": "low",
         "lead_name": None,
         "lead_contrib_pct": None,
@@ -169,6 +193,8 @@ def summarize_fund(
     contrib = sum(row["contrib_pct"] for row in priced)
 
     stamps = [quotes[row.secid].collected_at for row in ordered if row.secid in quotes]
+    quote_trade_date = _quote_trade_date(ordered, quotes)
+    settled = _is_settled(nav, quote_trade_date)
     base.update(
         {
             "holdings_count": len(rows),
@@ -179,10 +205,17 @@ def summarize_fund(
             "report_label": report_label(report_date),
             "report_age_days": age,
             "stale": stale,
+            "settled": settled,
             "as_of": max(stamps) if stamps else None,
             "holdings": rows,
         }
     )
+
+    if settled:
+        # 手里的涨跌幅已经体现在这个净值里了，再估一遍就是重复计算。
+        # 累计盈亏退回按已公布净值算（那是准确值），今日估算留空等下一场开盘。
+        base["message"] = "%s 的净值已公布，这段涨跌已计入，等下一个交易日开盘再估算" % nav.nav_date
+        return base
 
     if not priced or covered <= 0:
         base["message"] = "持仓股还没有报价，刷新一次"
@@ -234,6 +267,10 @@ def exposure(db: Session, user_id: int) -> Dict:
     分摊基数用**已公布净值**而不是估算净值，这样每只股票的今日盈亏
     （金额 × 该股涨跌幅）加起来正好等于各基金「保守估算」口径的今日盈亏，
     数字可以自己验算。用估算净值会把估算误差再乘一遍。
+
+    今日盈亏只按「净值还没结算这段行情」的那部分金额算（live_value）。
+    已结算的基金那部分金额照样显示持仓，但不再算今日盈亏 —— 否则周末打开
+    会把上周五的涨跌当成今天的，和基金页的今日估算一起错两遍。
     """
     favorites = [row for row in list_favorites(db, user_id) if row.shares and row.shares > 0]
     codes = [row.code for row in favorites]
@@ -245,6 +282,7 @@ def exposure(db: Session, user_id: int) -> Dict:
     merged: Dict[str, Dict] = {}
     stale_funds: List[str] = []
     no_nav: List[str] = []
+    settled_funds: List[str] = []
 
     for favorite in favorites:
         nav_row = navs.get(favorite.code)
@@ -260,6 +298,9 @@ def exposure(db: Session, user_id: int) -> Dict:
         age = _stale_days(report_date, moment)
         if age is not None and age > settings.fund_report_stale_days:
             stale_funds.append(favorite.name)
+        settled = _is_settled(nav_row, _quote_trade_date(rows, quotes))
+        if settled:
+            settled_funds.append(favorite.name)
         for row in rows:
             stock_value = fund_value * row.weight_pct / 100.0
             disclosed_value += stock_value
@@ -271,11 +312,15 @@ def exposure(db: Session, user_id: int) -> Dict:
                     "name": row.stock_name or (quote.name if quote else None) or row.stock_code,
                     "market": market_label(row.market),
                     "value": 0.0,
+                    # 净值还没结算这段行情的那部分金额，只有它能算今日盈亏
+                    "live_value": 0.0,
                     "change_pct": quote.change_pct if quote else None,
                     "funds": [],
                 },
             )
             slot["value"] += stock_value
+            if not settled:
+                slot["live_value"] += stock_value
             slot["funds"].append(
                 {
                     "code": favorite.code,
@@ -288,6 +333,7 @@ def exposure(db: Session, user_id: int) -> Dict:
     items = []
     for slot in merged.values():
         change_pct = slot["change_pct"]
+        live = slot["live_value"] > 0
         items.append(
             {
                 "code": slot["code"],
@@ -295,10 +341,11 @@ def exposure(db: Session, user_id: int) -> Dict:
                 "market": slot["market"],
                 "value": round(slot["value"], 2),
                 "pct_of_total": round(slot["value"] / total_value * 100, 2) if total_value else None,
-                "change_pct": change_pct,
+                # 已结算的不显示涨跌幅：那是上一场的数，摆在「今日」旁边只会误导
+                "change_pct": change_pct if live else None,
                 # 今天这只股票给你带来多少钱
-                "today_pnl": round(slot["value"] * change_pct / 100.0, 2)
-                if change_pct is not None
+                "today_pnl": round(slot["live_value"] * change_pct / 100.0, 2)
+                if change_pct is not None and live
                 else None,
                 "fund_count": len(slot["funds"]),
                 "funds": sorted(slot["funds"], key=lambda row: -row["value"]),
@@ -306,11 +353,17 @@ def exposure(db: Session, user_id: int) -> Dict:
         )
     items.sort(key=lambda row: -row["value"])
 
+    all_settled = bool(settled_funds) and len(settled_funds) == len(favorites) - len(no_nav)
     notes = []
     if no_nav:
         notes.append("%d 只取不到净值，没算进去" % len(no_nav))
+    if all_settled:
+        notes.append("最新净值已把上一个交易日算进去，今日盈亏等开盘后才有")
+    elif settled_funds:
+        notes.append("%d 只的最新净值已结算，没计入今日盈亏" % len(settled_funds))
     if stale_funds:
         notes.append("%d 只的季报已过期，穿透结果只能当参考" % len(stale_funds))
+    priced = [row for row in items if row["today_pnl"] is not None]
     return {
         "session": session_label(moment),
         "as_of": max((row.collected_at for row in quotes.values()), default=None),
@@ -319,7 +372,8 @@ def exposure(db: Session, user_id: int) -> Dict:
         "disclosed_value": round(disclosed_value, 2) if disclosed_value else None,
         # 能穿透到个股的占总市值多少，剩下的是未公示仓位加债券现金
         "coverage_pct": round(disclosed_value / total_value * 100, 2) if total_value else None,
-        "today_pnl": round(sum(row["today_pnl"] or 0 for row in items), 2) if items else None,
+        "today_pnl": round(sum(row["today_pnl"] for row in priced), 2) if priced else None,
+        "settled": all_settled,
         "stock_count": len(items),
         "items": items,
         "ready": bool(items),

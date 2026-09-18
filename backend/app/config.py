@@ -27,6 +27,19 @@ class Settings(BaseSettings):
     fund_stock_quote_fallback_url: str = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
     # 最后一层兜底，只认 A 股和港股
     fund_stock_sina_url: str = "https://hq.sinajs.cn/list="
+    # 判断报价属于哪个交易日：上证指数的日 K 只在交易日才有新的一根，
+    # 拿最后一根的日期就是 A 股最近一个交易日（盘中那根未走完的也算）。
+    # 行情接口本身给不出这个信息 —— f86/f124 返回的是服务器当前时间，收盘后照样往前跑。
+    # 三家都是日 K，含义一致，取最大的那个日期。push2his 会像 push2 一样断连，
+    # 所以不能只靠东方财富一家，否则拿不到日期就得保守地停掉估算。
+    fund_kline_tencent_url: str = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
+    fund_kline_sina_url: str = (
+        "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
+    )
+    fund_kline_url: str = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
+    # 用来定交易日的标的：上证指数。东方财富用 secid，另两家用各自的代码写法
+    fund_calendar_secid: str = "1.000001"
+    fund_calendar_symbol: str = "sh000001"
 
     # 季报只公示前十大重仓，指数基金会多一些，取 20 行足够覆盖
     fund_holdings_topline: int = 20

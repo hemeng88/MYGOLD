@@ -66,6 +66,10 @@ class FundStockQuote(Base):
     prev_close: Mapped[float] = mapped_column(Float, nullable=True)
     # 涨跌幅，百分数，例如 -0.89
     change_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    # change_pct 属于哪个交易日（A 股日历，形如 2026-09-18）。
+    # collected_at 不能代替它：收盘后、周末、节假日照样能采到数据，
+    # 拿到的却还是上一场的涨跌幅。净值日一旦推到同一天，估算就会把这段行情算两遍。
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     collected_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
