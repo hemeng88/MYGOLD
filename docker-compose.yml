@@ -8,6 +8,10 @@ services:
       - "host.docker.internal:host-gateway"
     expose:
       - "8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - ./.env
     environment:
       TZ: Asia/Shanghai
       FUND_QUOTE_INTERVAL_SECONDS: "60"

@@ -8,6 +8,7 @@ from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .funds.rankings import collect_rankings
 from .market_session import should_poll_quotes
+from .notify import notify
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -25,6 +26,7 @@ async def job_fund_quotes() -> None:
     except Exception:
         logger.exception("基金持仓股报价采集失败")
         db.rollback()
+        await notify("基金持仓股报价采集失败", level="error")
     finally:
         db.close()
 
@@ -43,6 +45,7 @@ async def job_fund_navs() -> None:
     except Exception:
         logger.exception("开盘前基金净值刷新失败")
         db.rollback()
+        await notify("开盘前基金净值刷新失败", level="error")
     finally:
         db.close()
 
@@ -56,6 +59,7 @@ async def job_fund_rankings() -> None:
     except Exception:
         logger.exception("基金涨幅榜采集失败")
         db.rollback()
+        await notify("基金涨幅榜采集失败", level="error")
     finally:
         db.close()
 
@@ -69,12 +73,14 @@ async def job_fund_holdings() -> None:
     except Exception:
         logger.exception("基金持仓采集失败")
         db.rollback()
+        await notify("基金持仓采集失败", level="error")
     try:
         navs = collect_fund_navs(db)
         logger.info("基金净值：%s", navs["message"])
     except Exception:
         logger.exception("基金净值采集失败")
         db.rollback()
+        await notify("基金净值采集失败", level="error")
     finally:
         db.close()
 
