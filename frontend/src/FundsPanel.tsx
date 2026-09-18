@@ -15,7 +15,8 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconPlus, IconRefresh, IconSearch, IconTrash } from "@tabler/icons-react";
 import { api } from "./api";
-import type { FundDetail, FundItem, FundList, FundSearchItem } from "./types";
+import { FUNDS_CHANGED_EVENT, usePolling } from "./usePolling";
+import type { FundDetail, FundItem, FundSearchItem } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -44,8 +45,8 @@ const CONFIDENCE: Record<string, { label: string; color: string }> = {
 };
 
 export function FundsPanel() {
-  const [list, setList] = useState<FundList | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: list, loading, error, reload: loadList } = usePolling(api.funds);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [detail, setDetail] = useState<FundDetail | null>(null);
@@ -57,41 +58,21 @@ export function FundsPanel() {
   const [costInput, setCostInput] = useState<number | string>("");
   const [savingPos, setSavingPos] = useState(false);
 
-  const loadList = async () => {
-    setList(await api.funds());
-    setLoading(false);
-  };
-
   useEffect(() => {
-    loadList().catch((err) => {
-      setLoading(false);
-      notifications.show({
-        color: "red",
-        title: "基金列表读不到",
-        message: err instanceof Error ? err.message : "稍后重试",
-      });
-    });
-    const timer = window.setInterval(() => {
-      loadList().catch(() => undefined);
-    }, 20000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
+    setDetailError(null);
     if (!picked) {
       setDetail(null);
       return;
     }
-    api
-      .fund(picked)
-      .then(setDetail)
-      .catch((err) => {
-        notifications.show({
-          color: "red",
-          title: "这只基金打不开",
-          message: err instanceof Error ? err.message : "稍后重试",
-        });
-      });
+    const controller = new AbortController();
+    api.fund(picked, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setDetail(next);
+    }).catch((err) => {
+      if (!controller.signal.aborted) {
+        setDetailError(err instanceof Error ? err.message : "详情读取失败");
+      }
+    });
+    return () => controller.abort();
   }, [picked, list]);
 
   useEffect(() => {
@@ -112,7 +93,7 @@ export function FundsPanel() {
     try {
       const result = await api.refreshFunds(includeHoldings);
       await loadList();
-      if (picked) setDetail(await api.fund(picked));
+      window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       notifications.show({
         color: result.ok ? "teal" : "yellow",
         title: result.ok ? "基金估值已更新" : "只更新了一部分",
@@ -153,6 +134,7 @@ export function FundsPanel() {
     setBusyCode(code);
     try {
       const added = await api.addFund(code);
+      window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       await loadList();
       setResults((prev) => prev?.map((row) => (row.code === code ? { ...row, favorited: true } : row)) ?? null);
       notifications.show({ color: "gold", title: "已收藏", message: `${added.name} 正在按持仓估算涨跌` });
@@ -175,6 +157,10 @@ export function FundsPanel() {
       notifications.show({ color: "red", title: "份额不对", message: "填个大于 0 的数，或者留空清掉持仓" });
       return;
     }
+    if (costPrice !== null && (!Number.isFinite(costPrice) || costPrice < 0)) {
+      notifications.show({ color: "red", title: "成本价不对", message: "请输入有效的非负成本价" });
+      return;
+    }
     if (shares && !costPrice) {
       notifications.show({ color: "red", title: "还差成本价", message: "填了份额也要填成本价，不然算不出盈亏" });
       return;
@@ -183,7 +169,7 @@ export function FundsPanel() {
     try {
       await api.saveFundPosition(picked, shares, costPrice);
       await loadList();
-      setDetail(await api.fund(picked));
+      window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       notifications.show({
         color: "gold",
         title: shares ? "持仓已记下" : "已清掉持仓",
@@ -203,6 +189,7 @@ export function FundsPanel() {
   const onRemove = async (code: string) => {
     try {
       await api.deleteFund(code);
+      window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       if (picked === code) setPicked(null);
       setResults((prev) => prev?.map((row) => (row.code === code ? { ...row, favorited: false } : row)) ?? null);
       await loadList();
@@ -382,7 +369,13 @@ export function FundsPanel() {
         </Stack>
       ) : null}
 
-      {loading && !list ? (
+      {error ? (
+        <Group mb="sm" role="status">
+          <Text size="sm" c="red">{error}{list ? " 当前显示上次成功的数据。" : ""}</Text>
+          <Button size="compact-xs" variant="subtle" onClick={() => void loadList()}>重试</Button>
+        </Group>
+      ) : null}
+      {error && !list ? null : loading && !list ? (
         <Stack gap="xs">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} height={70} radius="lg" />
@@ -407,7 +400,14 @@ export function FundsPanel() {
         </Stack>
       )}
 
-      {picked && detail?.fund ? (
+      {picked && detailError ? (
+        <Group mt="sm" role="status">
+          <Text size="sm" c="red">{detailError}</Text>
+          <Button size="compact-xs" variant="subtle" onClick={() => void loadList()}>重试</Button>
+        </Group>
+      ) : null}
+      {picked && !detailError && detail?.fund?.code !== picked ? <Skeleton mt="md" height={100} /> : null}
+      {picked && detail?.fund?.code === picked ? (
         <Stack gap="sm" mt="md">
           <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
             <Paper className="stat-tile" p="xs">

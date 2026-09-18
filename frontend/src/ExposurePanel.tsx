@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { Badge, Group, Paper, Progress, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
+import { useState } from "react";
+import { Badge, Button, Group, Paper, Progress, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
 import { api } from "./api";
-import type { Exposure, ExposureItem } from "./types";
+import { usePolling } from "./usePolling";
+import type { ExposureItem } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -20,29 +20,8 @@ function tone(value: number | null | undefined) {
 }
 
 export function ExposurePanel() {
-  const [data, setData] = useState<Exposure | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error, reload } = usePolling(api.exposure);
   const [opened, setOpened] = useState<string | null>(null);
-
-  const load = async () => {
-    setData(await api.exposure());
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    load().catch((err) => {
-      setLoading(false);
-      notifications.show({
-        color: "red",
-        title: "穿透读不到",
-        message: err instanceof Error ? err.message : "稍后重试",
-      });
-    });
-    const timer = window.setInterval(() => {
-      load().catch(() => undefined);
-    }, 20000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   return (
     <Paper className="glass" p="md">
@@ -55,7 +34,13 @@ export function ExposurePanel() {
         </div>
       </Group>
 
-      {loading && !data ? (
+      {error ? (
+        <Group mb="sm" role="status">
+          <Text size="sm" c="red">{error}{data ? " 当前显示上次成功的数据。" : ""}</Text>
+          <Button size="compact-xs" variant="subtle" onClick={() => void reload()}>重试</Button>
+        </Group>
+      ) : null}
+      {error && !data ? null : loading && !data ? (
         <Stack gap="xs">
           {Array.from({ length: 4 }).map((_, index) => (
             <Skeleton key={index} height={52} radius="lg" />

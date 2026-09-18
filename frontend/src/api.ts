@@ -45,7 +45,8 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
   let res: Response;
   try {
     res = await fetch(`${apiBase()}${path}`, { ...init, headers });
-  } catch {
+  } catch (err) {
+    if (init?.signal?.aborted) throw err;
     throw new Error(`连不上 ${apiBase() || "服务器"}，检查网络或服务器状态。`);
   }
   if (res.status === 401 && !isLogin) {
@@ -77,9 +78,9 @@ export const api = {
   },
   me: () => request<Me>("/api/auth/me"),
   logout: () => clearToken(),
-  funds: () => request<FundList>("/api/funds"),
-  exposure: () => request<Exposure>("/api/funds/exposure"),
-  fund: (code: string) => request<FundDetail>(`/api/funds/${code}`),
+  funds: (signal?: AbortSignal) => request<FundList>("/api/funds", { signal }),
+  exposure: (signal?: AbortSignal) => request<Exposure>("/api/funds/exposure", { signal }),
+  fund: (code: string, signal?: AbortSignal) => request<FundDetail>(`/api/funds/${code}`, { signal }),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
   addFund: (code: string) =>
     request<FundFavorite>("/api/funds/favorites", {
@@ -96,8 +97,8 @@ export const api = {
     }),
   refreshFunds: (includeHoldings = false) =>
     request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
-  fundRankings: (period?: string) =>
-    request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings"),
+  fundRankings: (period?: string, signal?: AbortSignal) =>
+    request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings", { signal }),
   refreshFundRankings: () =>
     request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
 };

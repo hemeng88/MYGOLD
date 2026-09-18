@@ -25,28 +25,28 @@ export function FundRankPanel() {
   const [period, setPeriod] = useState<string>("jnzf");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-
-  const load = async (nextPeriod: string) => {
-    setData(await api.fundRankings(nextPeriod));
-    setLoading(false);
-  };
+  const [revision, setRevision] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    load(period).catch((err) => {
-      setLoading(false);
-      notifications.show({
-        color: "red",
-        title: "榜单读不到",
-        message: err instanceof Error ? err.message : "稍后重试",
-      });
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    api.fundRankings(period, controller.signal).then((next) => {
+      if (!controller.signal.aborted) setData(next);
+    }).catch((err) => {
+      if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "榜单读取失败");
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
     });
-  }, [period]);
+    return () => controller.abort();
+  }, [period, revision]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     try {
       const result = await api.refreshFundRankings();
-      await load(period);
+      setRevision((value) => value + 1);
       notifications.show({
         color: result.ok ? "teal" : "yellow",
         title: result.ok ? "榜单已更新" : "只更新了一部分",
@@ -98,7 +98,13 @@ export function FundRankPanel() {
         </Group>
       </Group>
 
-      {loading && !data ? (
+      {error ? (
+        <Group mb="sm" role="status">
+          <Text size="sm" c="red">{error}</Text>
+          <Button size="compact-xs" variant="subtle" onClick={() => setRevision((value) => value + 1)}>重试</Button>
+        </Group>
+      ) : null}
+      {error ? null : loading ? (
         <Stack gap="xs">
           {Array.from({ length: 4 }).map((_, index) => (
             <Skeleton key={index} height={44} radius="lg" />
