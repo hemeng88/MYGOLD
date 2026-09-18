@@ -74,8 +74,10 @@ def check_fund_alerts(db: Session) -> int:
             "—" if summary.get("today_pnl") is None else "%+.2f" % summary["today_pnl"],
         )
         event = {
-            "type": "mygold.fund_threshold",
+            # OpenClaw /hooks/wake 的标准字段；其余字段供自定义映射或日志使用。
             "text": text,
+            "mode": "now",
+            "type": "mygold.fund_threshold",
             "user_id": favorite.user_id,
             "fund": {"code": favorite.code, "name": favorite.name},
             "trade_date": trade_date,
