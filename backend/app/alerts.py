@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from .analysis.fund_estimate import _load, summarize_fund
 from .config import settings
-from .models import FundAlertEvent, FundFavorite
+from .models import FundFavorite
 from .timeutil import now_local
 
 logger = logging.getLogger("mygold.alerts")
@@ -39,7 +39,7 @@ def _post(event: Dict) -> None:
 
 
 def check_fund_alerts(db: Session) -> int:
-    """检查所有账号的持仓基金，每个方向每天最多提醒一次。"""
+    """检查所有账号的持仓基金，每次行情刷新达到阈值都会提醒。"""
     if not settings.openclaw_webhook_url or settings.fund_alert_threshold_pct <= 0:
         return 0
     favorites = list(
@@ -65,16 +65,6 @@ def check_fund_alerts(db: Session) -> int:
             (quotes[row.secid].trade_date for row in holdings.get(favorite.code, []) if row.secid in quotes and quotes[row.secid].trade_date),
             today.date().isoformat(),
         )
-        exists = db.scalar(
-            select(FundAlertEvent).where(
-                FundAlertEvent.user_id == favorite.user_id,
-                FundAlertEvent.fund_code == favorite.code,
-                FundAlertEvent.trade_date == trade_date,
-                FundAlertEvent.direction == direction,
-            )
-        )
-        if exists:
-            continue
         label = "上涨" if direction == "up" else "下跌"
         text = "基金提醒：%s（%s）今日估算%s %+.2f%%，持仓今日估算盈亏 %s 元。" % (
             favorite.name,
@@ -100,18 +90,6 @@ def check_fund_alerts(db: Session) -> int:
         except Exception:
             logger.exception("OpenClaw 提醒发送失败：%s %s", favorite.code, direction)
             continue
-        db.add(
-            FundAlertEvent(
-                user_id=favorite.user_id,
-                fund_code=favorite.code,
-                fund_name=favorite.name,
-                trade_date=trade_date,
-                direction=direction,
-                estimate_pct=round(float(pct), 4),
-                sent_at=now_local(),
-            )
-        )
-        db.commit()
         sent += 1
     if sent:
         logger.info("已发送 %d 条基金阈值提醒", sent)
