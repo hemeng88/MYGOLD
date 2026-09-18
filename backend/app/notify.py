@@ -1,6 +1,6 @@
 """通过 OpenClaw webhook 推送飞书消息。
 
-MYGOLD 在定时任务的关键节点调 notify()，OpenClaw 收到 wake 事件后会转发到飞书。
+MYGOLD 在定时任务的关键节点调 notify()，OpenClaw 跑一次 agent turn 并显式投递回指定飞书用户。
 发送失败只 logger.error，不抛——不影响主流程。
 """
 
@@ -27,7 +27,7 @@ async def notify(
     body: Optional[str] = None,
     level: str = "info",
 ) -> bool:
-    """推一条消息到飞书（经 OpenClaw webhook）。
+    """推一条消息到飞书（经 OpenClaw /hooks/agent + 显式投递）。
 
     Args:
         title: 消息标题，会作为飞书消息第一行。
@@ -39,8 +39,9 @@ async def notify(
     """
     url = settings.openclaw_webhook_url
     token = settings.openclaw_webhook_token
-    if not url or not token:
-        logger.debug("OpenClaw webhook 未配置（MYGOLD_OPENCLAW_WEBHOOK_URL/TOKEN 为空），跳过推送")
+    target = settings.openclaw_target
+    if not url or not token or not target:
+        logger.debug("OpenClaw webhook 未配置（URL/TOKEN/TARGET 任一为空），跳过推送")
         return False
 
     prefix = _LEVEL_PREFIX.get(level, "")
@@ -48,10 +49,19 @@ async def notify(
     if body:
         text += f"\n{body}"
 
-    payload = {"text": text, "mode": "now"}
+    # /hooks/agent 显式 deliver，agent 处理完直接把结果送回指定飞书用户
+    payload = {
+        "message": text,
+        "name": "MYGOLD",
+        "deliver": True,
+        "channel": "feishu",
+        "to": target,
+        "wakeMode": "now",
+    }
 
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        # agent turn 要起模型推理，默认 5s 不够；拉到 15s 给点余量
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 url,
                 json=payload,
