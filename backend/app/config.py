@@ -83,6 +83,8 @@ class Settings(BaseSettings):
     # OpenClaw / 飞书提醒。留空 webhook 时不发送任何外部请求。
     openclaw_webhook_url: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_URL")
     openclaw_webhook_token: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_TOKEN")
+    # /hooks/agent 显式投递目标，例如 Feishu open_id
+    openclaw_target: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_TARGET")
     fund_alert_threshold_pct: float = Field(default=1.0, validation_alias="MYGOLD_FUND_ALERT_THRESHOLD_PCT")
     fund_alert_timeout_seconds: float = Field(default=8.0, validation_alias="MYGOLD_FUND_ALERT_TIMEOUT_SECONDS")
 

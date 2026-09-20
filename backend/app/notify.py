@@ -60,8 +60,8 @@ async def notify(
     }
 
     try:
-        # agent turn 要起模型推理，默认 5s 不够；拉到 15s 给点余量
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # agent turn 要起模型推理，使用配置里的超时，避免代码和部署配置不一致。
+        async with httpx.AsyncClient(timeout=settings.fund_alert_timeout_seconds) as client:
             resp = await client.post(
                 url,
                 json=payload,

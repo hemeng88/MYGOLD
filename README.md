@@ -128,12 +128,13 @@ chmod +x start.sh
 在服务器 `.env` 中填写：
 
 ```dotenv
-MYGOLD_OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/hooks/wake
+MYGOLD_OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/hooks/agent
 MYGOLD_OPENCLAW_WEBHOOK_TOKEN=OpenClaw生成的token
+MYGOLD_OPENCLAW_TARGET=飞书接收人的open_id
 MYGOLD_FUND_ALERT_THRESHOLD_PCT=1.0
 ```
 
-项目向 `/hooks/wake` 发带 `Authorization: Bearer <token>` 的 `POST` JSON，核心字段是 `text` 和 `mode: "now"`，同时带有 `fund`、`trade_date`、`direction`、`estimate_pct`、`today_pnl` 等字段。OpenClaw 收到后可以直接转发 `text` 到飞书。先在 OpenClaw 开启 `hooks.enabled` 并设置 `hooks.token`，再配置这里的 URL 和 token。若 OpenClaw 和本项目在同一台服务器、但本项目运行在 Docker 中，URL 使用 `http://host.docker.internal:18789/hooks/wake`；如果 OpenClaw 运行在另一台机器，填它的反向代理或 Tailscale 地址。配置完成后执行 `sudo ./update.sh`。
+项目向 `/hooks/agent` 发带 `Authorization: Bearer <token>` 的 `POST` JSON，并通过 `deliver=true`、`channel=feishu`、`to=<open_id>` 显式投递。先在 OpenClaw 开启 `hooks.enabled`、设置 `hooks.token` 和飞书接收目标，再配置这里的 URL、Token 和 Target。若 OpenClaw 和本项目在同一台服务器、但本项目运行在 Docker 中，URL 使用 `http://host.docker.internal:18789/hooks/agent`；如果 OpenClaw 运行在另一台机器，填它的反向代理或 Tailscale 地址。配置完成后执行 `sudo ./update.sh`。
 
 ## 这不是投资建议
 

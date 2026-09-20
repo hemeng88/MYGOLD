@@ -22,11 +22,16 @@ async def job_fund_quotes() -> None:
     try:
         result = collect_fund_quotes(db)
         logger.info("基金持仓股报价：%s", result["message"])
-        check_fund_alerts(db)
     except Exception:
         logger.exception("基金持仓股报价采集失败")
         db.rollback()
         await notify("基金持仓股报价采集失败", level="error")
+    else:
+        try:
+            await check_fund_alerts(db)
+        except Exception:
+            # 提醒失败不能伪装成行情采集失败，也不能阻断下一轮报价。
+            logger.exception("基金阈值提醒检查失败")
     finally:
         db.close()
 

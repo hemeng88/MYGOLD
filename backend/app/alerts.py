@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Dict
-
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .analysis.fund_estimate import _load, summarize_fund
 from .config import settings
 from .models import FundFavorite
+from .notify import notify
 from .timeutil import now_local
 
 logger = logging.getLogger("mygold.alerts")
@@ -28,17 +26,7 @@ def _direction(pct: float) -> str | None:
     return None
 
 
-def _post(event: Dict) -> None:
-    headers = {"Content-Type": "application/json"}
-    if settings.openclaw_webhook_token:
-        headers["Authorization"] = "Bearer %s" % settings.openclaw_webhook_token
-    # payload 同时带 text 和结构化字段，OpenClaw 可直接转发 text，也可按字段编排消息。
-    with httpx.Client(timeout=settings.fund_alert_timeout_seconds) as client:
-        response = client.post(settings.openclaw_webhook_url, json=event, headers=headers)
-        response.raise_for_status()
-
-
-def check_fund_alerts(db: Session) -> int:
+async def check_fund_alerts(db: Session) -> int:
     """检查所有账号的持仓基金，每次行情刷新达到阈值都会提醒。"""
     if not settings.openclaw_webhook_url or settings.fund_alert_threshold_pct <= 0:
         return 0
@@ -73,26 +61,14 @@ def check_fund_alerts(db: Session) -> int:
             pct,
             "—" if summary.get("today_pnl") is None else "%+.2f" % summary["today_pnl"],
         )
-        event = {
-            # OpenClaw /hooks/wake 的标准字段；其余字段供自定义映射或日志使用。
-            "text": text,
-            "mode": "now",
-            "type": "mygold.fund_threshold",
-            "user_id": favorite.user_id,
-            "fund": {"code": favorite.code, "name": favorite.name},
-            "trade_date": trade_date,
-            "direction": direction,
-            "estimate_pct": pct,
-            "today_pnl": summary.get("today_pnl"),
-            "threshold_pct": settings.fund_alert_threshold_pct,
-            "source": "mygold",
-        }
-        try:
-            _post(event)
-        except Exception:
-            logger.exception("OpenClaw 提醒发送失败：%s %s", favorite.code, direction)
-            continue
-        sent += 1
+        body = "代码 %s · 交易日 %s · 估算涨跌 %+.2f%% · 持仓今日估算盈亏 %s 元" % (
+            favorite.code,
+            trade_date,
+            pct,
+            "—" if summary.get("today_pnl") is None else "%+.2f" % summary["today_pnl"],
+        )
+        if await notify(text, body=body):
+            sent += 1
     if sent:
         logger.info("已发送 %d 条基金阈值提醒", sent)
     return sent
