@@ -113,6 +113,16 @@ export default function App() {
             keepMounted={false}
             variant="none"
           >
+            <Tabs.Panel value="funds" pt="sm">
+              <FundsPanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="exposure" pt="sm">
+              <ExposurePanel />
+            </Tabs.Panel>
+            <Tabs.Panel value="rankings" pt="sm">
+              <FundRankPanel />
+            </Tabs.Panel>
+
             <Tabs.List grow aria-label="选择功能">
               <Tabs.Tab value="funds" leftSection={<IconWallet size={16} />}>
                 基金估值
@@ -124,16 +134,6 @@ export default function App() {
                 涨幅榜
               </Tabs.Tab>
             </Tabs.List>
-
-            <Tabs.Panel value="funds" pt="sm">
-              <FundsPanel />
-            </Tabs.Panel>
-            <Tabs.Panel value="exposure" pt="sm">
-              <ExposurePanel />
-            </Tabs.Panel>
-            <Tabs.Panel value="rankings" pt="sm">
-              <FundRankPanel />
-            </Tabs.Panel>
           </Tabs>
         </Stack>
       </div>
