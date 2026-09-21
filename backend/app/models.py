@@ -138,6 +138,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     last_login_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
+
+class FundAlertState(Base):
+    """记录每只基金最近一次成功提醒的日内估算涨跌，作为下一次提醒的基准。"""
+
+    __tablename__ = "fund_alert_states"
+    __table_args__ = (UniqueConstraint("user_id", "fund_code", name="uq_fund_alert_state"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    fund_code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    last_estimate_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
 class FundThemeHolder(Base):
     """全市场反查：谁把最多净值压在这个周期的主线代表股上。
 

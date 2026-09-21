@@ -319,6 +319,20 @@ html.native-app .mantine-Popover-dropdown {
   backdrop-filter: blur(18px);
 }
 
+.feature-tabs {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100svh - 150px);
+}
+
+.feature-tabs .mantine-Tabs-panel {
+  flex: 1;
+}
+
+.feature-tabs .mantine-Tabs-list {
+  margin-top: auto;
+}
+
 .feature-tabs .mantine-Tabs-tab {
   min-height: 42px;
   border-radius: 10px;
