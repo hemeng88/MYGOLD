@@ -136,7 +136,7 @@ MYGOLD_FUND_ALERT_THRESHOLD_PCT=1.0
 
 项目向 `/hooks/agent` 发带 `Authorization: Bearer <token>` 的 `POST` JSON，并通过 `deliver=true`、`channel=feishu`、`to=<open_id>` 显式投递。先在 OpenClaw 开启 `hooks.enabled`、设置 `hooks.token` 和飞书接收目标，再配置这里的 URL、Token 和 Target。若 OpenClaw 和本项目在同一台服务器、但本项目运行在 Docker 中，URL 使用 `http://host.docker.internal:18789/hooks/agent`；如果 OpenClaw 运行在另一台机器，填它的反向代理或 Tailscale 地址。配置完成后执行 `sudo ./update.sh`。
 
-阈值提醒首次以当天 0% 为基准，发送一次后改用“上次成功提醒时的估算涨跌”作为基准；例如阈值为 1%，从 +1.1% 提醒后，要到 +2.1% 或回落到 +0.1% 才会再次提醒。提醒基准保存在数据库，服务重启不会丢失。
+阈值提醒首次以当天 0% 为基准，发送一次后改用“上次成功提醒时的估算涨跌”作为基准；例如阈值为 1%，从 +1.0% 提醒后，要到 +2.0% 或回落到 0% 才会再次提醒。实际行情按采样间隔检查，价格跳过 1% 时会在首次达到或超过 1% 时提醒。提醒基准保存在数据库，服务重启不会丢失。
 
 ## 这不是投资建议
 
