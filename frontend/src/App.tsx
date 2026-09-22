@@ -12,7 +12,6 @@ import { FundsPanel } from "./FundsPanel";
 import { InstallHint } from "./InstallHint";
 import { LoginScreen } from "./LoginScreen";
 
-// 只剩基金一个页面，不再需要底部 tab 栏
 export default function App() {
   const isNarrow = useMediaQuery("(max-width: 52em)") ?? true;
   const isMobile = Capacitor.isNativePlatform() || isNarrow;
@@ -108,7 +107,10 @@ export default function App() {
           <InstallHint />
           <Tabs
             value={activeTab}
-            onChange={setActiveTab}
+            onChange={(value) => {
+              setActiveTab(value);
+              window.scrollTo({ top: 0, behavior: "instant" });
+            }}
             className="feature-tabs"
             keepMounted={false}
             variant="none"

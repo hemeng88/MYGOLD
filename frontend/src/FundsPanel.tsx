@@ -4,6 +4,7 @@ import {
   Badge,
   Button,
   Group,
+  Modal,
   NumberInput,
   Paper,
   SimpleGrid,
@@ -248,6 +249,8 @@ export function FundsPanel() {
         </Button>
       </Group>
 
+      <Text fw={600} size="sm" mb={4}>添加基金</Text>
+      <Text size="xs" c="dimmed" mb="xs">搜索代码或名称，在结果中点击“添加”。已有基金可点击“编辑持仓”修改份额和成本价。</Text>
       <Group gap="xs" mb="sm" wrap="nowrap">
         <TextInput
           style={{ flex: 1 }}
@@ -353,15 +356,17 @@ export function FundsPanel() {
                     已收藏
                   </Badge>
                 ) : (
-                  <ActionIcon
+                  <Button
+                    size="compact-sm"
                     variant="light"
                     color="gold"
                     loading={busyCode === row.code}
                     onClick={() => onAdd(row.code)}
                     aria-label={`收藏 ${row.name}`}
+                    leftSection={<IconPlus size={14} />}
                   >
-                    <IconPlus size={16} />
-                  </ActionIcon>
+                    添加
+                  </Button>
                 )}
               </Group>
             </Paper>
@@ -400,6 +405,13 @@ export function FundsPanel() {
         </Stack>
       )}
 
+      <Modal
+        opened={picked !== null}
+        onClose={() => setPicked(null)}
+        title={`编辑持仓 · ${items.find((item) => item.code === picked)?.name || picked || ""}`}
+        size="lg"
+        centered
+      >
       {picked && detailError ? (
         <Group mt="sm" role="status">
           <Text size="sm" c="red">{detailError}</Text>
@@ -574,6 +586,7 @@ export function FundsPanel() {
           </Stack>
         </Stack>
       ) : null}
+      </Modal>
     </Paper>
   );
 }
@@ -607,6 +620,19 @@ function FundRow({
             {item.covered_pct != null ? ` · 覆盖${fmt(item.covered_pct, 1)}%` : ""}
             {item.report_label ? ` · ${item.report_label}` : ""}
           </Text>
+          <Button
+            mt="xs"
+            size="compact-xs"
+            variant="light"
+            color="gold"
+            aria-label={`编辑持仓 ${item.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPick();
+            }}
+          >
+            编辑持仓
+          </Button>
           {item.ready && (item.lead_name || item.drag_name) ? (
             <Text size="xs" c="dimmed" mt={2}>
               {item.lead_name ? `领涨${item.lead_name}` : ""}
