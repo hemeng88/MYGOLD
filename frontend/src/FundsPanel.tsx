@@ -7,6 +7,7 @@ import {
   Modal,
   NumberInput,
   Paper,
+  Select,
   SimpleGrid,
   Skeleton,
   Stack,
@@ -45,6 +46,18 @@ const CONFIDENCE: Record<string, { label: string; color: string }> = {
   low: { label: "仅参考", color: "gray" },
 };
 
+type FundSort = "default" | "cost" | "total_pnl" | "total_pnl_pct" | "today_pnl" | "today_pnl_pct" | "estimate_pct";
+
+const SORT_OPTIONS = [
+  { value: "default", label: "默认顺序" },
+  { value: "cost", label: "成本金额" },
+  { value: "total_pnl", label: "累计收益金额" },
+  { value: "total_pnl_pct", label: "累计收益率" },
+  { value: "today_pnl", label: "当日收益金额" },
+  { value: "today_pnl_pct", label: "当日收益率" },
+  { value: "estimate_pct", label: "估算涨跌幅" },
+];
+
 export function FundsPanel() {
   const { data: list, loading, error, reload: loadList } = usePolling(api.funds);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -59,6 +72,7 @@ export function FundsPanel() {
   const [sharesInput, setSharesInput] = useState<number | string>("");
   const [costInput, setCostInput] = useState<number | string>("");
   const [savingPos, setSavingPos] = useState(false);
+  const [sortBy, setSortBy] = useState<FundSort>("default");
 
   useEffect(() => {
     setDetailError(null);
@@ -209,6 +223,29 @@ export function FundsPanel() {
   };
 
   const items = list?.items || [];
+  const sortedItems = useMemo(() => {
+    if (sortBy === "default") return items;
+    const value = (item: FundItem): number | null => {
+      if (sortBy === "cost") return item.cost;
+      if (sortBy === "total_pnl") return item.total_pnl;
+      if (sortBy === "total_pnl_pct") return item.total_pnl_pct;
+      if (sortBy === "today_pnl") return item.today_pnl;
+      if (sortBy === "today_pnl_pct") {
+        if (item.today_pnl == null || item.nav_value == null || item.nav_value === 0) return null;
+        return (item.today_pnl / item.nav_value) * 100;
+      }
+      return item.estimate_pct;
+    };
+    return items
+      .map((item, index) => ({ item, index, value: value(item) }))
+      .sort((a, b) => {
+        if (a.value == null && b.value == null) return a.index - b.index;
+        if (a.value == null) return 1;
+        if (b.value == null) return -1;
+        return b.value - a.value || a.index - b.index;
+      })
+      .map(({ item }) => item);
+  }, [items, sortBy]);
 
   // 只统计填了持仓、而且确实算出盈亏的基金。没填份额的当自选看；
   // 净值临时取不到的也排除，否则成本进了分母、盈亏没进分子，合计会自相矛盾。
@@ -242,16 +279,28 @@ export function FundsPanel() {
             {list?.session || "读取时段中"} · 按公示仓位×持仓股涨幅估算
           </Text>
         </div>
-        <Button
-          variant="light"
-          color="gold"
-          size="sm"
-          loading={refreshing}
-          onClick={() => onRefresh(false)}
-          leftSection={<IconRefresh size={14} />}
-        >
-          刷新
-        </Button>
+        <Group gap="xs" wrap="nowrap">
+          <Select
+            size="sm"
+            style={{ width: 128 }}
+            data={SORT_OPTIONS}
+            value={sortBy}
+            onChange={(value) => value && setSortBy(value as FundSort)}
+            allowDeselect={false}
+            comboboxProps={{ withinPortal: true }}
+            aria-label="基金排序方式"
+          />
+          <Button
+            variant="light"
+            color="gold"
+            size="sm"
+            loading={refreshing}
+            onClick={() => onRefresh(false)}
+            leftSection={<IconRefresh size={14} />}
+          >
+            刷新
+          </Button>
+        </Group>
       </Group>
 
       <Text fw={600} size="sm" mb={4}>添加基金</Text>
@@ -398,7 +447,7 @@ export function FundsPanel() {
               还没收藏基金。上面搜一只，会用它公示的重仓股实时估算涨跌。
             </Text>
           ) : null}
-          {items.map((item) => (
+          {sortedItems.map((item) => (
             <FundRow
               key={item.code}
               item={item}
