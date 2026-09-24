@@ -286,22 +286,49 @@ def list_rankings(
         holding_rows = list(
             db.scalars(select(FundHolding).where(FundHolding.fund_code.in_(holder_codes))).all()
         )
-        secids = {row.secid for row in holding_rows}
+        holdings_by_code: Dict[str, List] = {}
+        for row in holding_rows:
+            holdings_by_code.setdefault(row.fund_code, []).append(row)
+        # 全市场反查出的基金通常不在当前账号的收藏里，因此本地没有持仓缓存。
+        # 只为当前展示的重仓基金补拉一次季报持仓，避免页面永远只有“较昨收推测”标签。
+        for code in holder_codes - holdings_by_code.keys():
+            try:
+                parsed = sources.fetch_holdings(code)
+                holdings_by_code[code] = parsed.get("holdings") or []
+            except Exception:
+                logger.exception("补拉重仓基金 %s 持仓失败", code)
+                holdings_by_code[code] = []
+        secids = {
+            row.secid if hasattr(row, "secid") else row.get("secid")
+            for rows in holdings_by_code.values()
+            for row in rows
+            if (row.secid if hasattr(row, "secid") else row.get("secid"))
+        }
         quotes = {
             row.secid: row
             for row in db.scalars(select(FundStockQuote).where(FundStockQuote.secid.in_(secids))).all()
         } if secids else {}
+        missing_secids = secids - set(quotes)
+        if missing_secids:
+            try:
+                quotes.update({row["secid"]: row for row in sources.fetch_stock_quotes(missing_secids)})
+            except Exception:
+                logger.exception("补拉重仓基金持仓报价失败")
+
+        def field(row, name):
+            return getattr(row, name, None) if hasattr(row, name) else row.get(name)
+
         for code in holder_codes:
-            fund_rows = [row for row in holding_rows if row.fund_code == code]
+            fund_rows = holdings_by_code.get(code) or []
             covered = sum(
-                row.weight_pct
+                field(row, "weight_pct")
                 for row in fund_rows
-                if row.secid in quotes and quotes[row.secid].change_pct is not None
+                if field(row, "secid") in quotes and field(quotes[field(row, "secid")], "change_pct") is not None
             )
             contribution = sum(
-                row.weight_pct / 100.0 * quotes[row.secid].change_pct
+                field(row, "weight_pct") / 100.0 * field(quotes[field(row, "secid")], "change_pct")
                 for row in fund_rows
-                if row.secid in quotes and quotes[row.secid].change_pct is not None
+                if field(row, "secid") in quotes and field(quotes[field(row, "secid")], "change_pct") is not None
             )
             estimate_by_code[code] = (
                 round(contribution / (covered / 100.0), 3)

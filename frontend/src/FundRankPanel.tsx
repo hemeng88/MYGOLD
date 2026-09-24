@@ -195,7 +195,7 @@ export function FundRankPanel() {
                             </Text>
                           ) : null}
                           <Text size="xs" c="dimmed">
-                            较昨收推测
+                            穿透推测涨幅
                           </Text>
                           <Text fw={700} size="sm" c="gold">
                             {fmt(holder.theme_pct, 1)}%
