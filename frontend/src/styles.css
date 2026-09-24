@@ -137,6 +137,7 @@ body {
 
 .app-main {
   min-width: 0;
+  padding-bottom: 78px;
 }
 
 .day-scroll-x {
@@ -308,8 +309,10 @@ html.native-app .mantine-Popover-dropdown {
 }
 
 .feature-tabs .mantine-Tabs-list {
-  position: sticky;
-  bottom: 12px;
+  position: fixed;
+  left: max(12px, calc((100vw - 1280px) / 2 + 24px));
+  right: max(12px, calc((100vw - 1280px) / 2 + 24px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   z-index: 10;
   gap: 6px;
   padding: 5px;

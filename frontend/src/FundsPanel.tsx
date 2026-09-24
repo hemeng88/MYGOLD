@@ -50,6 +50,7 @@ export function FundsPanel() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
+  const [editingCode, setEditingCode] = useState<string | null>(null);
   const [detail, setDetail] = useState<FundDetail | null>(null);
   const [keyword, setKeyword] = useState("");
   const [results, setResults] = useState<FundSearchItem[] | null>(null);
@@ -77,17 +78,17 @@ export function FundsPanel() {
   }, [picked, list]);
 
   useEffect(() => {
-    if (!picked) {
+    if (!editingCode) {
       setSharesInput("");
       setCostInput("");
       return;
     }
-    const item = (list?.items || []).find((row) => row.code === picked);
+    const item = (list?.items || []).find((row) => row.code === editingCode);
     setSharesInput(item?.shares ?? "");
     setCostInput(item?.cost_price ?? "");
     // 只在切换基金时回填，不跟 list 联动，否则 20 秒一次的轮询会把正在输入的内容冲掉
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [picked]);
+  }, [editingCode]);
 
   const onRefresh = async (includeHoldings = false) => {
     setRefreshing(true);
@@ -151,7 +152,7 @@ export function FundsPanel() {
   };
 
   const onSavePosition = async () => {
-    if (!picked) return;
+    if (!editingCode) return;
     const shares = sharesInput === "" ? null : Number(sharesInput);
     const costPrice = costInput === "" ? null : Number(costInput);
     if (shares !== null && (!Number.isFinite(shares) || shares < 0)) {
@@ -168,7 +169,7 @@ export function FundsPanel() {
     }
     setSavingPos(true);
     try {
-      await api.saveFundPosition(picked, shares, costPrice);
+      await api.saveFundPosition(editingCode, shares, costPrice);
       await loadList();
       window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       notifications.show({
@@ -176,6 +177,7 @@ export function FundsPanel() {
         title: shares ? "持仓已记下" : "已清掉持仓",
         message: shares ? `${shares} 份 · 成本 ${costPrice}` : "只保留收藏，不算盈亏",
       });
+      setEditingCode(null);
     } catch (err) {
       notifications.show({
         color: "red",
@@ -188,10 +190,13 @@ export function FundsPanel() {
   };
 
   const onRemove = async (code: string) => {
+    const item = items.find((row) => row.code === code);
+    if (!window.confirm(`确定要删除「${item?.name || code}」吗？\n删除后不会影响基金账户，只会从本项目收藏中移除。`)) return;
     try {
       await api.deleteFund(code);
       window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       if (picked === code) setPicked(null);
+      if (editingCode === code) setEditingCode(null);
       setResults((prev) => prev?.map((row) => (row.code === code ? { ...row, favorited: false } : row)) ?? null);
       await loadList();
     } catch (err) {
@@ -399,6 +404,7 @@ export function FundsPanel() {
               item={item}
               active={picked === item.code}
               onPick={() => setPicked(picked === item.code ? null : item.code)}
+              onEdit={() => setEditingCode(item.code)}
               onRemove={() => onRemove(item.code)}
             />
           ))}
@@ -408,7 +414,7 @@ export function FundsPanel() {
       <Modal
         opened={picked !== null}
         onClose={() => setPicked(null)}
-        title={`编辑持仓 · ${items.find((item) => item.code === picked)?.name || picked || ""}`}
+        title={`基金详情 · ${items.find((item) => item.code === picked)?.name || picked || ""}`}
         size="lg"
         centered
       >
@@ -467,83 +473,6 @@ export function FundsPanel() {
             </Text>
           ) : null}
 
-          <Paper className="stat-tile" p="sm">
-            <Text size="xs" fw={600} mb={6}>
-              我的持仓
-            </Text>
-            <SimpleGrid cols={2} spacing="xs">
-              <NumberInput
-                size="sm"
-                label="持有份额"
-                placeholder="例如 1000"
-                min={0}
-                step={100}
-                decimalScale={4}
-                hideControls
-                value={sharesInput}
-                onChange={setSharesInput}
-              />
-              <NumberInput
-                size="sm"
-                label="成本价"
-                placeholder="元/份"
-                min={0}
-                decimalScale={4}
-                hideControls
-                value={costInput}
-                onChange={setCostInput}
-              />
-            </SimpleGrid>
-            <Button mt="xs" size="xs" color="gold" fullWidth loading={savingPos} onClick={onSavePosition}>
-              保存持仓
-            </Button>
-            {detail.fund.shares && detail.fund.cost ? (
-              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs" mt="sm">
-                <div>
-                  <Text size="xs" c="dimmed">
-                    持仓成本
-                  </Text>
-                  <Text fw={600} size="sm">
-                    {fmt(detail.fund.cost)} 元
-                  </Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">
-                    估算市值
-                  </Text>
-                  <Text fw={600} size="sm">
-                    {fmt(detail.fund.estimate_value ?? detail.fund.nav_value)} 元
-                  </Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">
-                    今日估算
-                  </Text>
-                  <Text fw={700} size="sm" c={tone(detail.fund.today_pnl)}>
-                    {money(detail.fund.today_pnl)} 元
-                  </Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">
-                    累计盈亏
-                  </Text>
-                  <Text fw={700} size="sm" c={tone(detail.fund.total_pnl)}>
-                    {money(detail.fund.total_pnl)} 元
-                    {detail.fund.total_pnl_pct != null ? (
-                      <Text component="span" size="xs" c="dimmed">
-                        {` ${signed(detail.fund.total_pnl_pct, 1)}%`}
-                      </Text>
-                    ) : null}
-                  </Text>
-                </div>
-              </SimpleGrid>
-            ) : (
-              <Text size="xs" c="dimmed" mt={6}>
-                填上份额和成本价，就能把估算涨跌换成具体的盈亏金额。留空则只当自选看。
-              </Text>
-            )}
-          </Paper>
-
           <Group justify="space-between" align="center">
             <Text size="xs" fw={600}>
               公示重仓 {detail.holdings.length} 只
@@ -587,6 +516,44 @@ export function FundsPanel() {
         </Stack>
       ) : null}
       </Modal>
+      <Modal
+        opened={editingCode !== null}
+        onClose={() => setEditingCode(null)}
+        title={`修改持仓 · ${items.find((item) => item.code === editingCode)?.name || editingCode || ""}`}
+        centered
+      >
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">
+            修改份额和成本价后，基金卡片上的盈亏会同步更新。两个输入都留空则只保留收藏。
+          </Text>
+          <SimpleGrid cols={2} spacing="xs">
+            <NumberInput
+              size="sm"
+              label="持有份额"
+              placeholder="例如 1000"
+              min={0}
+              step={100}
+              decimalScale={4}
+              hideControls
+              value={sharesInput}
+              onChange={setSharesInput}
+            />
+            <NumberInput
+              size="sm"
+              label="成本价"
+              placeholder="元/份"
+              min={0}
+              decimalScale={4}
+              hideControls
+              value={costInput}
+              onChange={setCostInput}
+            />
+          </SimpleGrid>
+          <Button color="gold" fullWidth loading={savingPos} onClick={onSavePosition}>
+            保存持仓
+          </Button>
+        </Stack>
+      </Modal>
     </Paper>
   );
 }
@@ -595,11 +562,13 @@ function FundRow({
   item,
   active,
   onPick,
+  onEdit,
   onRemove,
 }: {
   item: FundItem;
   active: boolean;
   onPick: () => void;
+  onEdit: () => void;
   onRemove: () => void;
 }) {
   const confidence = CONFIDENCE[item.confidence] || CONFIDENCE.low;
@@ -628,7 +597,7 @@ function FundRow({
             aria-label={`编辑持仓 ${item.name}`}
             onClick={(event) => {
               event.stopPropagation();
-              onPick();
+              onEdit();
             }}
           >
             编辑持仓
