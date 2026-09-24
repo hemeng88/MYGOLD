@@ -189,6 +189,14 @@ export function FundRankPanel() {
                       </div>
                       {holder.theme_pct > 0 ? (
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          {holder.estimate_pct != null ? (
+                            <Text fw={700} size="sm" c={tone(holder.estimate_pct)}>
+                              {signed(holder.estimate_pct)}%
+                            </Text>
+                          ) : null}
+                          <Text size="xs" c="dimmed">
+                            较昨收推测
+                          </Text>
                           <Text fw={700} size="sm" c="gold">
                             {fmt(holder.theme_pct, 1)}%
                           </Text>

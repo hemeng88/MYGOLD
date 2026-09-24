@@ -18,7 +18,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import FundRankEntry, FundRankStock, FundThemeHolder
+from ..models import FundRankEntry, FundRankStock, FundStockQuote, FundThemeHolder, FundHolding
 from ..timeutil import now_local
 from . import sources
 from .sources import RANK_PERIODS
@@ -277,6 +277,37 @@ def list_rankings(
             .limit(holder_limit)
         ).all()
     )
+
+    # 重仓基金来自全市场反查，不一定是当前账号收藏的基金，不能复用
+    # list_funds() 的用户持仓结果；这里直接按季报重仓 × 当前报价计算日内估值。
+    holder_codes = {row.fund_code for row in holders}
+    estimate_by_code: Dict[str, Optional[float]] = {}
+    if holder_codes:
+        holding_rows = list(
+            db.scalars(select(FundHolding).where(FundHolding.fund_code.in_(holder_codes))).all()
+        )
+        secids = {row.secid for row in holding_rows}
+        quotes = {
+            row.secid: row
+            for row in db.scalars(select(FundStockQuote).where(FundStockQuote.secid.in_(secids))).all()
+        } if secids else {}
+        for code in holder_codes:
+            fund_rows = [row for row in holding_rows if row.fund_code == code]
+            covered = sum(
+                row.weight_pct
+                for row in fund_rows
+                if row.secid in quotes and quotes[row.secid].change_pct is not None
+            )
+            contribution = sum(
+                row.weight_pct / 100.0 * quotes[row.secid].change_pct
+                for row in fund_rows
+                if row.secid in quotes and quotes[row.secid].change_pct is not None
+            )
+            estimate_by_code[code] = (
+                round(contribution / (covered / 100.0), 3)
+                if covered >= settings.fund_min_coverage_pct
+                else None
+            )
     return {
         "period": period,
         "period_label": period_label(period),
@@ -320,6 +351,7 @@ def list_rankings(
                 "theme_stock_count": row.theme_stock_count,
                 "consensus_hits": row.consensus_hits,
                 "alt_codes": [c for c in (row.alt_codes or "").split(",") if c],
+                "estimate_pct": estimate_by_code.get(row.fund_code),
             }
             for row in holders
         ],

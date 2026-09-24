@@ -122,6 +122,7 @@ export interface FundRankHolderItem {
   theme_stock_count: number;
   consensus_hits: number;
   alt_codes: string[];
+  estimate_pct: number | null;
 }
 
 export interface FundRank {

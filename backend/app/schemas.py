@@ -143,6 +143,8 @@ class FundRankHolderItem(BaseModel):
     consensus_hits: int
     # 同门份额（A/C 类），已合并到本行
     alt_codes: List[str] = Field(default_factory=list)
+    # 按该基金披露重仓股当前涨跌推算的日内涨幅（较昨收）
+    estimate_pct: Optional[float] = None
 
 
 class FundRankResponse(BaseModel):
