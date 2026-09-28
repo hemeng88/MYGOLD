@@ -8,7 +8,7 @@ from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .funds.rankings import collect_rankings
-from .models import FundRankEntry
+from .models import FundRankEntry, FundThemeHolder
 from .market_session import should_poll_quotes
 from .notify import notify
 
@@ -80,18 +80,34 @@ async def job_monthly_fund_reminder() -> None:
             .where(FundRankEntry.period == "1yzf", FundRankEntry.rank == 1)
             .order_by(FundRankEntry.updated_at.desc())
         )
+        theme_top = db.scalar(
+            select(FundThemeHolder)
+            .where(FundThemeHolder.period == "1yzf", FundThemeHolder.rank == 1)
+            .order_by(FundThemeHolder.updated_at.desc())
+        )
         if top is None:
             logger.info("近一个月涨幅榜提醒跳过：暂无榜单数据")
             return
-        body = "\n".join(
-            [
-                f"基金名称：{top.name}",
-                f"基金代码：{top.code}",
-                f"近一个月涨幅：{top.return_pct:+.2f}%",
-                f"净值日期：{top.nav_date or '暂无'}",
-                "提醒：今天可关注是否按计划定投 500 元，请自行确认后操作。",
-            ]
-        )
+        lines = [
+            "【近一个月涨幅榜第一名】",
+            f"基金名称：{top.name}",
+            f"基金代码：{top.code}",
+            f"近一个月涨幅：{top.return_pct:+.2f}%",
+            f"净值日期：{top.nav_date or '暂无'}",
+        ]
+        if theme_top is not None:
+            lines.extend(
+                [
+                    "",
+                    "【近一个月主线押注最重】",
+                    f"基金名称：{theme_top.fund_name or '暂无'}",
+                    f"基金代码：{theme_top.fund_code}",
+                    f"主线仓位：{theme_top.theme_pct:.2f}%",
+                    f"命中主线股票：{theme_top.hit_count}/{theme_top.theme_stock_count} 只",
+                ]
+            )
+        lines.extend(["", "提醒：今天可关注是否按计划定投 500 元，请自行确认后操作。"])
+        body = "\n".join(lines)
         await notify("近一个月涨幅榜第一名", body=body)
     except Exception:
         logger.exception("近一个月涨幅榜提醒失败")
