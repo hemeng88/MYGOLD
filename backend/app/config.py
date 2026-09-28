@@ -87,6 +87,9 @@ class Settings(BaseSettings):
     openclaw_target: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_TARGET")
     fund_alert_threshold_pct: float = Field(default=1.0, validation_alias="MYGOLD_FUND_ALERT_THRESHOLD_PCT")
     fund_alert_timeout_seconds: float = Field(default=8.0, validation_alias="MYGOLD_FUND_ALERT_TIMEOUT_SECONDS")
+    # 工作日早晨推送近一个月涨幅榜第一名，提醒用户自行定投
+    fund_monthly_reminder_hour: int = Field(default=9, validation_alias="MYGOLD_FUND_MONTHLY_REMINDER_HOUR")
+    fund_monthly_reminder_minute: int = Field(default=20, validation_alias="MYGOLD_FUND_MONTHLY_REMINDER_MINUTE")
 
 
 settings = Settings()

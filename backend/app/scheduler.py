@@ -1,12 +1,14 @@
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sqlalchemy import select
 
 from .alerts import check_fund_alerts
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .funds.rankings import collect_rankings
+from .models import FundRankEntry
 from .market_session import should_poll_quotes
 from .notify import notify
 
@@ -65,6 +67,34 @@ async def job_fund_rankings() -> None:
         logger.exception("基金涨幅榜采集失败")
         db.rollback()
         await notify("基金涨幅榜采集失败", level="error")
+    finally:
+        db.close()
+
+
+async def job_monthly_fund_reminder() -> None:
+    """工作日早晨提醒近一个月涨幅榜第一名，消息只提示，不自动交易。"""
+    db = SessionLocal()
+    try:
+        top = db.scalar(
+            select(FundRankEntry)
+            .where(FundRankEntry.period == "1yzf", FundRankEntry.rank == 1)
+            .order_by(FundRankEntry.updated_at.desc())
+        )
+        if top is None:
+            logger.info("近一个月涨幅榜提醒跳过：暂无榜单数据")
+            return
+        body = "\n".join(
+            [
+                f"基金名称：{top.name}",
+                f"基金代码：{top.code}",
+                f"近一个月涨幅：{top.return_pct:+.2f}%",
+                f"净值日期：{top.nav_date or '暂无'}",
+                "提醒：今天可关注是否按计划定投 500 元，请自行确认后操作。",
+            ]
+        )
+        await notify("近一个月涨幅榜第一名", body=body)
+    except Exception:
+        logger.exception("近一个月涨幅榜提醒失败")
     finally:
         db.close()
 
@@ -136,10 +166,23 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    scheduler.add_job(
+        job_monthly_fund_reminder,
+        "cron",
+        day_of_week="mon-fri",
+        hour=settings.fund_monthly_reminder_hour,
+        minute=settings.fund_monthly_reminder_minute,
+        id="fund-monthly-reminder",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     scheduler.start()
     logger.info(
-        "调度已启动：A股盘中每 %ss 刷持仓股报价，16:40 对季报持仓，21:30 拉涨幅榜",
+        "调度已启动：A股盘中每 %ss 刷持仓股报价，16:40 对季报持仓，21:30 拉涨幅榜，%02d:%02d 推送近月榜首",
         settings.fund_quote_interval_seconds,
+        settings.fund_monthly_reminder_hour,
+        settings.fund_monthly_reminder_minute,
     )
 
 
