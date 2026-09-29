@@ -212,9 +212,26 @@ def summarize_fund(
     )
 
     if settled:
-        # 手里的涨跌幅已经体现在这个净值里了，再估一遍就是重复计算。
-        # 累计盈亏退回按已公布净值算（那是准确值），今日估算留空等下一场开盘。
-        base["message"] = "%s 的净值已公布，这段涨跌已计入，等下一个交易日开盘再估算" % nav.nav_date
+        # 净值已公布时，直接用官方日涨跌还原当日净值差，避免把股票行情重复计算。
+        official_pct = nav.nav_chg_pct
+        today_pnl = None
+        if favorite.shares and cash_fund and raw_nav is not None:
+            # 货币基金接口的 NAV 是万份收益，不是单位净值。
+            today_pnl = favorite.shares * raw_nav / 10000.0
+        elif favorite.shares and nav_value and official_pct is not None and official_pct > -100:
+            previous_nav = nav_value / (1 + official_pct / 100.0)
+            today_pnl = favorite.shares * (nav_value - previous_nav)
+        base.update(
+            {
+                "ready": True,
+                "estimate_pct": official_pct,
+                "conservative_pct": official_pct,
+                "estimate_nav": nav_value,
+                "today_pnl": round(today_pnl, 2) if today_pnl is not None else None,
+                "confidence": "high" if official_pct is not None else "low",
+                "message": "%s 的净值已公布，今日收益按官方净值计算" % nav.nav_date,
+            }
+        )
         return base
 
     if not priced or covered <= 0:

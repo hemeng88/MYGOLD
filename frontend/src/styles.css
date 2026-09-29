@@ -262,6 +262,75 @@ body {
   }
 }
 
+/* iPhone Pro 等 390px 左右窄屏：给正文和卡片留出稳定的可用宽度。 */
+@media (max-width: 430px) {
+  .app-shell-mobile {
+    padding: 8px 10px calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell-mobile .glass {
+    padding: 12px !important;
+    border-radius: 16px;
+  }
+
+  .app-shell-mobile .app-header {
+    margin-bottom: 8px !important;
+  }
+
+  .app-shell-mobile .app-header .mantine-ActionIcon-root {
+    width: 34px;
+    height: 34px;
+  }
+
+  .app-shell-mobile .mantine-Group-root {
+    max-width: 100%;
+  }
+
+  .app-shell-mobile .fund-row-main,
+  .app-shell-mobile .exposure-row-main {
+    gap: 6px;
+  }
+
+  .app-shell-mobile .fund-row-main > :first-child,
+  .app-shell-mobile .exposure-row-main > :first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .app-shell-mobile .fund-row-actions {
+    min-width: 86px;
+    gap: 2px;
+  }
+
+  .app-shell-mobile .fund-row-actions .mantine-Text-root,
+  .app-shell-mobile .exposure-row-main > :last-child {
+    white-space: nowrap;
+  }
+
+  .app-shell-mobile .feature-tabs .mantine-Tabs-list {
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    gap: 2px;
+    padding: 4px;
+    border-radius: 13px;
+  }
+
+  .app-shell-mobile .feature-tabs .mantine-Tabs-tab {
+    min-height: 38px;
+    padding-inline: 5px;
+    font-size: 11px;
+  }
+
+  .app-shell-mobile .feature-tabs .mantine-Tabs-tabSection {
+    margin-inline-end: 3px;
+  }
+
+  .app-shell-mobile .mantine-Modal-content {
+    max-width: calc(100vw - 20px);
+  }
+}
+
 @media (max-width: 52em) {
   .app-shell:not(.app-shell-mobile) {
     padding: 18px 14px 32px;

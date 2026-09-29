@@ -171,7 +171,7 @@ function ExposureRow({
 }) {
   return (
     <Paper className={open ? "day-card day-card-active" : "day-card"} p="sm" onClick={onToggle}>
-      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+      <Group className="exposure-row-main" justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
         <div style={{ minWidth: 0 }}>
           <Group gap={6} wrap="nowrap">
             <Text fw={600} truncate>

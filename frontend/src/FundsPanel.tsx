@@ -267,8 +267,7 @@ export function FundsPanel() {
       held.reduce((acc, item) => acc + (pick(item) ?? 0), 0);
     const cost = sum((item) => item.cost);
     const total = sum((item) => item.total_pnl);
-    // 净值已经把上一个交易日结算进去时后端不给 today_pnl，这时合计要显示「—」，
-    // 不能当 0 加进去 —— 那样看着像今天真的没涨没跌
+    // 已结算的基金也会用官方净值日涨跌计算今日收益，只有确实没有数据时才排除。
     const live = held.filter((item) => item.today_pnl != null);
     return {
       count: held.length,
@@ -385,8 +384,7 @@ export function FundsPanel() {
 
       {totals?.settled ? (
         <Text size="xs" c="dimmed" mb="sm">
-          上一个交易日的净值已经公布，涨跌都算进净值里了，所以现在的累计盈亏是准确值，
-          今日估算要等下一个交易日开盘才有。
+          上一个交易日的净值已经公布，今日收益按官方净值日涨跌计算。
         </Text>
       ) : null}
 
@@ -634,7 +632,7 @@ function FundRow({
   const confidence = CONFIDENCE[item.confidence] || CONFIDENCE.low;
   return (
     <Paper className={active ? "day-card day-card-active" : "day-card"} p="sm" onClick={onPick}>
-      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
+      <Group className="fund-row-main" justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
         <div style={{ minWidth: 0 }}>
           <Group gap={6} wrap="wrap">
             <Text fw={600} truncate>
@@ -675,13 +673,16 @@ function FundRow({
             </Text>
           ) : null}
         </div>
-        <Group gap={4} wrap="nowrap" align="flex-start">
+        <Group className="fund-row-actions" gap={4} wrap="nowrap" align="flex-start">
           <div style={{ textAlign: "right" }}>
             <Text fw={700} c={tone(item.estimate_pct)}>
               {item.estimate_pct == null ? "—" : `${signed(item.estimate_pct)}%`}
             </Text>
             {item.shares && item.cost ? (
               <>
+                <Text size="xs" c="dimmed">
+                  成本 {fmt(item.cost)} 元
+                </Text>
                 <Text size="sm" fw={600} c={tone(item.today_pnl)}>
                   今日{money(item.today_pnl)}
                 </Text>
