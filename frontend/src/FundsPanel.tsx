@@ -47,6 +47,7 @@ const CONFIDENCE: Record<string, { label: string; color: string }> = {
 };
 
 type FundSort = "default" | "cost" | "total_pnl" | "total_pnl_pct" | "today_pnl" | "today_pnl_pct" | "estimate_pct";
+const FUND_SORT_KEY = "mygold.fund-sort";
 
 const SORT_OPTIONS = [
   { value: "default", label: "默认顺序" },
@@ -72,7 +73,17 @@ export function FundsPanel() {
   const [sharesInput, setSharesInput] = useState<number | string>("");
   const [costInput, setCostInput] = useState<number | string>("");
   const [savingPos, setSavingPos] = useState(false);
-  const [sortBy, setSortBy] = useState<FundSort>("default");
+  const [sortBy, setSortBy] = useState<FundSort>(() => {
+    const saved = window.localStorage.getItem(FUND_SORT_KEY);
+    if (saved === "default") return "today_pnl";
+    return SORT_OPTIONS.some((option) => option.value === saved)
+      ? (saved as FundSort)
+      : "today_pnl";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(FUND_SORT_KEY, sortBy);
+  }, [sortBy]);
 
   useEffect(() => {
     setDetailError(null);

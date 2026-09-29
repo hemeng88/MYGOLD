@@ -312,6 +312,9 @@ def exposure(db: Session, user_id: int) -> Dict:
                     "name": row.stock_name or (quote.name if quote else None) or row.stock_code,
                     "market": market_label(row.market),
                     "value": 0.0,
+                    "cost_value": 0.0,
+                    "cumulative_pnl": 0.0,
+                    "has_cost": False,
                     # 净值还没结算这段行情的那部分金额，只有它能算今日盈亏
                     "live_value": 0.0,
                     "change_pct": quote.change_pct if quote else None,
@@ -319,6 +322,11 @@ def exposure(db: Session, user_id: int) -> Dict:
                 },
             )
             slot["value"] += stock_value
+            if favorite.cost_price and favorite.cost_price > 0:
+                stock_cost = favorite.shares * favorite.cost_price * row.weight_pct / 100.0
+                slot["cost_value"] += stock_cost
+                slot["cumulative_pnl"] += stock_value - stock_cost
+                slot["has_cost"] = True
             if not settled:
                 slot["live_value"] += stock_value
             slot["funds"].append(
@@ -346,6 +354,10 @@ def exposure(db: Session, user_id: int) -> Dict:
                 # 今天这只股票给你带来多少钱
                 "today_pnl": round(slot["live_value"] * change_pct / 100.0, 2)
                 if change_pct is not None and live
+                else None,
+                "cumulative_pnl": round(slot["cumulative_pnl"], 2) if slot["has_cost"] else None,
+                "cumulative_pct": round(slot["cumulative_pnl"] / slot["cost_value"] * 100.0, 3)
+                if slot["has_cost"] and slot["cost_value"] > 0
                 else None,
                 "fund_count": len(slot["funds"]),
                 "funds": sorted(slot["funds"], key=lambda row: -row["value"]),

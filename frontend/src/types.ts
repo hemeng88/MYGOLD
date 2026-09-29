@@ -173,6 +173,8 @@ export interface ExposureItem {
   pct_of_total: number | null;
   change_pct: number | null;
   today_pnl: number | null;
+  cumulative_pnl: number | null;
+  cumulative_pct: number | null;
   fund_count: number;
   funds: ExposureFundItem[];
 }

@@ -208,6 +208,8 @@ class ExposureItem(BaseModel):
     change_pct: Optional[float] = None
     # 今天这只股票给你带来的盈亏金额
     today_pnl: Optional[float] = None
+    cumulative_pnl: Optional[float] = None
+    cumulative_pct: Optional[float] = None
     fund_count: int = 0
     funds: List[ExposureFundItem] = Field(default_factory=list)
 

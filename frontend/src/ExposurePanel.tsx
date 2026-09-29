@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Badge, Button, Group, Paper, Progress, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
+import { useEffect, useMemo, useState } from "react";
+import { Badge, Button, Group, Paper, Progress, Select, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core";
 import { api } from "./api";
 import { usePolling } from "./usePolling";
 import type { ExposureItem } from "./types";
@@ -19,9 +19,43 @@ function tone(value: number | null | undefined) {
   return value > 0 ? "red" : "teal";
 }
 
+type ExposureSort = "value" | "change_pct" | "cumulative_pnl" | "cumulative_pct";
+const EXPOSURE_SORT_KEY = "mygold.exposure-sort";
+const EXPOSURE_SORT_OPTIONS = [
+  { value: "value", label: "持有金额" },
+  { value: "change_pct", label: "当日涨幅" },
+  { value: "cumulative_pnl", label: "累计收益" },
+  { value: "cumulative_pct", label: "累计涨幅" },
+];
+
 export function ExposurePanel() {
   const { data, loading, error, reload } = usePolling(api.exposure);
   const [opened, setOpened] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<ExposureSort>(() => {
+    const saved = window.localStorage.getItem(EXPOSURE_SORT_KEY);
+    return EXPOSURE_SORT_OPTIONS.some((option) => option.value === saved)
+      ? (saved as ExposureSort)
+      : "value";
+  });
+
+  useEffect(() => {
+    window.localStorage.setItem(EXPOSURE_SORT_KEY, sortBy);
+  }, [sortBy]);
+
+  const sortedItems = useMemo(() => {
+    if (!data?.items) return [];
+    return data.items
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const left = a.item[sortBy];
+        const right = b.item[sortBy];
+        if (left == null && right == null) return a.index - b.index;
+        if (left == null) return 1;
+        if (right == null) return -1;
+        return right - left || a.index - b.index;
+      })
+      .map(({ item }) => item);
+  }, [data?.items, sortBy]);
 
   return (
     <Paper className="glass" p="md">
@@ -32,6 +66,16 @@ export function ExposurePanel() {
             {data?.session || "读取时段中"} · 份额 × 净值 × 公示仓位，同一只股票跨基金合并
           </Text>
         </div>
+        <Select
+          size="sm"
+          style={{ width: 128 }}
+          data={EXPOSURE_SORT_OPTIONS}
+          value={sortBy}
+          onChange={(value) => value && setSortBy(value as ExposureSort)}
+          allowDeselect={false}
+          comboboxProps={{ withinPortal: true }}
+          aria-label="个股排序方式"
+        />
       </Group>
 
       {error ? (
@@ -96,7 +140,7 @@ export function ExposurePanel() {
           </div>
 
           <Stack gap={6}>
-            {data.items.map((item) => (
+            {sortedItems.map((item) => (
               <ExposureRow
                 key={item.code}
                 item={item}
@@ -155,6 +199,12 @@ function ExposureRow({
           {item.today_pnl != null ? (
             <Text size="xs" c={tone(item.today_pnl)}>
               今日 {money(item.today_pnl)}
+            </Text>
+          ) : null}
+          {item.cumulative_pnl != null ? (
+            <Text size="xs" c={tone(item.cumulative_pnl)}>
+              累计 {money(item.cumulative_pnl)}
+              {item.cumulative_pct != null ? ` (${item.cumulative_pct > 0 ? "+" : ""}${item.cumulative_pct.toFixed(2)}%)` : ""}
             </Text>
           ) : null}
         </div>
