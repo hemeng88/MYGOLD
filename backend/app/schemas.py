@@ -121,6 +121,10 @@ class FundRankFund(BaseModel):
     return_pct: float
     nav: Optional[float] = None
     nav_date: Optional[str] = None
+    estimate_pct: Optional[float] = None
+    covered_pct: Optional[float] = None
+    quoted_count: int = 0
+    holdings_count: int = 0
 
 
 class FundRankStockItem(BaseModel):

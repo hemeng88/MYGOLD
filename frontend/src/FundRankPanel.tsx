@@ -64,6 +64,9 @@ export function FundRankPanel() {
   };
 
   const total = data?.funds.length || 0;
+  const estimatedFunds = [...(data?.funds || [])]
+    .filter((fund) => fund.estimate_pct != null)
+    .sort((a, b) => (b.estimate_pct ?? -Infinity) - (a.estimate_pct ?? -Infinity));
 
   return (
     <Paper className="glass" p="md">
@@ -147,6 +150,46 @@ export function FundRankPanel() {
                   </Paper>
                 ))}
               </Stack>
+            </div>
+          ) : null}
+
+          {data?.funds.length ? (
+            <div>
+              <Text size="xs" fw={600} mb={2}>
+                当前周期涨幅榜前 {total} 只基金 · 今日推测涨幅前 {Math.min(5, estimatedFunds.length)} 名
+              </Text>
+              <Text size="xs" c="dimmed" mb={8}>
+                按季报重仓股权重和当前行情穿透估算；覆盖不足 {"<"}20% 的基金不参与排序
+              </Text>
+              {estimatedFunds.length ? (
+                <Stack gap={6}>
+                  {estimatedFunds.slice(0, 5).map((fund, index) => (
+                    <Paper key={`estimate-${fund.code}`} className="stat-tile" p="xs">
+                      <Group justify="space-between" wrap="nowrap" gap="xs">
+                        <div style={{ minWidth: 0 }}>
+                          <Group gap={6} wrap="nowrap">
+                            <Badge size="xs" variant="light" color={index === 0 ? "gold" : "gray"}>
+                              {index + 1}
+                            </Badge>
+                            <Text size="sm" fw={600} truncate>{fund.name}</Text>
+                          </Group>
+                          <Text size="xs" c="dimmed" mt={2}>
+                            {fund.code} · 覆盖 {fmt(fund.covered_pct, 1)}%
+                            {fund.quoted_count != null && fund.holdings_count != null
+                              ? ` · ${fund.quoted_count}/${fund.holdings_count} 只重仓有行情`
+                              : ""}
+                          </Text>
+                        </div>
+                        <Text fw={700} size="sm" c={tone(fund.estimate_pct)} style={{ flexShrink: 0 }}>
+                          {signed(fund.estimate_pct)}%
+                        </Text>
+                      </Group>
+                    </Paper>
+                  ))}
+                </Stack>
+              ) : (
+                <Text size="xs" c="dimmed">当前榜单基金持仓行情不足，暂时无法计算推测涨幅。</Text>
+              )}
             </div>
           ) : null}
 

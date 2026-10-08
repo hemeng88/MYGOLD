@@ -103,6 +103,10 @@ export interface FundRankFund {
   return_pct: number;
   nav: number | null;
   nav_date: string | null;
+  estimate_pct?: number | null;
+  covered_pct?: number | null;
+  quoted_count?: number;
+  holdings_count?: number;
 }
 
 export interface FundRankStockItem {

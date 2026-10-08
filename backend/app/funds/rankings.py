@@ -28,6 +28,72 @@ logger = logging.getLogger("mygold.funds")
 DEFAULT_PERIOD = "jnzf"
 
 
+def _estimate_rank_funds(db: Session, codes: set[str]) -> Dict[str, Dict]:
+    """按榜单基金季报重仓和当前行情估算今日涨跌，不要求用户收藏这些基金。"""
+    if not codes:
+        return {}
+
+    holding_rows = list(db.scalars(select(FundHolding).where(FundHolding.fund_code.in_(codes))).all())
+    holdings_by_code: Dict[str, List] = {}
+    for row in holding_rows:
+        holdings_by_code.setdefault(row.fund_code, []).append(row)
+
+    # 榜单基金一般不是用户收藏基金，缓存中没有它的季报持仓时按需读取。
+    for code in codes - holdings_by_code.keys():
+        try:
+            parsed = sources.fetch_holdings(code)
+            holdings_by_code[code] = parsed.get("holdings") or []
+        except Exception:
+            logger.exception("拉取涨幅榜基金 %s 持仓失败", code)
+            holdings_by_code[code] = []
+
+    def field(row, name):
+        return getattr(row, name, None) if hasattr(row, name) else row.get(name)
+
+    secids = {
+        field(row, "secid")
+        for rows in holdings_by_code.values()
+        for row in rows
+        if field(row, "secid")
+    }
+    # 每次读取涨幅榜时取当前行情，避免只用收藏基金的报价缓存导致数据缺失或过期。
+    quotes: Dict[str, Dict] = {}
+    if secids:
+        try:
+            quotes = {row["secid"]: row for row in sources.fetch_stock_quotes(secids)}
+        except Exception:
+            logger.exception("拉取涨幅榜基金重仓股行情失败")
+        missing = secids - set(quotes)
+        if missing:
+            cached = db.scalars(select(FundStockQuote).where(FundStockQuote.secid.in_(missing))).all()
+            quotes.update({row.secid: row for row in cached})
+
+    estimates: Dict[str, Dict] = {}
+    for code in codes:
+        rows = holdings_by_code.get(code) or []
+        quoted_rows = [
+            row for row in rows
+            if field(row, "secid") in quotes and field(quotes[field(row, "secid")], "change_pct") is not None
+        ]
+        covered = sum(field(row, "weight_pct") for row in quoted_rows)
+        contribution = sum(
+            field(row, "weight_pct") / 100.0 * field(quotes[field(row, "secid")], "change_pct")
+            for row in quoted_rows
+        )
+        estimate = (
+            round(contribution / (covered / 100.0), 3)
+            if covered >= settings.fund_min_coverage_pct
+            else None
+        )
+        estimates[code] = {
+            "estimate_pct": estimate,
+            "covered_pct": round(covered, 2),
+            "quoted_count": len(quoted_rows),
+            "holdings_count": len(rows),
+        }
+    return estimates
+
+
 def period_options() -> List[Dict]:
     return [{"key": key, "label": label} for key, (label, _index) in RANK_PERIODS.items()]
 
@@ -278,63 +344,11 @@ def list_rankings(
         ).all()
     )
 
-    # 重仓基金来自全市场反查，不一定是当前账号收藏的基金，不能复用
-    # list_funds() 的用户持仓结果；这里直接按季报重仓 × 当前报价计算日内估值。
-    holder_codes = {row.fund_code for row in holders}
-    estimate_by_code: Dict[str, Optional[float]] = {}
-    if holder_codes:
-        holding_rows = list(
-            db.scalars(select(FundHolding).where(FundHolding.fund_code.in_(holder_codes))).all()
-        )
-        holdings_by_code: Dict[str, List] = {}
-        for row in holding_rows:
-            holdings_by_code.setdefault(row.fund_code, []).append(row)
-        # 全市场反查出的基金通常不在当前账号的收藏里，因此本地没有持仓缓存。
-        # 只为当前展示的重仓基金补拉一次季报持仓，避免页面永远只有“较昨收推测”标签。
-        for code in holder_codes - holdings_by_code.keys():
-            try:
-                parsed = sources.fetch_holdings(code)
-                holdings_by_code[code] = parsed.get("holdings") or []
-            except Exception:
-                logger.exception("补拉重仓基金 %s 持仓失败", code)
-                holdings_by_code[code] = []
-        secids = {
-            row.secid if hasattr(row, "secid") else row.get("secid")
-            for rows in holdings_by_code.values()
-            for row in rows
-            if (row.secid if hasattr(row, "secid") else row.get("secid"))
-        }
-        quotes = {
-            row.secid: row
-            for row in db.scalars(select(FundStockQuote).where(FundStockQuote.secid.in_(secids))).all()
-        } if secids else {}
-        missing_secids = secids - set(quotes)
-        if missing_secids:
-            try:
-                quotes.update({row["secid"]: row for row in sources.fetch_stock_quotes(missing_secids)})
-            except Exception:
-                logger.exception("补拉重仓基金持仓报价失败")
-
-        def field(row, name):
-            return getattr(row, name, None) if hasattr(row, name) else row.get(name)
-
-        for code in holder_codes:
-            fund_rows = holdings_by_code.get(code) or []
-            covered = sum(
-                field(row, "weight_pct")
-                for row in fund_rows
-                if field(row, "secid") in quotes and field(quotes[field(row, "secid")], "change_pct") is not None
-            )
-            contribution = sum(
-                field(row, "weight_pct") / 100.0 * field(quotes[field(row, "secid")], "change_pct")
-                for row in fund_rows
-                if field(row, "secid") in quotes and field(quotes[field(row, "secid")], "change_pct") is not None
-            )
-            estimate_by_code[code] = (
-                round(contribution / (covered / 100.0), 3)
-                if covered >= settings.fund_min_coverage_pct
-                else None
-            )
+    # 榜单和全市场主线重仓榜中的基金合并估算，避免重复拉季报与行情。
+    estimate_by_code = _estimate_rank_funds(
+        db,
+        {row.code for row in funds} | {row.fund_code for row in holders},
+    )
     return {
         "period": period,
         "period_label": period_label(period),
@@ -348,6 +362,7 @@ def list_rankings(
                 "return_pct": row.return_pct,
                 "nav": row.nav,
                 "nav_date": row.nav_date,
+                **estimate_by_code.get(row.code, {}),
             }
             for row in funds
         ],
@@ -378,7 +393,7 @@ def list_rankings(
                 "theme_stock_count": row.theme_stock_count,
                 "consensus_hits": row.consensus_hits,
                 "alt_codes": [c for c in (row.alt_codes or "").split(",") if c],
-                "estimate_pct": estimate_by_code.get(row.fund_code),
+                "estimate_pct": estimate_by_code.get(row.fund_code, {}).get("estimate_pct"),
             }
             for row in holders
         ],
