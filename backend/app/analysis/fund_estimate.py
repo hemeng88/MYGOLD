@@ -10,6 +10,7 @@ covered_pct 一起返回，覆盖度低的时候前端要提醒这个数只能�
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional
 
 from sqlalchemy import select
@@ -53,6 +54,11 @@ def _confidence(covered_pct: float, stale: bool) -> str:
     return "low"
 
 
+def _round_yuan(value: float) -> int:
+    """金额按整元四舍五入，避免成本金额出现几分钱的浮点尾差。"""
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 def _position(
     shares: Optional[float],
     cost_price: Optional[float],
@@ -73,7 +79,7 @@ def _position(
     if not shares or shares <= 0:
         return out
     if cost_price is not None and cost_price > 0:
-        out["cost"] = round(shares * cost_price, 2)
+        out["cost"] = _round_yuan(shares * cost_price)
     if nav:
         out["nav_value"] = round(shares * nav, 2)
     if estimate_nav:

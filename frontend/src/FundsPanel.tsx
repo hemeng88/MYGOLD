@@ -370,7 +370,7 @@ export function FundsPanel() {
               总成本 · {totals.count}/{items.length} 只
             </Text>
             <Text fw={600} size="sm">
-              {fmt(totals.cost)} 元
+              {fmt(totals.cost, 0)} 元
             </Text>
           </Paper>
         </SimpleGrid>
@@ -681,7 +681,7 @@ function FundRow({
             {item.shares && item.cost ? (
               <>
                 <Text size="xs" c="dimmed">
-                  成本 {fmt(item.cost)} 元
+                  成本 {fmt(item.cost, 0)} 元
                 </Text>
                 <Text size="sm" fw={600} c={tone(item.today_pnl)}>
                   今日{money(item.today_pnl)}
