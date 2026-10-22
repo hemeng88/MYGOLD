@@ -24,6 +24,11 @@ class FundFavorite(Base):
     code: Mapped[str] = mapped_column(String(12), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(64), nullable=False)
     fund_type: Mapped[str] = mapped_column(String(32), nullable=True)
+    # 收藏类型：fund 为基金，stock 为单只股票。共用收藏/持仓表，便于前端统一展示。
+    asset_type: Mapped[str] = mapped_column(String(12), nullable=False, default="fund")
+    # 股票收藏直接绑定行情接口使用的 secid；基金收藏为空。
+    secid: Mapped[str] = mapped_column(String(24), nullable=True)
+    market: Mapped[str] = mapped_column(String(8), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # 持有份额
     shares: Mapped[float] = mapped_column(Float, nullable=True)

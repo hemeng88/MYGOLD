@@ -11,7 +11,7 @@ from ..database import get_db
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
 from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
-from ..funds.sources import search_funds
+from ..funds.sources import search_assets
 from ..schemas import (
     ExposureResponse,
     FundDetailResponse,
@@ -76,7 +76,7 @@ def fund_search(
     user: User = Depends(require_auth),
 ):
     try:
-        rows = search_funds(q, limit=limit)
+        rows = search_assets(q, limit=limit)
     except Exception as exc:
         raise HTTPException(status_code=502, detail="基金搜索失败：%s" % exc) from exc
     owned = set(fund_favorites.list_codes_of(db, user.id))

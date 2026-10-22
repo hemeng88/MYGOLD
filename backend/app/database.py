@@ -76,6 +76,12 @@ def ensure_schema():
     # 基金持仓份额和成本价是后加的，老库要补列
     _ensure_column(inspector, "fund_favorites", "shares", "shares FLOAT")
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
+    _ensure_column(inspector, "fund_favorites", "asset_type", "asset_type VARCHAR(12) DEFAULT 'fund'")
+    _ensure_column(inspector, "fund_favorites", "secid", "secid VARCHAR(24)")
+    _ensure_column(inspector, "fund_favorites", "market", "market VARCHAR(8)")
+    if "fund_favorites" in inspector.get_table_names():
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE fund_favorites SET asset_type = 'fund' WHERE asset_type IS NULL"))
     # 报价所属交易日，用来判断净值是否已经把这段涨跌算进去。
     # 老库补出来是 NULL，下一轮报价采集就会填上，在那之前按老逻辑走。
     _ensure_column(inspector, "fund_stock_quotes", "trade_date", "trade_date VARCHAR(10)")

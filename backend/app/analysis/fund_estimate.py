@@ -148,6 +148,7 @@ def summarize_fund(
     # 货币基金按 1.0000 计净值，接口给的那个数是万份收益，只用来展示
     nav_value = 1.0 if cash_fund else raw_nav
     base = {
+        "asset_type": "fund",
         "code": favorite.code,
         "name": favorite.name,
         "fund_type": favorite.fund_type,
@@ -278,6 +279,48 @@ def summarize_fund(
         notes.append("%d 只持仓股没取到报价" % (len(rows) - len(priced)))
     base["message"] = "；".join(notes) or None
     return base
+
+
+def summarize_stock(favorite: FundFavorite, quote: Optional[FundStockQuote], today: Optional[datetime] = None) -> Dict:
+    """单只股票沿用基金卡片的字段，估值直接取实时价。"""
+    moment = today or now_local()
+    price = quote.price if quote else None
+    change = quote.change_pct if quote else None
+    position = _position(favorite.shares, favorite.cost_price, price, price)
+    if favorite.shares and price is not None and change is not None and change > -100:
+        position["today_pnl"] = round(favorite.shares * price * change / (100 + change), 2)
+    return {
+        "asset_type": "stock",
+        "code": favorite.code,
+        "name": favorite.name,
+        "fund_type": "股票",
+        "nav": price,
+        "nav_date": quote.trade_date if quote else None,
+        "nav_chg_pct": change,
+        "is_cash_fund": False,
+        "yield_10k": None,
+        **position,
+        "holdings_count": 1 if quote else 0,
+        "quoted_count": 1 if change is not None else 0,
+        "disclosed_pct": 100.0 if quote else None,
+        "covered_pct": 100.0 if quote else None,
+        "estimate_pct": change,
+        "conservative_pct": change,
+        "estimate_nav": price,
+        "report_date": None,
+        "report_label": None,
+        "report_age_days": None,
+        "stale": False,
+        "settled": False,
+        "confidence": "high" if change is not None else "low",
+        "lead_name": None,
+        "lead_contrib_pct": None,
+        "drag_name": None,
+        "drag_contrib_pct": None,
+        "as_of": quote.collected_at if quote else None,
+        "ready": change is not None,
+        "message": None if change is not None else "股票行情还没有报价，刷新一次",
+    }
 
 
 def exposure(db: Session, user_id: int) -> Dict:
@@ -440,17 +483,26 @@ def _load(db: Session, codes: List[str]):
 
 def list_funds(db: Session, user_id: int) -> Dict:
     favorites = list_favorites(db, user_id)
-    codes = [row.code for row in favorites]
+    fund_favorites = [row for row in favorites if row.asset_type != "stock"]
+    stock_favorites = [row for row in favorites if row.asset_type == "stock"]
+    codes = [row.code for row in fund_favorites]
     holdings, quotes, navs = _load(db, codes)
+    stock_secids = [row.secid for row in stock_favorites if row.secid]
+    stock_quotes = {
+        row.secid: row
+        for row in db.scalars(select(FundStockQuote).where(FundStockQuote.secid.in_(stock_secids))).all()
+    } if stock_secids else {}
     moment = now_local()
     items = []
-    for favorite in favorites:
+    for favorite in fund_favorites:
         summary = summarize_fund(
             favorite, holdings.get(favorite.code) or [], quotes, navs.get(favorite.code), moment
         )
         # 列表页不带逐只持仓，详情页才给
         summary.pop("holdings", None)
         items.append(summary)
+    for favorite in stock_favorites:
+        items.append(summarize_stock(favorite, stock_quotes.get(favorite.secid), moment))
     return {"session": session_label(moment), "items": items}
 
 
@@ -458,6 +510,17 @@ def fund_detail(db: Session, user_id: int, code: str) -> Dict:
     favorite = get_favorite(db, user_id, code)
     if not favorite:
         return {"ready": False, "message": "这只基金还没收藏", "session": session_label()}
+    if favorite.asset_type == "stock":
+        quote = db.get(FundStockQuote, favorite.secid) if favorite.secid else None
+        summary = summarize_stock(favorite, quote, now_local())
+        rows = []
+        if quote:
+            rows = [{"secid": quote.secid, "code": favorite.code, "name": favorite.name,
+                     "market": market_label(quote.market), "weight_pct": 100.0, "rank": 1,
+                     "price": quote.price, "change_pct": quote.change_pct,
+                     "contrib_pct": quote.change_pct, "quoted": quote.change_pct is not None}]
+        return {"ready": summary["ready"], "message": summary["message"], "session": session_label(),
+                "fund": summary, "holdings": rows}
     holdings, quotes, navs = _load(db, [code])
     summary = summarize_fund(favorite, holdings.get(code) or [], quotes, navs.get(code), now_local())
     rows = summary.pop("holdings", [])

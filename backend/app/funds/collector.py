@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from ..models import FundFavorite, FundHolding, FundNav, FundStockQuote
 from ..timeutil import now_local
 from . import sources
-from .favorites import list_codes
+from .favorites import list_codes, list_stock_favorites
 
 logger = logging.getLogger("mygold.funds")
 
@@ -93,11 +93,16 @@ def upsert_stock_quotes(db: Session, quotes: List[Dict]) -> int:
 
 def held_secids(db: Session) -> List[str]:
     codes = list_codes(db)
-    if not codes:
-        return []
-    return list(
-        db.scalars(select(FundHolding.secid).where(FundHolding.fund_code.in_(codes)).distinct()).all()
-    )
+    fund_secids = []
+    if codes:
+        fund_secids = list(
+            db.scalars(select(FundHolding.secid).where(FundHolding.fund_code.in_(codes)).distinct()).all()
+        )
+    return sorted(set(fund_secids + favorite_stock_secids(db)))
+
+
+def favorite_stock_secids(db: Session) -> List[str]:
+    return [row.secid for row in list_stock_favorites(db) if row.secid]
 
 
 def collect_fund_holdings(db: Session) -> Dict:
@@ -152,7 +157,7 @@ def collect_fund_navs(db: Session) -> Dict:
 
 
 def collect_fund_quotes(db: Session) -> Dict:
-    secids = held_secids(db)
+    secids = sorted(set(held_secids(db) + favorite_stock_secids(db)))
     if not secids:
         return {"ok": True, "quotes": 0, "message": "没有持仓股要刷"}
     quotes = sources.fetch_stock_quotes(secids)
@@ -164,6 +169,14 @@ def sync_fund(db: Session, code: str) -> Dict:
     """新收藏一只基金时立刻补齐持仓、净值和报价，省得等定时任务。"""
     result = {"holdings": 0, "navs": 0, "quotes": 0}
     messages: List[str] = []
+    favorite = db.scalar(select(FundFavorite).where(FundFavorite.code == code, FundFavorite.asset_type == "stock"))
+    if favorite:
+        try:
+            result["quotes"] = upsert_stock_quotes(db, sources.fetch_stock_quotes([favorite.secid])) if favorite.secid else 0
+        except Exception as exc:
+            db.rollback()
+            result["message"] = "报价没取到：%s" % exc
+        return result
     try:
         parsed = sources.fetch_holdings(code)
         result["holdings"] = upsert_holdings(db, code, parsed["holdings"])

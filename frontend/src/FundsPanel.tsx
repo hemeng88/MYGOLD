@@ -284,7 +284,7 @@ export function FundsPanel() {
     <Paper className="glass" p="md">
       <Group justify="space-between" mb="sm" wrap="wrap" gap="sm" align="flex-end">
         <div style={{ minWidth: 0, flex: "1 1 160px" }}>
-          <Text fw={600}>基金估值</Text>
+          <Text fw={600}>基金 / 股票估值</Text>
           <Text size="xs" c="dimmed" mt={4}>
             {list?.session || "读取时段中"} · 按公示仓位×持仓股涨幅估算
           </Text>
@@ -298,7 +298,7 @@ export function FundsPanel() {
             onChange={(value) => value && setSortBy(value as FundSort)}
             allowDeselect={false}
             comboboxProps={{ withinPortal: true }}
-            aria-label="基金排序方式"
+            aria-label="基金和股票排序方式"
           />
           <Button
             variant="light"
@@ -313,19 +313,19 @@ export function FundsPanel() {
         </Group>
       </Group>
 
-      <Text fw={600} size="sm" mb={4}>添加基金</Text>
-      <Text size="xs" c="dimmed" mb="xs">搜索代码或名称，在结果中点击“添加”。已有基金可点击“编辑持仓”修改份额和成本价。</Text>
+      <Text fw={600} size="sm" mb={4}>添加基金或股票</Text>
+      <Text size="xs" c="dimmed" mb="xs">搜索代码或名称，在结果中点击“添加”。股票会按实时行情计算涨跌，也可以填写持仓股数和成本价。</Text>
       <Group gap="xs" mb="sm" wrap="nowrap">
         <TextInput
           style={{ flex: 1 }}
           size="sm"
-          placeholder="基金代码或名称，例如 161725 / 白酒"
+          placeholder="基金或股票代码/名称，例如 161725 / 贵州茅台"
           value={keyword}
           onChange={(event) => setKeyword(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") onSearch();
           }}
-          aria-label="搜索基金"
+          aria-label="搜索基金或股票"
         />
         <Button
           variant="light"
@@ -398,7 +398,7 @@ export function FundsPanel() {
         <Stack gap={6} mb="sm">
           {results.length === 0 ? (
             <Text size="xs" c="dimmed">
-              没搜到基金，换个代码或名称
+              没搜到基金或股票，换个代码或名称
             </Text>
           ) : null}
           {results.map((row) => (
@@ -410,8 +410,8 @@ export function FundsPanel() {
                   </Text>
                   <Text size="xs" c="dimmed">
                     {row.code}
-                    {row.fund_type ? ` · ${row.fund_type}` : ""}
-                    {row.nav != null ? ` · 净值${fmt(row.nav, 4)}` : ""}
+                    {row.asset_type === "stock" ? " · 股票" : row.fund_type ? ` · ${row.fund_type}` : ""}
+                    {row.nav != null ? ` · ${row.asset_type === "stock" ? "现价" : "净值"}${fmt(row.nav, row.asset_type === "stock" ? 2 : 4)}` : ""}
                   </Text>
                 </div>
                 {row.favorited ? (
@@ -453,7 +453,7 @@ export function FundsPanel() {
         <Stack gap={8}>
           {items.length === 0 ? (
             <Text ta="center" c="dimmed" py="sm" size="sm">
-              还没收藏基金。上面搜一只，会用它公示的重仓股实时估算涨跌。
+              还没收藏基金或股票。上面搜索后添加，基金按公示重仓估值，股票按实时行情估值。
             </Text>
           ) : null}
           {sortedItems.map((item) => (
@@ -472,7 +472,7 @@ export function FundsPanel() {
       <Modal
         opened={picked !== null}
         onClose={() => setPicked(null)}
-        title={`基金详情 · ${items.find((item) => item.code === picked)?.name || picked || ""}`}
+        title={`${items.find((item) => item.code === picked)?.asset_type === "stock" ? "股票详情" : "基金详情"} · ${items.find((item) => item.code === picked)?.name || picked || ""}`}
         size="lg"
         centered
       >
@@ -533,11 +533,13 @@ export function FundsPanel() {
 
           <Group justify="space-between" align="center">
             <Text size="xs" fw={600}>
-              公示重仓 {detail.holdings.length} 只
+              {detail.fund.asset_type === "stock" ? "实时行情" : `公示重仓 ${detail.holdings.length} 只`}
             </Text>
-            <Button variant="subtle" color="gold" size="compact-xs" loading={refreshing} onClick={() => onRefresh(true)}>
-              重拉季报持仓
-            </Button>
+            {detail.fund.asset_type === "fund" ? (
+              <Button variant="subtle" color="gold" size="compact-xs" loading={refreshing} onClick={() => onRefresh(true)}>
+                重拉季报持仓
+              </Button>
+            ) : null}
           </Group>
 
           <Stack gap={6}>
@@ -587,8 +589,8 @@ export function FundsPanel() {
           <SimpleGrid cols={2} spacing="xs">
             <NumberInput
               size="sm"
-              label="持有份额"
-              placeholder="例如 1000"
+              label={items.find((item) => item.code === editingCode)?.asset_type === "stock" ? "持有股数" : "持有份额"}
+              placeholder={items.find((item) => item.code === editingCode)?.asset_type === "stock" ? "例如 100" : "例如 1000"}
               min={0}
               step={100}
               decimalScale={4}
@@ -599,7 +601,7 @@ export function FundsPanel() {
             <NumberInput
               size="sm"
               label="成本价"
-              placeholder="元/份"
+              placeholder={items.find((item) => item.code === editingCode)?.asset_type === "stock" ? "元/股" : "元/份"}
               min={0}
               decimalScale={4}
               hideControls

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..models import FundFavorite, FundHolding, FundNav
 from ..timeutil import now_local
-from .sources import fetch_fund_info, search_funds
+from .sources import fetch_fund_info, search_assets
 
 _CODE = re.compile(r"^\d{6}$")
 
@@ -30,7 +30,11 @@ def normalize_code(code: str) -> str:
 
 def list_codes(db: Session) -> List[str]:
     """所有账号收藏过的基金代码，去重。采集任务用这个，与账号无关。"""
-    return list(db.scalars(select(FundFavorite.code).distinct()).all())
+    return list(db.scalars(select(FundFavorite.code).where(FundFavorite.asset_type == "fund").distinct()).all())
+
+
+def list_stock_favorites(db: Session) -> List[FundFavorite]:
+    return list(db.scalars(select(FundFavorite).where(FundFavorite.asset_type == "stock")).all())
 
 
 def list_codes_of(db: Session, user_id: int) -> List[str]:
@@ -62,7 +66,7 @@ def get_favorite(db: Session, user_id: int, code: str) -> Optional[FundFavorite]
 def _lookup_name(code: str) -> tuple[Optional[str], Optional[str]]:
     """搜索接口同时给名称和基金类型，取不到再退回净值接口只拿名称。"""
     try:
-        for row in search_funds(code, limit=5):
+        for row in search_assets(code, limit=8):
             if row["code"] == code and row.get("name"):
                 return row["name"], row.get("fund_type")
     except Exception:
@@ -81,15 +85,22 @@ def add_favorite(db: Session, user_id: int, code: str) -> FundFavorite:
     existing = get_favorite(db, user_id, cleaned)
     if existing:
         return existing
-    name, fund_type = _lookup_name(cleaned)
+    asset = next((row for row in search_assets(cleaned, limit=8) if row["code"] == cleaned), None)
+    if asset:
+        name, fund_type = asset.get("name"), asset.get("fund_type")
+    else:
+        name, fund_type = _lookup_name(cleaned)
     if not name:
-        raise ValueError("查不到这只基金，确认下代码是不是对的")
+        raise ValueError("查不到这只基金或股票，确认下代码是不是对的")
     top = db.scalar(select(func.max(FundFavorite.sort_order)).where(FundFavorite.user_id == user_id)) or 0
     row = FundFavorite(
         user_id=user_id,
         code=cleaned,
         name=name,
         fund_type=fund_type,
+        asset_type=(asset or {}).get("asset_type", "fund"),
+        secid=(asset or {}).get("secid"),
+        market=(asset or {}).get("market"),
         sort_order=int(top) + 1,
         added_at=now_local(),
     )

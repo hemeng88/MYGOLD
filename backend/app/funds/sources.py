@@ -255,6 +255,81 @@ def search_funds(keyword: str, limit: int = 12) -> List[Dict]:
     return out
 
 
+def _stock_secid(code: str) -> Optional[str]:
+    """把 A 股代码映射成东方财富 secid。搜索接口返回的市场字段优先使用。"""
+    code = str(code or "").strip()
+    if len(code) != 6 or not code.isdigit():
+        return None
+    if code.startswith(("6", "68")):
+        return "1." + code
+    if code.startswith(("0", "2", "3", "4", "8")):
+        return "0." + code
+    return None
+
+
+def search_stocks(keyword: str, limit: int = 12) -> List[Dict]:
+    """按代码或名称搜索 A 股，兼容东方财富 suggest 接口的几种返回形态。"""
+    query = (keyword or "").strip()
+    if not query:
+        return []
+    url = "https://searchapi.eastmoney.com/api/suggest/get"
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True) as client:
+        response = client.get(
+            url,
+            params={"input": query, "type": 14, "token": "", "count": limit},
+            headers=EM_QUOTE_HEADERS,
+        )
+        response.raise_for_status()
+    payload = response.json() or {}
+    rows = payload.get("QuotationCodeTable", {}).get("Data") or payload.get("Data") or []
+    out: List[Dict] = []
+    for row in rows:
+        code = str(row.get("Code") or row.get("SecurityCode") or row.get("SECURITY_CODE") or "").strip()
+        secid = str(row.get("QuoteID") or row.get("SecID") or row.get("secid") or "").strip()
+        if not secid:
+            secid = _stock_secid(code) or ""
+        if not secid or "." not in secid or len(code) != 6 or not code.isdigit():
+            continue
+        market, _, sec_code = secid.partition(".")
+        if sec_code != code:
+            continue
+        name = str(row.get("Name") or row.get("SecurityName") or row.get("SECURITY_NAME_ABBR") or "").strip()
+        if not name:
+            continue
+        out.append({"code": code, "name": name, "fund_type": None, "nav": None, "nav_date": None,
+                    "asset_type": "stock", "secid": secid, "market": market})
+        if len(out) >= limit:
+            break
+    # 代码搜索时接口偶尔不给结果，仍允许直接输入 A 股代码收藏。
+    if not out and query.isdigit() and len(query) == 6:
+        secid = _stock_secid(query)
+        if secid:
+            quotes = fetch_stock_quotes([secid])
+            if quotes:
+                row = quotes[0]
+                out.append({"code": query, "name": row.get("name") or query, "fund_type": None,
+                            "nav": row.get("price"), "nav_date": row.get("trade_date"),
+                            "asset_type": "stock", "secid": secid, "market": secid.split(".")[0]})
+    return out
+
+
+def search_assets(keyword: str, limit: int = 12) -> List[Dict]:
+    """基金和股票统一搜索，基金优先，股票补充。"""
+    try:
+        funds = search_funds(keyword, limit=limit)
+    except Exception:
+        funds = []
+    for row in funds:
+        row.update({"asset_type": "fund", "secid": None, "market": None})
+    if len(funds) >= limit:
+        return funds
+    try:
+        stocks = search_stocks(keyword, limit=limit - len(funds))
+    except Exception:
+        stocks = []
+    return funds + stocks
+
+
 def _sina_code(secid: str) -> Optional[str]:
     """secid -> 新浪代码。新浪只兜底 A 股和港股，美股先不管。"""
     market, _, code = str(secid).partition(".")

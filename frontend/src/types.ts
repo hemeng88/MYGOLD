@@ -12,6 +12,7 @@ export interface FundHoldingItem {
 }
 
 export interface FundItem {
+  asset_type: "fund" | "stock";
   code: string;
   name: string;
   fund_type: string | null;
@@ -71,6 +72,9 @@ export interface FundFavorite {
   shares: number | null;
   cost_price: number | null;
   added_at: string;
+  asset_type: "fund" | "stock";
+  secid: string | null;
+  market: string | null;
 }
 
 export interface FundSearchItem {
@@ -80,6 +84,9 @@ export interface FundSearchItem {
   nav: number | null;
   nav_date: string | null;
   favorited: boolean;
+  asset_type: "fund" | "stock";
+  secid: string | null;
+  market: string | null;
 }
 
 export interface FundRefreshResult {

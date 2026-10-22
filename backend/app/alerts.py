@@ -26,7 +26,12 @@ async def check_fund_alerts(db: Session) -> int:
         return 0
     favorites = list(
         db.scalars(
-            select(FundFavorite).where(FundFavorite.user_id.is_not(None), FundFavorite.shares.is_not(None), FundFavorite.shares > 0)
+            select(FundFavorite).where(
+                FundFavorite.user_id.is_not(None),
+                FundFavorite.asset_type == "fund",
+                FundFavorite.shares.is_not(None),
+                FundFavorite.shares > 0,
+            )
         ).all()
     )
     if not favorites:

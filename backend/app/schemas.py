@@ -18,6 +18,7 @@ class FundHoldingItem(BaseModel):
 
 
 class FundItem(BaseModel):
+    asset_type: str = "fund"
     code: str
     name: str
     fund_type: Optional[str] = None
@@ -80,6 +81,9 @@ class FundFavoriteOut(BaseModel):
     code: str
     name: str
     fund_type: Optional[str] = None
+    asset_type: str = "fund"
+    secid: Optional[str] = None
+    market: Optional[str] = None
     shares: Optional[float] = None
     cost_price: Optional[float] = None
     added_at: datetime
@@ -99,6 +103,9 @@ class FundSearchItem(BaseModel):
     nav: Optional[float] = None
     nav_date: Optional[str] = None
     favorited: bool = False
+    asset_type: str = "fund"
+    secid: Optional[str] = None
+    market: Optional[str] = None
 
 
 class FundRefreshResult(BaseModel):
