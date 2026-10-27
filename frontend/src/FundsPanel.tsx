@@ -127,7 +127,7 @@ export function FundsPanel() {
       window.dispatchEvent(new Event(FUNDS_CHANGED_EVENT));
       notifications.show({
         color: result.ok ? "teal" : "yellow",
-        title: result.ok ? "基金估值已更新" : "只更新了一部分",
+        title: result.ok ? (includeHoldings ? "全部季报持仓刷新已完成" : "基金 / 股票行情已更新") : "只更新了一部分",
         message: result.message,
       });
     } catch (err) {
@@ -315,6 +315,22 @@ export function FundsPanel() {
             刷新
           </Button>
         </Group>
+      </Group>
+
+      <Group gap="xs" mb="sm" wrap="wrap">
+        <Button
+          variant="light"
+          color="gold"
+          size="sm"
+          loading={refreshing}
+          onClick={() => onRefresh(true)}
+          leftSection={<IconRefresh size={14} />}
+        >
+          重拉全部季报持仓
+        </Button>
+        <Text size="xs" c="dimmed">
+          一次更新所有收藏基金的公示持仓、净值和行情，可能需要一些时间。
+        </Text>
       </Group>
 
       <Text fw={600} size="sm" mb={4}>添加基金或股票</Text>
@@ -539,11 +555,6 @@ export function FundsPanel() {
             <Text size="xs" fw={600}>
               {detail.fund.asset_type === "stock" ? "实时行情" : `公示重仓 ${detail.holdings.length} 只`}
             </Text>
-            {detail.fund.asset_type === "fund" ? (
-              <Button variant="subtle" color="gold" size="compact-xs" loading={refreshing} onClick={() => onRefresh(true)}>
-                重拉季报持仓
-              </Button>
-            ) : null}
           </Group>
 
           <Stack gap={6}>
