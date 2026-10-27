@@ -87,6 +87,12 @@ def ensure_schema():
     _ensure_column(inspector, "fund_stock_quotes", "trade_date", "trade_date VARCHAR(10)")
     # 补完列再整表重建，保证老列都能搬过去
     _migrate_fund_favorites_to_users()
+    # 保留旧股票的持仓，只将标识升级为带市场代码，与同号基金区分。
+    with engine.begin() as conn:
+        conn.execute(text(
+            "UPDATE fund_favorites SET code = secid "
+            "WHERE asset_type = 'stock' AND secid IS NOT NULL AND code <> secid"
+        ))
     _drop_legacy_rank_holders()
 
 

@@ -283,20 +283,28 @@ def search_stocks(keyword: str, limit: int = 12) -> List[Dict]:
     payload = response.json() or {}
     rows = payload.get("QuotationCodeTable", {}).get("Data") or payload.get("Data") or []
     out: List[Dict] = []
+    seen = set()
     for row in rows:
         code = str(row.get("Code") or row.get("SecurityCode") or row.get("SECURITY_CODE") or "").strip()
         secid = str(row.get("QuoteID") or row.get("SecID") or row.get("secid") or "").strip()
-        if not secid:
-            secid = _stock_secid(code) or ""
+        if row.get("Classify") and row["Classify"] != "AStock":
+            continue
+        security_type = str(row.get("SecurityTypeName") or "")
+        if security_type and security_type not in {"沪A", "深A", "A股", "股票"}:
+            continue
         if not secid or "." not in secid or len(code) != 6 or not code.isdigit():
             continue
         market, _, sec_code = secid.partition(".")
-        if sec_code != code:
+        # 只接受匹配的沪深股票市场；不能把其它证券猜成 A 股。
+        if sec_code != code or secid != _stock_secid(code) or secid in seen:
+            continue
+        if query.isdigit() and len(query) == 6 and code != query:
             continue
         name = str(row.get("Name") or row.get("SecurityName") or row.get("SECURITY_NAME_ABBR") or "").strip()
         if not name:
             continue
-        out.append({"code": code, "name": name, "fund_type": None, "nav": None, "nav_date": None,
+        seen.add(secid)
+        out.append({"code": secid, "name": name, "fund_type": None, "nav": None, "nav_date": None,
                     "asset_type": "stock", "secid": secid, "market": market})
         if len(out) >= limit:
             break
@@ -307,7 +315,7 @@ def search_stocks(keyword: str, limit: int = 12) -> List[Dict]:
             quotes = fetch_stock_quotes([secid])
             if quotes:
                 row = quotes[0]
-                out.append({"code": query, "name": row.get("name") or query, "fund_type": None,
+                out.append({"code": secid, "name": row.get("name") or query, "fund_type": None,
                             "nav": row.get("price"), "nav_date": row.get("trade_date"),
                             "asset_type": "stock", "secid": secid, "market": secid.split(".")[0]})
     return out
@@ -321,13 +329,19 @@ def search_assets(keyword: str, limit: int = 12) -> List[Dict]:
         funds = []
     for row in funds:
         row.update({"asset_type": "fund", "secid": None, "market": None})
-    if len(funds) >= limit:
-        return funds
     try:
-        stocks = search_stocks(keyword, limit=limit - len(funds))
+        stocks = search_stocks(keyword, limit=limit)
     except Exception:
         stocks = []
-    return funds + stocks
+    # 股票使用带市场的标识，基金保持原代码，避免 000823 跨类型冲突。
+    merged = []
+    seen = set()
+    for row in stocks + funds:
+        if row["code"] in seen:
+            continue
+        seen.add(row["code"])
+        merged.append(row)
+    return merged[:limit]
 
 
 def _sina_code(secid: str) -> Optional[str]:

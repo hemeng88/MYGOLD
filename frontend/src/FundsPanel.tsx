@@ -25,6 +25,10 @@ function fmt(n: number | null | undefined, digits = 2) {
   return n.toFixed(digits);
 }
 
+function displayCode(code: string) {
+  return code.includes(".") ? code.split(".").slice(1).join(".") : code;
+}
+
 function signed(value: number | null | undefined, digits = 2) {
   if (value === null || value === undefined) return "—";
   return `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
@@ -409,7 +413,7 @@ export function FundsPanel() {
                     {row.name}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    {row.code}
+                    {displayCode(row.code)}
                     {row.asset_type === "stock" ? " · 股票" : row.fund_type ? ` · ${row.fund_type}` : ""}
                     {row.nav != null ? ` · ${row.asset_type === "stock" ? "现价" : "净值"}${fmt(row.nav, row.asset_type === "stock" ? 2 : 4)}` : ""}
                   </Text>
@@ -645,7 +649,7 @@ function FundRow({
             </Badge>
           </Group>
           <Text size="xs" c="dimmed" mt={4}>
-            {item.code}
+            {displayCode(item.code)}
             {item.covered_pct != null ? ` · 覆盖${fmt(item.covered_pct, 1)}%` : ""}
             {item.report_label ? ` · ${item.report_label}` : ""}
           </Text>

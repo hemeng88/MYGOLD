@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from ..models import FundFavorite, FundHolding, FundNav
 from ..timeutil import now_local
-from .sources import fetch_fund_info, search_assets
+from .sources import fetch_fund_info, search_funds, search_stocks
 
-_CODE = re.compile(r"^\d{6}$")
+_CODE = re.compile(r"^(?:[01]\.)?\d{6}$")
 
 
 def normalize_code(code: str) -> str:
@@ -66,7 +66,7 @@ def get_favorite(db: Session, user_id: int, code: str) -> Optional[FundFavorite]
 def _lookup_name(code: str) -> tuple[Optional[str], Optional[str]]:
     """搜索接口同时给名称和基金类型，取不到再退回净值接口只拿名称。"""
     try:
-        for row in search_assets(code, limit=8):
+        for row in search_funds(code, limit=8):
             if row["code"] == code and row.get("name"):
                 return row["name"], row.get("fund_type")
     except Exception:
@@ -85,11 +85,15 @@ def add_favorite(db: Session, user_id: int, code: str) -> FundFavorite:
     existing = get_favorite(db, user_id, cleaned)
     if existing:
         return existing
-    asset = next((row for row in search_assets(cleaned, limit=8) if row["code"] == cleaned), None)
+    is_stock = "." in cleaned
+    candidates = search_stocks(cleaned.split(".")[-1], limit=12) if is_stock else search_funds(cleaned, limit=8)
+    asset = next((row for row in candidates if row["code"] == cleaned), None)
     if asset:
         name, fund_type = asset.get("name"), asset.get("fund_type")
-    else:
+    elif not is_stock:
         name, fund_type = _lookup_name(cleaned)
+    else:
+        name, fund_type = None, None
     if not name:
         raise ValueError("查不到这只基金或股票，确认下代码是不是对的")
     top = db.scalar(select(func.max(FundFavorite.sort_order)).where(FundFavorite.user_id == user_id)) or 0
