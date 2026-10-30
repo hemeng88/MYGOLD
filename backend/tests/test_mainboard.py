@@ -45,6 +45,24 @@ class MainboardUniverseTests(unittest.TestCase):
         self.assertEqual(summary["window_end"], "2026-10-29")
         self.assertEqual(summary["last"], 9.0)
 
+    def test_period_windows(self):
+        from datetime import date, timedelta
+
+        start = date(2025, 10, 1)
+        bars = [((start + timedelta(days=i)).isoformat(), 10.0 + i) for i in range(260)]
+        self.assertEqual(len(universe.period_window(bars, "1m")), 22)
+        self.assertEqual(len(universe.period_window(bars, "6m")), 122)
+        self.assertEqual(len(universe.period_window(bars, "1y")), 244)
+        ytd = universe.period_window(bars, "ytd")
+        self.assertEqual(ytd[0][0], "2026-01-01")
+        stats = universe.period_stats(bars, "1m")
+        closes = [item[1] for item in bars[-22:]]
+        self.assertEqual(stats["avg"], round(sum(closes) / 22, 3))
+        self.assertEqual(stats["first"], closes[0])
+        self.assertEqual(set(universe.all_period_stats(bars)), {"1m", "3m", "6m", "ytd", "1y"})
+        # 只有 30 根时一年和半年都不出数，不拿短窗口冒充
+        self.assertEqual(set(universe.all_period_stats(bars[-30:])), {"1m", "ytd"})
+
 
 class MainboardCollectorTests(unittest.TestCase):
     def setUp(self):
@@ -95,6 +113,19 @@ class MainboardCollectorTests(unittest.TestCase):
         self.assertEqual(row["last"], 8.0)
         self.assertEqual(row["vs_avg_pct"], universe.vs_avg_pct(8.0, row["avg3m"]))
         self.assertEqual(row["lot_cost"], 800.0)
+
+        one_month = collector.list_mainboard(self.db, "1m")
+        self.assertEqual(one_month["period"], "1m")
+        self.assertEqual(one_month["items"][0]["avg"], 10.0)
+        self.assertEqual(one_month["items"][0]["period_change_pct"], -20.0)
+        self.assertEqual(collector.list_mainboard(self.db, "bogus")["period"], "3m")
+
+        index_bars = [("2026-07-%02d" % day, 3000.0 + day) for day in range(1, 23)]
+        detail = collector.mainboard_detail(self.db, "600519", "1m", index_loader=lambda symbol: index_bars)
+        self.assertEqual(detail["series"][-1], {"d": "2026-10-30", "c": 8.0})
+        self.assertEqual(len(detail["indexes"]), 3)
+        self.assertEqual(detail["indexes"][0]["name"], "上证指数")
+        self.assertIsNone(collector.mainboard_detail(self.db, "300750", "1m"))
 
     @patch("backend.app.stocks.collector.fetch_market_trade_date", return_value="2026-10-29")
     def test_empty_hs300_keeps_old_rows(self, _trade_date):

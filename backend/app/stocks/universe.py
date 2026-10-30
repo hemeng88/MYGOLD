@@ -17,7 +17,26 @@ from ..funds.sources import SINA_HEADERS, _num, _stock_secid, fetch_stock_quotes
 logger = logging.getLogger("mygold.stocks")
 
 KLINE_BARS = 66
-KLINE_FETCH = 70
+# 近一年约 244 个交易日，多拉一点留给停牌和节假日
+KLINE_FETCH = 260
+
+# 周期 → 交易日根数；ytd 按自然年切，不按根数
+PERIOD_BARS = {"1m": 22, "3m": 66, "6m": 122, "1y": 244}
+PERIODS = [
+    ("1m", "近1月"),
+    ("3m", "近3月"),
+    ("6m", "近6月"),
+    ("ytd", "今年来"),
+    ("1y", "近1年"),
+]
+PERIOD_LABELS = dict(PERIODS)
+DEFAULT_PERIOD = "3m"
+
+INDEXES = [
+    ("sh000001", "上证指数"),
+    ("sz399001", "深证成指"),
+    ("sh000300", "沪深300"),
+]
 # 日线停在十天前的，多半是合并、退市或代码作废，不当成可买样本
 STALE_DAYS = 10
 
@@ -195,6 +214,62 @@ def fetch_daily_closes(symbol: str) -> List[Tuple[str, float]]:
     return []
 
 
+def fetch_index_closes(symbol: str) -> List[Tuple[str, float]]:
+    """指数日线腾讯优先：新浪盘中没有当天那根，和个股接上的现价对不齐。"""
+    for loader in (_closes_tencent, _closes_sina):
+        try:
+            bars = loader(symbol)
+        except Exception:
+            logger.warning("%s 取指数 %s 日线失败", loader.__name__, symbol)
+            continue
+        if len(bars) >= 20:
+            return bars
+    return []
+
+
+def period_window(bars: Sequence[Tuple[str, float]], period: str) -> List[Tuple[str, float]]:
+    rows = list(bars)
+    if not rows:
+        return []
+    if period == "ytd":
+        start = rows[-1][0][:4] + "-01-01"
+        return [item for item in rows if item[0] >= start]
+    return rows[-PERIOD_BARS.get(period, KLINE_BARS):]
+
+
+def _min_bars(period: str) -> int:
+    # 凑不够八成根数就不出数，免得上市不满半年的票拿短窗口冒充「近1年」；
+    # 今年来在一月初可能只有几根，单独放宽
+    if period == "ytd":
+        return 3
+    return int(PERIOD_BARS.get(period, KLINE_BARS) * 0.8)
+
+
+def period_stats(bars: Sequence[Tuple[str, float]], period: str) -> Optional[Dict]:
+    window = period_window(bars, period)
+    if len(window) < _min_bars(period):
+        return None
+    closes = [item[1] for item in window]
+    return {
+        "avg": round(sum(closes) / len(closes), 3),
+        "high": max(closes),
+        "low": min(closes),
+        "first": closes[0],
+        "bars": len(window),
+        "start": window[0][0],
+        "end": window[-1][0],
+    }
+
+
+def all_period_stats(bars: Sequence[Tuple[str, float]]) -> Dict[str, Dict]:
+    out: Dict[str, Dict] = {}
+    for key, _label in PERIODS:
+        stats = period_stats(bars, key)
+        if stats is not None:
+            out[key] = stats
+    return out
+
+
 def summarize_klines(bars: Sequence[Tuple[str, float]], trade_date: Optional[str] = None) -> Optional[Dict]:
     if len(bars) < 20:
         return None
@@ -214,6 +289,8 @@ def summarize_klines(bars: Sequence[Tuple[str, float]], trade_date: Optional[str
         "window_start": window[0][0],
         "window_end": end,
         "lot_cost": lot_cost(last),
+        "periods": all_period_stats(bars),
+        "closes": [[day, close] for day, close in bars],
     }
 
 

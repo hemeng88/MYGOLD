@@ -119,7 +119,7 @@ async def job_monthly_fund_reminder() -> None:
 
 
 async def job_mainboard_quotes() -> None:
-    """开盘时段刷沪深300主板样本现价，三月均价跟着现价重算偏离。"""
+    """开盘时段刷沪深300主板样本现价，各周期均价偏离在列表接口里按现价现算。"""
     if not should_poll_quotes():
         return
     db = SessionLocal()
@@ -136,7 +136,7 @@ async def job_mainboard_quotes() -> None:
 
 
 async def job_mainboard_klines() -> None:
-    """收盘后重拉近三个月日线。名单和均价一天变一次。"""
+    """收盘后重拉近一年日线。名单和各周期均价一天变一次。"""
     db = SessionLocal()
     try:
         result = collect_mainboard_universe(db)
@@ -150,7 +150,7 @@ async def job_mainboard_klines() -> None:
 
 
 async def job_mainboard_bootstrap() -> None:
-    """库里还没有样本时启动补一刀，免得页面一直空着。"""
+    """库里还没有样本（或老库只有三月均价）时启动补一刀，免得页面一直空着。"""
     db = SessionLocal()
     try:
         if has_usable_rows(db):

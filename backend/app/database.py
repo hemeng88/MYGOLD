@@ -85,6 +85,9 @@ def ensure_schema():
     # 报价所属交易日，用来判断净值是否已经把这段涨跌算进去。
     # 老库补出来是 NULL，下一轮报价采集就会填上，在那之前按老逻辑走。
     _ensure_column(inspector, "fund_stock_quotes", "trade_date", "trade_date VARCHAR(10)")
+    # 主板多周期均价和走势；老库补出来是 NULL，页面会判成未就绪并自动重拉一年日线
+    _ensure_column(inspector, "mainboard_stocks", "closes_json", "closes_json TEXT")
+    _ensure_column(inspector, "mainboard_stocks", "periods_json", "periods_json TEXT")
     # 补完列再整表重建，保证老列都能搬过去
     _migrate_fund_favorites_to_users()
     # 保留旧股票的持仓，只将标识升级为带市场代码，与同号基金区分。

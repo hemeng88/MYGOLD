@@ -249,11 +249,61 @@ class MainboardItem(BaseModel):
     last: Optional[float] = None
     change_pct: Optional[float] = None
     avg3m: Optional[float] = None
+    avg: Optional[float] = None
     vs_avg_pct: Optional[float] = None
+    period_change_pct: Optional[float] = None
+    period_high: Optional[float] = None
+    period_low: Optional[float] = None
     lot_cost: Optional[float] = None
     bars: Optional[int] = None
     window_start: Optional[str] = None
     window_end: Optional[str] = None
+
+
+class MainboardPeriodOption(BaseModel):
+    value: str
+    label: str
+
+
+class MainboardPoint(BaseModel):
+    d: str
+    c: float
+
+
+class MainboardIndexTrend(BaseModel):
+    symbol: str
+    name: str
+    last: Optional[float] = None
+    change_pct: Optional[float] = None
+    series: List[MainboardPoint] = Field(default_factory=list)
+
+
+class MainboardPeriodStat(BaseModel):
+    value: str
+    label: str
+    avg: Optional[float] = None
+    change_pct: Optional[float] = None
+    vs_avg_pct: Optional[float] = None
+
+
+class MainboardDetailResponse(BaseModel):
+    code: str
+    name: str
+    period: str
+    period_label: str
+    last: Optional[float] = None
+    change_pct: Optional[float] = None
+    lot_cost: Optional[float] = None
+    avg: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    vs_avg_pct: Optional[float] = None
+    period_change_pct: Optional[float] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    series: List[MainboardPoint] = Field(default_factory=list)
+    indexes: List[MainboardIndexTrend] = Field(default_factory=list)
+    periods: List[MainboardPeriodStat] = Field(default_factory=list)
 
 
 class MainboardBlockedItem(BaseModel):
@@ -265,6 +315,9 @@ class MainboardBlockedItem(BaseModel):
 class MainboardResponse(BaseModel):
     session: str
     ready: bool = False
+    period: str = "3m"
+    period_label: str = "近3月"
+    periods: List[MainboardPeriodOption] = Field(default_factory=list)
     as_of: Optional[datetime] = None
     main_est: int = 0
     cyb: int = 0

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Callable, Dict, List
+import time
+from typing import Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -30,9 +32,18 @@ def _meta(db: Session) -> MainboardMeta:
 
 def has_usable_rows(db: Session) -> bool:
     return any(
-        row.avg3m
+        row.avg3m and row.periods_json
         for row in db.scalars(select(MainboardStock).where(MainboardStock.eligible == 1)).all()
     )
+
+
+def _load_json(text: Optional[str], default):
+    if not text:
+        return default
+    try:
+        return json.loads(text)
+    except ValueError:
+        return default
 
 
 def collect_universe(
@@ -83,6 +94,8 @@ def collect_universe(
             row.bars = None
             row.window_start = None
             row.window_end = None
+            row.closes_json = None
+            row.periods_json = None
             continue
         eligible += 1
         bars = fetch_klines(symbol)
@@ -96,6 +109,8 @@ def collect_universe(
         row.bars = summary["bars"]
         row.window_start = summary["window_start"]
         row.window_end = summary["window_end"]
+        row.closes_json = json.dumps(summary["closes"], separators=(",", ":"))
+        row.periods_json = json.dumps(summary["periods"], separators=(",", ":"))
         row.lot_cost = universe.lot_cost(row.last)
         row.kline_at = now
         usable += 1
@@ -116,7 +131,7 @@ def collect_universe(
     meta.blocked_count = blocked
     meta.usable_count = usable
     meta.klines_at = now
-    meta.message = "沪深300主板 %d 只有完整三月均价，拦截 %d 只，日线失败 %d 只" % (usable, blocked, errors)
+    meta.message = "沪深300主板 %d 只有近一年日线，拦截 %d 只，日线失败 %d 只" % (usable, blocked, errors)
     db.commit()
     logger.info("主板样本日线：%s", meta.message)
     return {
@@ -179,23 +194,67 @@ def refresh_mainboard(db: Session, include_klines: bool = False) -> Dict:
     }
 
 
-def list_mainboard(db: Session) -> Dict:
+def normalize_period(period: Optional[str]) -> str:
+    return period if period in universe.PERIOD_LABELS else universe.DEFAULT_PERIOD
+
+
+def _row_period(row: MainboardStock, period: str) -> Optional[Dict]:
+    stats = _load_json(row.periods_json, {}).get(period)
+    if stats is None and period == "3m" and row.avg3m is not None:
+        stats = {"avg": row.avg3m, "bars": row.bars, "start": row.window_start, "end": row.window_end}
+    return stats
+
+
+def _pct(now: Optional[float], base: Optional[float]) -> Optional[float]:
+    return universe.vs_avg_pct(now, base)
+
+
+def _item(row: MainboardStock, period: str) -> Dict:
+    stats = _row_period(row, period) or {}
+    avg = stats.get("avg")
+    return {
+        "code": row.code,
+        "name": row.name,
+        "secid": row.secid,
+        "last": row.last,
+        "change_pct": row.change_pct,
+        "avg3m": row.avg3m,
+        "avg": avg,
+        "vs_avg_pct": _pct(row.last, avg),
+        "period_change_pct": _pct(row.last, stats.get("first")),
+        "period_high": stats.get("high"),
+        "period_low": stats.get("low"),
+        "lot_cost": row.lot_cost,
+        "bars": stats.get("bars"),
+        "window_start": stats.get("start"),
+        "window_end": stats.get("end"),
+    }
+
+
+def list_mainboard(db: Session, period: Optional[str] = None) -> Dict:
+    period = normalize_period(period)
     meta = db.get(MainboardMeta, META_ID)
     rows = list(db.scalars(select(MainboardStock)).all())
     usable = [row for row in rows if row.eligible == 1 and row.avg3m is not None]
-    usable.sort(key=lambda row: (row.vs_avg_pct is None, row.vs_avg_pct if row.vs_avg_pct is not None else 0))
+    items = [_item(row, period) for row in usable]
+    items = [item for item in items if item["avg"] is not None]
+    items.sort(key=lambda item: (item["vs_avg_pct"] is None, item["vs_avg_pct"] if item["vs_avg_pct"] is not None else 0))
     blocked = [row for row in rows if row.eligible == 0]
-    vs_values = [row.vs_avg_pct for row in usable if row.vs_avg_pct is not None]
+    vs_values = [item["vs_avg_pct"] for item in items if item["vs_avg_pct"] is not None]
     below = sum(1 for value in vs_values if value < 0)
     expensive = sum(1 for row in usable if row.lot_cost and row.lot_cost >= 15000)
     as_of = None
     if meta is not None:
         stamps = [stamp for stamp in (meta.quotes_at, meta.klines_at) if stamp]
         as_of = max(stamps) if stamps else None
-    ready = bool(usable)
+    # 老库只有三月均价时也判成未就绪，让页面自动补拉一年日线
+    ready = bool(items) and has_usable_rows(db)
     return {
         "session": session_label(),
         "ready": ready,
+        "period": period,
+        "period_label": universe.PERIOD_LABELS[period],
+        "periods": [{"value": key, "label": label} for key, label in universe.PERIODS],
         "as_of": as_of,
         "main_est": meta.main_est if meta else 0,
         "cyb": meta.cyb if meta else 0,
@@ -203,35 +262,117 @@ def list_mainboard(db: Session) -> Dict:
         "hs300": meta.hs300_count if meta else 0,
         "eligible": meta.eligible_count if meta else 0,
         "blocked": meta.blocked_count if meta else 0,
-        "usable": len(usable),
+        "usable": len(items),
         "below": below,
         "mean_vs": round(sum(vs_values) / len(vs_values), 2) if vs_values else None,
         "expensive_lots": expensive,
-        "window_start": min((row.window_start for row in usable if row.window_start), default=None),
-        "window_end": max((row.window_end for row in usable if row.window_end), default=None),
+        "window_start": min((item["window_start"] for item in items if item["window_start"]), default=None),
+        "window_end": max((item["window_end"] for item in items if item["window_end"]), default=None),
         "quotes_at": meta.quotes_at if meta else None,
         "klines_at": meta.klines_at if meta else None,
-        "items": [
-            {
-                "code": row.code,
-                "name": row.name,
-                "secid": row.secid,
-                "last": row.last,
-                "change_pct": row.change_pct,
-                "avg3m": row.avg3m,
-                "vs_avg_pct": row.vs_avg_pct,
-                "lot_cost": row.lot_cost,
-                "bars": row.bars,
-                "window_start": row.window_start,
-                "window_end": row.window_end,
-            }
-            for row in usable
-        ],
+        "items": items,
         "blocked_items": [
             {"code": row.code, "name": row.name, "reason": row.block_reason or row.board}
             for row in sorted(blocked, key=lambda row: (row.block_reason or "", row.code))
         ],
         "message": None
         if ready
-        else (meta.message if meta and meta.message else "还没有样本，点刷新拉近三个月日线"),
+        else (meta.message if meta and meta.message else "还没有样本，点刷新拉近一年日线"),
+    }
+
+
+INDEX_TTL_SECONDS = 600
+_index_cache: Dict[str, Tuple[float, List[Tuple[str, float]]]] = {}
+
+
+def _index_bars(symbol: str, loader: Callable[[str], List]) -> List[Tuple[str, float]]:
+    """指数日线进程内缓存十分钟：详情是逐只点开的，不能每点一次就打一轮行情源。"""
+    cached = _index_cache.get(symbol)
+    if cached and time.time() - cached[0] < INDEX_TTL_SECONDS:
+        return cached[1]
+    try:
+        bars = [(day, float(close)) for day, close in loader(symbol)]
+    except Exception:
+        logger.warning("指数 %s 日线失败", symbol)
+        bars = []
+    if bars:
+        _index_cache[symbol] = (time.time(), bars)
+        return bars
+    return cached[1] if cached else []
+
+
+def _with_live_point(bars: List[Tuple[str, float]], trade_date: Optional[str], price: Optional[float]):
+    """日线要收盘后才有当天那根，盘中把现价接到末尾，走势才对得上列表里的现价。"""
+    if not bars or not trade_date or not price or trade_date <= bars[-1][0]:
+        return bars
+    return bars + [(trade_date, price)]
+
+
+def _series_out(window: List[Tuple[str, float]]) -> List[Dict]:
+    return [{"d": day, "c": round(close, 3)} for day, close in window]
+
+
+def mainboard_detail(
+    db: Session,
+    code: str,
+    period: Optional[str] = None,
+    index_loader: Callable[[str], List] = universe.fetch_index_closes,
+) -> Optional[Dict]:
+    period = normalize_period(period)
+    row = db.scalars(
+        select(MainboardStock).where(MainboardStock.code == code, MainboardStock.eligible == 1)
+    ).first()
+    if row is None:
+        return None
+    closes = [(day, float(close)) for day, close in _load_json(row.closes_json, [])]
+    bars = _with_live_point(closes, row.trade_date, row.last)
+    window = universe.period_window(bars, period)
+    start = window[0][0] if window else None
+
+    indexes = []
+    for symbol, name in universe.INDEXES:
+        index_bars = _index_bars(symbol, index_loader)
+        index_window = [item for item in index_bars if start and item[0] >= start]
+        indexes.append(
+            {
+                "symbol": symbol,
+                "name": name,
+                "last": index_window[-1][1] if index_window else None,
+                "change_pct": _pct(index_window[-1][1], index_window[0][1]) if index_window else None,
+                "series": _series_out(index_window),
+            }
+        )
+
+    periods = []
+    for key, label in universe.PERIODS:
+        stats = universe.period_stats(bars, key)
+        periods.append(
+            {
+                "value": key,
+                "label": label,
+                "avg": stats["avg"] if stats else None,
+                "change_pct": _pct(row.last, stats["first"]) if stats else None,
+                "vs_avg_pct": _pct(row.last, stats["avg"]) if stats else None,
+            }
+        )
+
+    current = universe.period_stats(bars, period) or {}
+    return {
+        "code": row.code,
+        "name": row.name,
+        "period": period,
+        "period_label": universe.PERIOD_LABELS[period],
+        "last": row.last,
+        "change_pct": row.change_pct,
+        "lot_cost": row.lot_cost,
+        "avg": current.get("avg"),
+        "high": current.get("high"),
+        "low": current.get("low"),
+        "vs_avg_pct": _pct(row.last, current.get("avg")),
+        "period_change_pct": _pct(row.last, current.get("first")),
+        "window_start": current.get("start"),
+        "window_end": current.get("end"),
+        "series": _series_out(window),
+        "indexes": indexes,
+        "periods": periods,
     }

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Float, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -233,3 +233,7 @@ class MainboardStock(Base):
     trade_date: Mapped[str] = mapped_column(String(10), nullable=True)
     quote_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     kline_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    # 近一年前复权收盘 [[日期, 收盘], ...]，详情走势和各周期均价都从这里算
+    closes_json: Mapped[str] = mapped_column(Text, nullable=True)
+    # {周期: {avg, high, low, first, bars, start, end}}
+    periods_json: Mapped[str] = mapped_column(Text, nullable=True)

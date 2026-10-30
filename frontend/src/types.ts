@@ -197,11 +197,58 @@ export interface MainboardItem {
   last: number | null;
   change_pct: number | null;
   avg3m: number | null;
+  avg: number | null;
   vs_avg_pct: number | null;
+  period_change_pct: number | null;
+  period_high: number | null;
+  period_low: number | null;
   lot_cost: number | null;
   bars: number | null;
   window_start: string | null;
   window_end: string | null;
+}
+
+export type MainboardPeriod = "1m" | "3m" | "6m" | "ytd" | "1y";
+
+export interface MainboardPoint {
+  d: string;
+  c: number;
+}
+
+export interface MainboardIndexTrend {
+  symbol: string;
+  name: string;
+  last: number | null;
+  change_pct: number | null;
+  series: MainboardPoint[];
+}
+
+export interface MainboardPeriodStat {
+  value: MainboardPeriod;
+  label: string;
+  avg: number | null;
+  change_pct: number | null;
+  vs_avg_pct: number | null;
+}
+
+export interface MainboardDetail {
+  code: string;
+  name: string;
+  period: MainboardPeriod;
+  period_label: string;
+  last: number | null;
+  change_pct: number | null;
+  lot_cost: number | null;
+  avg: number | null;
+  high: number | null;
+  low: number | null;
+  vs_avg_pct: number | null;
+  period_change_pct: number | null;
+  window_start: string | null;
+  window_end: string | null;
+  series: MainboardPoint[];
+  indexes: MainboardIndexTrend[];
+  periods: MainboardPeriodStat[];
 }
 
 export interface MainboardBlockedItem {
@@ -213,6 +260,9 @@ export interface MainboardBlockedItem {
 export interface MainboardList {
   session: string;
   ready: boolean;
+  period: MainboardPeriod;
+  period_label: string;
+  periods: { value: MainboardPeriod; label: string }[];
   as_of: string | null;
   main_est: number;
   cyb: number;

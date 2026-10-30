@@ -25,11 +25,12 @@ from ..schemas import (
     FundSearchItem,
     LoginIn,
     LoginOut,
+    MainboardDetailResponse,
     MainboardRefreshResult,
     MainboardResponse,
     MeOut,
 )
-from ..stocks.collector import list_mainboard, refresh_mainboard
+from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -174,14 +175,18 @@ def fund_refresh(
 
 
 @guarded.get("/stocks/mainboard", response_model=MainboardResponse)
-def stocks_mainboard(db: Session = Depends(get_db), _user: User = Depends(require_auth)):
-    """新开户可买主板样本：沪深300里的主板，现价对照近三个月均价。"""
-    return list_mainboard(db)
+def stocks_mainboard(
+    period: str = Query(default="3m", description="均价周期：1m / 3m / 6m / ytd / 1y"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_auth),
+):
+    """新开户可买主板样本：沪深300里的主板，现价对照所选周期均价。"""
+    return list_mainboard(db, period)
 
 
 @guarded.post("/stocks/mainboard/refresh", response_model=MainboardRefreshResult)
 def stocks_mainboard_refresh(
-    include_klines: bool = Query(default=False, description="是否重拉近三个月日线，日线一天变一次"),
+    include_klines: bool = Query(default=False, description="是否重拉近一年日线，日线一天变一次"),
     db: Session = Depends(get_db),
     _user: User = Depends(require_auth),
 ):
@@ -190,6 +195,20 @@ def stocks_mainboard_refresh(
     except Exception as exc:
         db.rollback()
         return {"ok": False, "quotes": 0, "klines": 0, "hs300": 0, "message": "主板样本刷新中断：%s" % exc}
+
+
+@guarded.get("/stocks/mainboard/{code}", response_model=MainboardDetailResponse)
+def stocks_mainboard_detail(
+    code: str,
+    period: str = Query(default="3m", description="走势周期：1m / 3m / 6m / ytd / 1y"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_auth),
+):
+    """单只主板股票的周期走势，附上证、深成、沪深300 同期走势。"""
+    detail = mainboard_detail(db, code, period)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="不在主板可买样本里")
+    return detail
 
 
 @guarded.get("/funds/{code}", response_model=FundDetailResponse)
