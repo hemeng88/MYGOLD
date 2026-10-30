@@ -318,8 +318,8 @@ body {
 
   .app-shell-mobile .feature-tabs .mantine-Tabs-tab {
     min-height: 38px;
-    padding-inline: 5px;
-    font-size: 11px;
+    padding-inline: 3px;
+    font-size: 10px;
   }
 
   .app-shell-mobile .feature-tabs .mantine-Tabs-tabSection {

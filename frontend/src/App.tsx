@@ -2,13 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { ActionIcon, Box, Center, Group, Loader, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { Capacitor } from "@capacitor/core";
-import { IconChartLine, IconLogout, IconTrophy, IconWallet } from "@tabler/icons-react";
+import { IconBuildingBank, IconChartLine, IconLogout, IconTrophy, IconWallet } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api } from "./api";
 import { UNAUTHORIZED_EVENT, getToken } from "./auth";
 import { ExposurePanel } from "./ExposurePanel";
 import { FundRankPanel } from "./FundRankPanel";
 import { FundsPanel } from "./FundsPanel";
+import { MainboardPanel } from "./MainboardPanel";
 import { InstallHint } from "./InstallHint";
 import { LoginScreen } from "./LoginScreen";
 
@@ -83,7 +84,7 @@ export default function App() {
             MYGOLD
           </Title>
           <Text c="dimmed" size={isMobile ? "xs" : "sm"} mt={4}>
-            基金实时估值 · 公示仓位穿透持仓股
+            基金实时估值 · 可买主板三月均价
           </Text>
         </div>
         <Tooltip label="退出登录">
@@ -124,6 +125,9 @@ export default function App() {
             <Tabs.Panel value="rankings" pt="sm">
               <FundRankPanel />
             </Tabs.Panel>
+            <Tabs.Panel value="mainboard" pt="sm">
+              <MainboardPanel />
+            </Tabs.Panel>
 
             <Tabs.List grow aria-label="选择功能">
               <Tabs.Tab value="funds" leftSection={<IconWallet size={16} />}>
@@ -134,6 +138,9 @@ export default function App() {
               </Tabs.Tab>
               <Tabs.Tab value="rankings" leftSection={<IconTrophy size={16} />}>
                 涨幅榜
+              </Tabs.Tab>
+              <Tabs.Tab value="mainboard" leftSection={<IconBuildingBank size={16} />}>
+                主板
               </Tabs.Tab>
             </Tabs.List>
           </Tabs>

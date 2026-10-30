@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
-import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, Me } from "./types";
+import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, MainboardList, MainboardRefreshResult, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -101,4 +101,9 @@ export const api = {
     request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings", { signal }),
   refreshFundRankings: () =>
     request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
+  mainboard: (signal?: AbortSignal) => request<MainboardList>("/api/stocks/mainboard", { signal }),
+  refreshMainboard: (includeKlines = false) =>
+    request<MainboardRefreshResult>(`/api/stocks/mainboard/refresh?include_klines=${includeKlines}`, {
+      method: "POST",
+    }),
 };

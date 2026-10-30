@@ -190,6 +190,57 @@ export interface ExposureItem {
   funds: ExposureFundItem[];
 }
 
+export interface MainboardItem {
+  code: string;
+  name: string;
+  secid: string;
+  last: number | null;
+  change_pct: number | null;
+  avg3m: number | null;
+  vs_avg_pct: number | null;
+  lot_cost: number | null;
+  bars: number | null;
+  window_start: string | null;
+  window_end: string | null;
+}
+
+export interface MainboardBlockedItem {
+  code: string;
+  name: string;
+  reason: string;
+}
+
+export interface MainboardList {
+  session: string;
+  ready: boolean;
+  as_of: string | null;
+  main_est: number;
+  cyb: number;
+  kcb: number;
+  hs300: number;
+  eligible: number;
+  blocked: number;
+  usable: number;
+  below: number;
+  mean_vs: number | null;
+  expensive_lots: number;
+  window_start: string | null;
+  window_end: string | null;
+  quotes_at: string | null;
+  klines_at: string | null;
+  items: MainboardItem[];
+  blocked_items: MainboardBlockedItem[];
+  message: string | null;
+}
+
+export interface MainboardRefreshResult {
+  ok: boolean;
+  quotes: number;
+  klines: number;
+  hs300: number;
+  message: string;
+}
+
 export interface Exposure {
   session: string;
   as_of: string | null;

@@ -23,6 +23,11 @@ frontend/ios/App/App/public/
 frontend/ios/DerivedData/
 
 .DS_Store
+scripts/klines/
+scripts/hs300_*.json
+scripts/hs300_symbols.txt
+scripts/canvas_rows.json
+scripts/mainboard_3m.json
 *.log
 .idea/
 .vscode/

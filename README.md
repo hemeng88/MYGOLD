@@ -14,6 +14,7 @@
 - **盈亏金额**：填入持有份额和成本价，给出今日估算盈亏、累计盈亏和收益率，多只基金还有合计
 - **穿透到个股**：份额 × 净值 × 公示仓位，算出你实际持有多少钱的某只股票，同一只股票跨基金合并
 - **涨幅榜穿透**：把榜首基金的重仓汇总，看清当期领涨的是哪个方向
+- **可买主板**：新开户通常只能买沪深主板，页面列出沪深300里的主板样本，现价对照近三个月均价
 
 ## 估值是怎么算的
 
@@ -108,12 +109,14 @@ chmod +x start.sh
 | POST | `/api/funds/favorites` | 新增收藏 |
 | PUT | `/api/funds/favorites/{code}/position` | 存份额和成本价 |
 | GET | `/api/funds/rankings?period=` | 涨幅榜 + 穿透出的领涨方向 |
+| GET | `/api/stocks/mainboard` | 沪深300里可买主板的现价和三月均价 |
+| POST | `/api/stocks/mainboard/refresh` | 刷现价；`include_klines=true` 时重拉日线 |
 
 完整清单见 [部署说明.md](./部署说明.md) 第 6 节。
 
 ## 登录
 
-账号存在数据库 `users` 表，密码只存 PBKDF2-HMAC-SHA256 加盐哈希（26 万轮，标准库实现，没引入 bcrypt/passlib）。`POST /api/auth/login` 换取 HMAC 签名的令牌，之后请求带 `Authorization: Bearer <令牌>`。除 `/api/health` 外所有 `/api/funds*` 都需要登录。
+账号存在数据库 `users` 表，密码只存 PBKDF2-HMAC-SHA256 加盐哈希（26 万轮，标准库实现，没引入 bcrypt/passlib）。`POST /api/auth/login` 换取 HMAC 签名的令牌，之后请求带 `Authorization: Bearer <令牌>`。除 `/api/health` 外所有 `/api` 都需要登录。
 
 **没有注册和改密界面**（单人自用），**代码里也没有默认密码** —— 写进仓库的密码等于公开密码。空库首次启动时按 `.env` 里的 `MYGOLD_BOOTSTRAP_PASSWORD` 建号，没配就不建号、登录一直失败并在日志里提示。改密码走 `backend/scripts/set_password.py`。
 

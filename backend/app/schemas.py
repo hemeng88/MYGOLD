@@ -240,3 +240,54 @@ class ExposureResponse(BaseModel):
     items: List[ExposureItem] = Field(default_factory=list)
     ready: bool = False
     message: Optional[str] = None
+
+
+class MainboardItem(BaseModel):
+    code: str
+    name: str
+    secid: str
+    last: Optional[float] = None
+    change_pct: Optional[float] = None
+    avg3m: Optional[float] = None
+    vs_avg_pct: Optional[float] = None
+    lot_cost: Optional[float] = None
+    bars: Optional[int] = None
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+
+
+class MainboardBlockedItem(BaseModel):
+    code: str
+    name: str
+    reason: str
+
+
+class MainboardResponse(BaseModel):
+    session: str
+    ready: bool = False
+    as_of: Optional[datetime] = None
+    main_est: int = 0
+    cyb: int = 0
+    kcb: int = 0
+    hs300: int = 0
+    eligible: int = 0
+    blocked: int = 0
+    usable: int = 0
+    below: int = 0
+    mean_vs: Optional[float] = None
+    expensive_lots: int = 0
+    window_start: Optional[str] = None
+    window_end: Optional[str] = None
+    quotes_at: Optional[datetime] = None
+    klines_at: Optional[datetime] = None
+    items: List[MainboardItem] = Field(default_factory=list)
+    blocked_items: List[MainboardBlockedItem] = Field(default_factory=list)
+    message: Optional[str] = None
+
+
+class MainboardRefreshResult(BaseModel):
+    ok: bool
+    quotes: int = 0
+    klines: int = 0
+    hs300: int = 0
+    message: str

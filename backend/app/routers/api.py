@@ -25,8 +25,11 @@ from ..schemas import (
     FundSearchItem,
     LoginIn,
     LoginOut,
+    MainboardRefreshResult,
+    MainboardResponse,
     MeOut,
 )
+from ..stocks.collector import list_mainboard, refresh_mainboard
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -168,6 +171,25 @@ def fund_refresh(
             "quotes": 0,
             "message": "基金刷新中断：%s" % exc,
         }
+
+
+@guarded.get("/stocks/mainboard", response_model=MainboardResponse)
+def stocks_mainboard(db: Session = Depends(get_db), _user: User = Depends(require_auth)):
+    """新开户可买主板样本：沪深300里的主板，现价对照近三个月均价。"""
+    return list_mainboard(db)
+
+
+@guarded.post("/stocks/mainboard/refresh", response_model=MainboardRefreshResult)
+def stocks_mainboard_refresh(
+    include_klines: bool = Query(default=False, description="是否重拉近三个月日线，日线一天变一次"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_auth),
+):
+    try:
+        return refresh_mainboard(db, include_klines=include_klines)
+    except Exception as exc:
+        db.rollback()
+        return {"ok": False, "quotes": 0, "klines": 0, "hs300": 0, "message": "主板样本刷新中断：%s" % exc}
 
 
 @guarded.get("/funds/{code}", response_model=FundDetailResponse)

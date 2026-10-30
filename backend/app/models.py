@@ -187,3 +187,49 @@ class FundThemeHolder(Base):
     alt_codes: Mapped[str] = mapped_column(String(120), nullable=True)
     report_date: Mapped[str] = mapped_column(String(10), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class MainboardMeta(Base):
+    """沪深主板规模和沪深300样本的刷新状态，只留一行。"""
+
+    __tablename__ = "mainboard_meta"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    hs_a: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sh_a: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sz_a: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cyb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    kcb: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    main_est: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    hs300_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    eligible_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    blocked_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    usable_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quotes_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    klines_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    message: Mapped[str] = mapped_column(String(240), nullable=True)
+
+
+class MainboardStock(Base):
+    """沪深300成分的主板可买样本，以及买不了的拦截名单。"""
+
+    __tablename__ = "mainboard_stocks"
+
+    secid: Mapped[str] = mapped_column(String(24), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(48), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    board: Mapped[str] = mapped_column(String(16), nullable=False)
+    eligible: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    block_reason: Mapped[str] = mapped_column(String(16), nullable=True)
+    last: Mapped[float] = mapped_column(Float, nullable=True)
+    change_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    avg3m: Mapped[float] = mapped_column(Float, nullable=True)
+    vs_avg_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    bars: Mapped[int] = mapped_column(Integer, nullable=True)
+    window_start: Mapped[str] = mapped_column(String(10), nullable=True)
+    window_end: Mapped[str] = mapped_column(String(10), nullable=True)
+    lot_cost: Mapped[float] = mapped_column(Float, nullable=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    quote_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    kline_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)

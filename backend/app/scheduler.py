@@ -11,6 +11,9 @@ from .funds.rankings import collect_rankings
 from .models import FundRankEntry, FundThemeHolder
 from .market_session import should_poll_quotes
 from .notify import notify
+from .stocks.collector import collect_quotes as collect_mainboard_quotes
+from .stocks.collector import collect_universe as collect_mainboard_universe
+from .stocks.collector import has_usable_rows
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -115,6 +118,53 @@ async def job_monthly_fund_reminder() -> None:
         db.close()
 
 
+async def job_mainboard_quotes() -> None:
+    """开盘时段刷沪深300主板样本现价，三月均价跟着现价重算偏离。"""
+    if not should_poll_quotes():
+        return
+    db = SessionLocal()
+    try:
+        if not has_usable_rows(db):
+            return
+        result = collect_mainboard_quotes(db)
+        logger.info("主板样本现价：%s", result["message"])
+    except Exception:
+        logger.exception("主板样本现价采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_mainboard_klines() -> None:
+    """收盘后重拉近三个月日线。名单和均价一天变一次。"""
+    db = SessionLocal()
+    try:
+        result = collect_mainboard_universe(db)
+        logger.info("主板样本日线：%s", result["message"])
+        collect_mainboard_quotes(db)
+    except Exception:
+        logger.exception("主板样本日线采集失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
+async def job_mainboard_bootstrap() -> None:
+    """库里还没有样本时启动补一刀，免得页面一直空着。"""
+    db = SessionLocal()
+    try:
+        if has_usable_rows(db):
+            return
+        result = collect_mainboard_universe(db)
+        logger.info("主板样本启动补齐：%s", result["message"])
+        collect_mainboard_quotes(db)
+    except Exception:
+        logger.exception("主板样本启动补齐失败")
+        db.rollback()
+    finally:
+        db.close()
+
+
 async def job_fund_holdings() -> None:
     """季报持仓一个季度才换一次，每天收盘后对一遍就够，顺手更新官方净值。"""
     db = SessionLocal()
@@ -183,6 +233,32 @@ def start_scheduler() -> None:
         coalesce=True,
     )
     scheduler.add_job(
+        job_mainboard_quotes,
+        "interval",
+        seconds=settings.fund_quote_interval_seconds,
+        id="mainboard-quotes",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        job_mainboard_klines,
+        "cron",
+        hour=16,
+        minute=50,
+        id="mainboard-klines",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        job_mainboard_bootstrap,
+        "date",
+        id="mainboard-bootstrap",
+        replace_existing=True,
+        max_instances=1,
+    )
+    scheduler.add_job(
         job_monthly_fund_reminder,
         "cron",
         day_of_week="mon-fri",
@@ -195,7 +271,7 @@ def start_scheduler() -> None:
     )
     scheduler.start()
     logger.info(
-        "调度已启动：A股盘中每 %ss 刷持仓股报价，16:40 对季报持仓，21:30 拉涨幅榜，%02d:%02d 推送近月榜首",
+        "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，16:40 对季报持仓，16:50 重算主板三月均价，21:30 拉涨幅榜，%02d:%02d 推送近月榜首",
         settings.fund_quote_interval_seconds,
         settings.fund_monthly_reminder_hour,
         settings.fund_monthly_reminder_minute,
