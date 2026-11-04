@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..analysis.fund_estimate import exposure, fund_detail, list_funds
 from ..auth import login as auth_login
 from ..auth import require_auth
+from ..misc import countdowns as misc_countdowns
 from ..models import User
 from ..database import get_db
 from ..funds import favorites as fund_favorites
@@ -13,6 +14,8 @@ from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
 from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
 from ..funds.sources import search_assets
 from ..schemas import (
+    CountdownIn,
+    CountdownOut,
     ExposureResponse,
     FundDetailResponse,
     FundFavoriteIn,
@@ -209,6 +212,45 @@ def stocks_mainboard_detail(
     if detail is None:
         raise HTTPException(status_code=404, detail="不在主板可买样本里")
     return detail
+
+
+@guarded.get("/misc/countdowns", response_model=List[CountdownOut])
+def countdown_list(db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    return misc_countdowns.list_countdowns(db, user.id)
+
+
+@guarded.post("/misc/countdowns", response_model=CountdownOut)
+def countdown_add(payload: CountdownIn, db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    try:
+        return misc_countdowns.add_countdown(db, user.id, payload.model_dump())
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.put("/misc/countdowns/{item_id}", response_model=CountdownOut)
+def countdown_update(
+    item_id: int,
+    payload: CountdownIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_auth),
+):
+    try:
+        return misc_countdowns.update_countdown(db, user.id, item_id, payload.model_dump())
+    except KeyError:
+        raise HTTPException(status_code=404, detail="没有这条倒计时")
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.delete("/misc/countdowns/{item_id}")
+def countdown_remove(item_id: int, db: Session = Depends(get_db), user: User = Depends(require_auth)):
+    try:
+        misc_countdowns.delete_countdown(db, user.id, item_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="没有这条倒计时")
+    return {"ok": True}
 
 
 @guarded.get("/funds/{code}", response_model=FundDetailResponse)

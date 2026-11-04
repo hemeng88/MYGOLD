@@ -237,3 +237,22 @@ class MainboardStock(Base):
     closes_json: Mapped[str] = mapped_column(Text, nullable=True)
     # {周期: {avg, high, low, first, bars, start, end}}
     periods_json: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class CountdownItem(Base):
+    """账号私有的倒计时。单次日期或每月循环，可选到分钟。"""
+
+    __tablename__ = "countdown_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(40), nullable=False)
+    # once 单次，monthly 每月
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    # once 用，YYYY-MM-DD
+    date: Mapped[str] = mapped_column(String(10), nullable=True)
+    # monthly 用，1-31
+    day: Mapped[int] = mapped_column(Integer, nullable=True)
+    hour: Mapped[int] = mapped_column(Integer, nullable=True)
+    minute: Mapped[int] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

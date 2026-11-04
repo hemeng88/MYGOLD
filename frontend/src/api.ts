@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
-import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, Me } from "./types";
+import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -109,4 +109,18 @@ export const api = {
     request<MainboardRefreshResult>(`/api/stocks/mainboard/refresh?include_klines=${includeKlines}`, {
       method: "POST",
     }),
+  countdowns: (signal?: AbortSignal) => request<CountdownItem[]>("/api/misc/countdowns", { signal }),
+  addCountdown: (payload: CountdownPayload) =>
+    request<CountdownItem>("/api/misc/countdowns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  updateCountdown: (id: number, payload: CountdownPayload) =>
+    request<CountdownItem>(`/api/misc/countdowns/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  deleteCountdown: (id: number) => request<{ ok: boolean }>(`/api/misc/countdowns/${id}`, { method: "DELETE" }),
 };

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActionIcon, Box, Center, Group, Loader, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { Capacitor } from "@capacitor/core";
-import { IconBuildingBank, IconChartLine, IconLogout, IconTrophy, IconWallet } from "@tabler/icons-react";
+import { IconBuildingBank, IconCalendarEvent, IconChartLine, IconLogout, IconTrophy, IconWallet } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { api } from "./api";
 import { UNAUTHORIZED_EVENT, getToken } from "./auth";
@@ -10,6 +10,7 @@ import { ExposurePanel } from "./ExposurePanel";
 import { FundRankPanel } from "./FundRankPanel";
 import { FundsPanel } from "./FundsPanel";
 import { MainboardPanel } from "./MainboardPanel";
+import { MiscPanel } from "./MiscPanel";
 import { InstallHint } from "./InstallHint";
 import { LoginScreen } from "./LoginScreen";
 
@@ -128,6 +129,9 @@ export default function App() {
             <Tabs.Panel value="mainboard" pt="sm">
               <MainboardPanel />
             </Tabs.Panel>
+            <Tabs.Panel value="misc" pt="sm">
+              <MiscPanel />
+            </Tabs.Panel>
 
             <Tabs.List grow aria-label="选择功能">
               <Tabs.Tab value="funds" leftSection={<IconWallet size={16} />}>
@@ -141,6 +145,9 @@ export default function App() {
               </Tabs.Tab>
               <Tabs.Tab value="mainboard" leftSection={<IconBuildingBank size={16} />}>
                 主板
+              </Tabs.Tab>
+              <Tabs.Tab value="misc" leftSection={<IconCalendarEvent size={16} />}>
+                杂项
               </Tabs.Tab>
             </Tabs.List>
           </Tabs>

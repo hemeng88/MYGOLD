@@ -291,6 +291,34 @@ export interface MainboardRefreshResult {
   message: string;
 }
 
+export type CountdownKind = "once" | "monthly";
+export type CountdownStatus = "upcoming" | "today" | "past";
+
+export interface CountdownItem {
+  id: number;
+  title: string;
+  kind: CountdownKind;
+  date: string | null;
+  day: number | null;
+  hour: number | null;
+  minute: number | null;
+  rule_label: string;
+  next_date: string;
+  next_ts: number;
+  status: CountdownStatus;
+  remaining_seconds: number;
+  elapsed_days: number | null;
+}
+
+export interface CountdownPayload {
+  title: string;
+  kind: CountdownKind;
+  date: string | null;
+  day: number | null;
+  hour: number | null;
+  minute: number | null;
+}
+
 export interface Exposure {
   session: string;
   as_of: string | null;

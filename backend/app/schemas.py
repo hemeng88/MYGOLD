@@ -344,3 +344,28 @@ class MainboardRefreshResult(BaseModel):
     klines: int = 0
     hs300: int = 0
     message: str
+
+
+class CountdownIn(BaseModel):
+    title: str
+    kind: str
+    date: Optional[str] = None
+    day: Optional[int] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+
+
+class CountdownOut(BaseModel):
+    id: int
+    title: str
+    kind: str
+    date: Optional[str] = None
+    day: Optional[int] = None
+    hour: Optional[int] = None
+    minute: Optional[int] = None
+    rule_label: str
+    next_date: str
+    next_ts: int
+    status: str
+    remaining_seconds: int
+    elapsed_days: Optional[int] = None
