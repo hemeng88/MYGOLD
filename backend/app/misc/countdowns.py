@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy import select
@@ -18,10 +18,13 @@ from sqlalchemy.orm import Session
 
 from ..models import CountdownItem
 from ..timeutil import now_local, to_unix_seconds
+from .holidays import next_holiday
 
 KIND_ONCE = "once"
 KIND_MONTHLY = "monthly"
+KIND_HOLIDAY = "holiday"
 KINDS = (KIND_ONCE, KIND_MONTHLY)
+HOLIDAY_ITEM_ID = -1
 TITLE_MAX = 40
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MAX_ITEMS = 50
@@ -170,8 +173,30 @@ def _to_out(row: CountdownItem, now: datetime) -> dict:
         "day": row.day,
         "hour": row.hour,
         "minute": row.minute,
+        "builtin": False,
         "rule_label": rule_label(row.kind, row.date, row.day, row.hour, row.minute),
         **computed,
+    }
+
+
+def _holiday_item(now: datetime) -> Optional[dict]:
+    found = next_holiday(now.date())
+    if found is None:
+        return None
+    packed = _pack(_at(found["start"], None, None), found["status"], now)
+    start = found["start"].isoformat()
+    end = found["end"].isoformat()
+    return {
+        "id": HOLIDAY_ITEM_ID,
+        "title": found["name"],
+        "kind": KIND_HOLIDAY,
+        "date": start,
+        "day": None,
+        "hour": None,
+        "minute": None,
+        "builtin": True,
+        "rule_label": "法定假 · %s 至 %s · 共 %d 天" % (start, end, found["days"]),
+        **packed,
     }
 
 
@@ -193,6 +218,9 @@ def list_countdowns(db: Session, user_id: int, now: Optional[datetime] = None) -
         ).all()
     )
     items = [_to_out(row, now) for row in rows]
+    holiday = _holiday_item(now)
+    if holiday is not None:
+        items.append(holiday)
     items.sort(key=_sort_key)
     return items
 
@@ -219,6 +247,8 @@ def add_countdown(db: Session, user_id: int, payload: dict, now: Optional[dateti
 
 def update_countdown(db: Session, user_id: int, item_id: int, payload: dict, now: Optional[datetime] = None) -> dict:
     now = now or now_local()
+    if item_id == HOLIDAY_ITEM_ID:
+        raise ValueError("法定假期是自动生成的，不能改")
     row = db.scalar(select(CountdownItem).where(CountdownItem.id == item_id, CountdownItem.user_id == user_id))
     if row is None:
         raise KeyError(item_id)
@@ -238,6 +268,8 @@ def update_countdown(db: Session, user_id: int, item_id: int, payload: dict, now
 
 
 def delete_countdown(db: Session, user_id: int, item_id: int) -> None:
+    if item_id == HOLIDAY_ITEM_ID:
+        raise ValueError("法定假期是自动生成的，不能删")
     row = db.scalar(select(CountdownItem).where(CountdownItem.id == item_id, CountdownItem.user_id == user_id))
     if row is None:
         raise KeyError(item_id)

@@ -198,7 +198,7 @@ export function MiscPanel() {
         <div style={{ minWidth: 0, flex: "1 1 180px" }}>
           <Text fw={600}>倒计时</Text>
           <Text size="xs" c="dimmed" mt={4}>
-            单次日期倒数到那天，每月循环过了当天就翻下一轮。时刻可以不填。
+            单次日期倒数到那天，每月循环过了当天就翻下一轮。法定假期按国务院通知自动出现，不用自己加。
           </Text>
         </div>
         <Button size="sm" color="gold" leftSection={<IconPlus size={14} />} onClick={openNew}>
@@ -225,6 +225,10 @@ export function MiscPanel() {
         <Text size="sm" c="dimmed">还没有倒计时。游戏发售、发工资都可以加进来。</Text>
       ) : null}
 
+      {items && items.length > 0 && items.every((item) => item.builtin) ? (
+        <Text size="sm" c="dimmed" mb="sm">自己的倒计时可以点右上角添加。游戏发售、发工资都行。</Text>
+      ) : null}
+
       {headline ? (
         <Paper className="stat-tile" p="md" mb="sm">
           <Group justify="space-between" wrap="wrap" gap={6}>
@@ -233,7 +237,11 @@ export function MiscPanel() {
               <Text size="xs" c="dimmed">{headline.rule_label}</Text>
             </div>
             <Badge variant="light" color={headline.status === "past" ? "gray" : headline.status === "today" ? "gold" : "teal"}>
-              {headline.status === "past" ? `已过 ${headline.elapsed_days ?? 0} 天` : headline.status === "today" ? "就是今天" : `下次 ${headline.next_date}`}
+              {headline.status === "past"
+                ? `已过 ${headline.elapsed_days ?? 0} 天`
+                : headline.status === "today"
+                  ? (headline.kind === "holiday" ? "假期中" : "就是今天")
+                  : `下次 ${headline.next_date}`}
             </Badge>
           </Group>
           <div style={{ marginTop: 12 }}>
@@ -255,7 +263,9 @@ export function MiscPanel() {
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Group gap={6} wrap="wrap">
                   <Text fw={600}>{item.title}</Text>
-                  <Badge size="sm" variant="light" color="gray">{item.kind === "monthly" ? "每月" : "单次"}</Badge>
+                  <Badge size="sm" variant="light" color={item.kind === "holiday" ? "gold" : "gray"}>
+                    {item.kind === "holiday" ? "法定假" : item.kind === "monthly" ? "每月" : "单次"}
+                  </Badge>
                 </Group>
                 <Text size="xs" c="dimmed" mt={4}>{item.rule_label}</Text>
                 {item.status === "past" ? (
@@ -268,20 +278,22 @@ export function MiscPanel() {
                   </div>
                 )}
               </div>
-              <Group gap={4} wrap="nowrap">
-                <ActionIcon variant="subtle" color="gray" aria-label={`编辑${item.title}`} onClick={() => openEdit(item)}>
-                  <IconPencil size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  variant="subtle"
-                  color="red"
-                  aria-label={`删除${item.title}`}
-                  loading={busyId === item.id}
-                  onClick={() => void onDelete(item)}
-                >
-                  <IconTrash size={16} />
-                </ActionIcon>
-              </Group>
+              {item.builtin ? null : (
+                <Group gap={4} wrap="nowrap">
+                  <ActionIcon variant="subtle" color="gray" aria-label={`编辑${item.title}`} onClick={() => openEdit(item)}>
+                    <IconPencil size={16} />
+                  </ActionIcon>
+                  <ActionIcon
+                    variant="subtle"
+                    color="red"
+                    aria-label={`删除${item.title}`}
+                    loading={busyId === item.id}
+                    onClick={() => void onDelete(item)}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              )}
             </Group>
           </Paper>
         ))}

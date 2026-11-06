@@ -1,11 +1,12 @@
 import unittest
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from backend.app.database import Base
 from backend.app.misc import countdowns
+from backend.app.misc.holidays import next_holiday
 from backend.app.models import CountdownItem
 
 
@@ -89,8 +90,11 @@ class CountdownStoreTests(unittest.TestCase):
             self.db, 2, {"title": "别人的", "kind": "once", "date": "2026-11-05"}, self.now
         )
         mine = countdowns.list_countdowns(self.db, 1, self.now)
-        self.assertEqual([row["title"] for row in mine], ["发工资", "某游戏", "已过发售"])
-        self.assertEqual([row["title"] for row in countdowns.list_countdowns(self.db, 2, self.now)], ["别人的"])
+        self.assertEqual([row["title"] for row in mine], ["发工资", "某游戏", "元旦", "已过发售"])
+        self.assertEqual([row["title"] for row in countdowns.list_countdowns(self.db, 2, self.now)], ["别人的", "元旦"])
+        self.assertTrue(mine[2]["builtin"])
+        payday = next(row for row in mine if row["title"] == "发工资")
+        self.assertFalse(payday["builtin"])
 
         updated = countdowns.update_countdown(
             self.db, 1, mine[0]["id"], {"title": "发工资日", "kind": "monthly", "day": 10}, self.now
@@ -99,11 +103,61 @@ class CountdownStoreTests(unittest.TestCase):
         self.assertEqual(updated["next_date"], "2026-11-10")
 
         countdowns.delete_countdown(self.db, 1, mine[0]["id"])
-        self.assertEqual(len(countdowns.list_countdowns(self.db, 1, self.now)), 2)
+        left = countdowns.list_countdowns(self.db, 1, self.now)
+        self.assertEqual([row["title"] for row in left if not row["builtin"]], ["某游戏", "已过发售"])
+        self.assertEqual(len(left), 3)
         with self.assertRaises(KeyError):
             countdowns.delete_countdown(self.db, 2, mine[1]["id"])
         leftover = list(self.db.scalars(select(CountdownItem)).all())
         self.assertEqual(len(leftover), 3)
+        with self.assertRaises(ValueError):
+            countdowns.update_countdown(self.db, 1, countdowns.HOLIDAY_ITEM_ID, {"title": "x", "kind": "once", "date": "2027-01-01"}, self.now)
+        with self.assertRaises(ValueError):
+            countdowns.delete_countdown(self.db, 1, countdowns.HOLIDAY_ITEM_ID)
+
+
+class HolidayLookupTests(unittest.TestCase):
+    def test_next_holiday_skips_ended_blocks(self):
+        # 2026 国庆已过，下一次是 2027 元旦
+        found = next_holiday(date(2026, 11, 6))
+        self.assertEqual(found["name"], "元旦")
+        self.assertEqual(found["start"].isoformat(), "2027-01-01")
+        self.assertEqual(found["end"].isoformat(), "2027-01-03")
+        self.assertEqual(found["days"], 3)
+        self.assertEqual(found["status"], "upcoming")
+
+    def test_holiday_stays_current_until_last_rest_day(self):
+        mid = next_holiday(date(2026, 2, 20))
+        self.assertEqual(mid["name"], "春节")
+        self.assertEqual(mid["status"], "today")
+        last = next_holiday(date(2026, 2, 23))
+        self.assertEqual(last["status"], "today")
+        after = next_holiday(date(2026, 2, 24))
+        self.assertEqual(after["name"], "清明节")
+        self.assertEqual(after["start"].isoformat(), "2026-04-04")
+
+    def test_single_day_holiday_and_table_end(self):
+        duanwu = next_holiday(date(2027, 6, 9))
+        self.assertEqual(duanwu["name"], "端午节")
+        self.assertEqual(duanwu["days"], 1)
+        self.assertEqual(duanwu["status"], "today")
+        self.assertIsNone(next_holiday(date(2027, 10, 8)))
+
+    def test_list_injects_builtin_holiday(self):
+        engine = create_engine("sqlite://")
+        Base.metadata.create_all(engine)
+        db = Session(engine)
+        now = datetime(2026, 11, 6, 15, 0)
+        items = countdowns.list_countdowns(db, 1, now)
+        self.assertEqual(len(items), 1)
+        row = items[0]
+        self.assertTrue(row["builtin"])
+        self.assertEqual(row["kind"], "holiday")
+        self.assertEqual(row["title"], "元旦")
+        self.assertEqual(row["next_date"], "2027-01-01")
+        self.assertIn("共 3 天", row["rule_label"])
+        db.close()
+        engine.dispose()
 
 
 if __name__ == "__main__":

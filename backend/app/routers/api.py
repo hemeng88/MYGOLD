@@ -250,6 +250,8 @@ def countdown_remove(item_id: int, db: Session = Depends(get_db), user: User = D
         misc_countdowns.delete_countdown(db, user.id, item_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="没有这条倒计时")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
 
 

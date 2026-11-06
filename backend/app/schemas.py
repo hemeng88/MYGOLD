@@ -363,6 +363,7 @@ class CountdownOut(BaseModel):
     day: Optional[int] = None
     hour: Optional[int] = None
     minute: Optional[int] = None
+    builtin: bool = False
     rule_label: str
     next_date: str
     next_ts: int

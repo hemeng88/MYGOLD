@@ -291,7 +291,7 @@ export interface MainboardRefreshResult {
   message: string;
 }
 
-export type CountdownKind = "once" | "monthly";
+export type CountdownKind = "once" | "monthly" | "holiday";
 export type CountdownStatus = "upcoming" | "today" | "past";
 
 export interface CountdownItem {
@@ -302,6 +302,7 @@ export interface CountdownItem {
   day: number | null;
   hour: number | null;
   minute: number | null;
+  builtin: boolean;
   rule_label: string;
   next_date: string;
   next_ts: number;
