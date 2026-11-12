@@ -5,7 +5,7 @@
 对应仓库：[hemeng88/MYGOLD](https://github.com/hemeng88/MYGOLD)
 部署与运维见 [部署说明.md](./部署说明.md)。
 
-> 名字和域名（ohmygold.icu）是历史遗留。项目原本采集浙商积存金曲线，黄金相关功能已全部移除。
+> 名字和域名（ohmygold.icu）是历史遗留。项目原本采集浙商积存金曲线；黄金页面、持仓和分析已移除，现在只在每日持仓收盘播报里查询一次实时金价。
 
 ## 它做什么
 
@@ -40,7 +40,7 @@
 
 `估算净值 = 已公布净值 × (1 + 估算涨跌)` 只在净值还不含这段涨跌时成立。收盘后、周末、节假日行情接口**不会把涨跌幅清零**，而基金当晚 20-21 点公布当日净值 —— 两者一相乘就是把同一场行情算两遍。曾经的实际故障：周末和每天开盘前打开，今日估算盈亏和累计盈亏都多算一份（实测一只 5000 份的基金虚高 101 元）。
 
-修法是给每条报价记下它属于哪个交易日（`fund_stock_quotes.trade_date`），`nav_date >= trade_date` 时判定为已结算，估算相关的数字全部留空，累计盈亏退回按已公布净值算 —— 那本来就是准确值。下一个交易日开盘后自动恢复。
+修法是给每条报价记下它属于哪个交易日（`fund_stock_quotes.trade_date`）。`nav_date >= trade_date` 时判定为已结算，不再重复使用重仓股行情估算，改用基金官方日涨跌和官方净值；下一个交易日开盘后再自动回到穿透估算。
 
 交易日只能用**上证指数日 K**来定：行情快照里的时间字段（东财 `f86`/`f124`、腾讯第 30 段）实测都是服务器当前时间，收盘后照样往前跑；日 K 在非交易日不会多出一根，节假日也骗不过去。
 
@@ -83,7 +83,7 @@
 
 交易日同样不靠单家：上证指数日 K 按 **腾讯 → 新浪 → 东财** 三家取最大值。`push2his` 和 `push2` 一样会断连（实测连续 6 次全失败），而拿不到交易日就只能保守停掉估算，不能让核心功能取决于单个接口。
 
-季报持仓一个季度才变一次（每天 16:40 对一遍），持仓股报价才是盘中要一直刷的（每 60 秒，仅交易时段）。
+季报持仓一个季度才变一次（每天 16:40 对一遍），持仓股报价才是盘中要一直刷的（每 60 秒，仅交易时段）。交易日 16:10 会为收盘播报额外刷新一次数据库中所有实际持仓的行情，并查询一次浙商积存金实时价：京东金业接口为主源，GoldMonitor 为兜底。
 
 ## 本地启动
 
@@ -128,22 +128,43 @@ chmod +x start.sh
 
 已知短板：站点目前是明文 HTTP，密码和令牌明文传输；没有登录失败次数限制。详见 [部署说明.md](./部署说明.md) 第 6 节。
 
-## OpenClaw / 飞书提醒
+## OpenClaw / 飞书收盘播报
 
-后端可以把持仓基金的盘中估算涨跌转发给你的 OpenClaw 助手，再由 OpenClaw 投递到飞书。每分钟报价采集后检查一次；默认估算涨跌达到 **+1% 或 -1%** 时提醒；只要后续行情刷新仍达到阈值，就会继续提醒。只有填写了份额的基金会参与提醒。
+项目只向 OpenClaw 发送一种消息：**每个交易日 16:10 的持仓收盘播报**。此前的盘中 1% 阈值提醒、工作日早晨近月榜首提醒和采集失败告警均已停用，不再发飞书。
 
-在服务器 `.env` 中填写：
+播报在 A 股和港股都收盘后执行。发送前会刷新一次持仓行情，再从数据库 `fund_favorites` 读取指定账号**所有填写了份额和成本价的基金与股票**，不写死基金代码：
+
+```text
+每日持仓收盘播报
+交易日：2026-11-12
+整体当日收益率：+0.82%
+整体累计收益率：-2.35%
+实时金价：854.27 元/克（浙商积存金）
+```
+
+口径：
+
+- 整体当日收益率 = `Σ当日盈亏 ÷ Σ前一交易日市值`。
+- 整体累计收益率 = `Σ(当前市值 - 份额 × 成本价) ÷ Σ(份额 × 成本价)`。
+- 基金复用页面的穿透估值，直接持有的股票用收盘价；已公布官方净值时复用官方日涨跌。只有报价或官方净值日期等于播报交易日才计入当日收益，避免刷新失败时把昨天的涨跌冒充今天。某项缺行情或净值时不把它只塞进分母，并在消息末尾附上 `数据覆盖：当日 x/y 只，累计 x/y 只`。
+- 实时金价是浙商积存金人民币/克，京东金业为主源、GoldMonitor 兜底；两家都失败时仍发送持仓收益，金价显示“获取失败”。
+- 是否为交易日由上证指数日 K 判断，周末和法定休市日不发。
+
+服务器 `.env`：
 
 ```dotenv
 MYGOLD_OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/hooks/agent
 MYGOLD_OPENCLAW_WEBHOOK_TOKEN=OpenClaw生成的token
 MYGOLD_OPENCLAW_TARGET=飞书接收人的open_id
-MYGOLD_FUND_ALERT_THRESHOLD_PCT=1.0
+MYGOLD_OPENCLAW_REPORT_USERNAME=hemeng
+MYGOLD_PORTFOLIO_REPORT_HOUR=16
+MYGOLD_PORTFOLIO_REPORT_MINUTE=10
+MYGOLD_OPENCLAW_TIMEOUT_SECONDS=15
 ```
 
-项目向 `/hooks/agent` 发带 `Authorization: Bearer <token>` 的 `POST` JSON，并通过 `deliver=true`、`channel=feishu`、`to=<open_id>` 显式投递。先在 OpenClaw 开启 `hooks.enabled`、设置 `hooks.token` 和飞书接收目标，再配置这里的 URL、Token 和 Target。若 OpenClaw 和本项目在同一台服务器、但本项目运行在 Docker 中，URL 使用 `http://host.docker.internal:18789/hooks/agent`；如果 OpenClaw 运行在另一台机器，填它的反向代理或 Tailscale 地址。配置完成后执行 `sudo ./update.sh`。
+`MYGOLD_OPENCLAW_REPORT_USERNAME` 留空时沿用 `MYGOLD_BOOTSTRAP_USERNAME`。项目向 `/hooks/agent` 发带 `Authorization: Bearer <token>` 的 `POST` JSON，并通过 `deliver=true`、`channel=feishu`、`to=<open_id>` 显式投递。收益率由后端确定性计算，发给 OpenClaw 的提示要求原样转发，不让 agent 改写数字。
 
-阈值提醒首次以当天 0% 为基准，发送一次后改用“上次成功提醒时的估算涨跌”作为基准；例如阈值为 1%，从 +1.0% 提醒后，要到 +2.0% 或回落到 0% 才会再次提醒。实际行情按采样间隔检查，价格跳过 1% 时会在首次达到或超过 1% 时提醒。提醒基准保存在数据库，服务重启不会丢失。
+OpenClaw 和本项目在同一台服务器、但本项目运行在 Docker 中时，URL 使用 `http://host.docker.internal:18789/hooks/agent`；`docker-compose.yml` 已通过 `host.docker.internal:host-gateway` 打通容器到宿主机。
 
 ## 这不是投资建议
 

@@ -80,16 +80,22 @@ class Settings(BaseSettings):
 
     request_timeout_seconds: float = 15.0
 
-    # OpenClaw / 飞书提醒。留空 webhook 时不发送任何外部请求。
+    # 每个交易日收盘后的飞书持仓播报。留空 webhook 时不发送任何外部请求。
     openclaw_webhook_url: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_URL")
     openclaw_webhook_token: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_TOKEN")
     # /hooks/agent 显式投递目标，例如 Feishu open_id
     openclaw_target: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_TARGET")
-    fund_alert_threshold_pct: float = Field(default=1.0, validation_alias="MYGOLD_FUND_ALERT_THRESHOLD_PCT")
-    fund_alert_timeout_seconds: float = Field(default=8.0, validation_alias="MYGOLD_FUND_ALERT_TIMEOUT_SECONDS")
-    # 工作日早晨推送近一个月涨幅榜第一名，提醒用户自行定投
-    fund_monthly_reminder_hour: int = Field(default=9, validation_alias="MYGOLD_FUND_MONTHLY_REMINDER_HOUR")
-    fund_monthly_reminder_minute: int = Field(default=20, validation_alias="MYGOLD_FUND_MONTHLY_REMINDER_MINUTE")
+    # 默认读取初始账号；服务器有多个账号时必须明确指定播报谁的持仓。
+    openclaw_report_username: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_REPORT_USERNAME")
+    openclaw_timeout_seconds: float = Field(default=15.0, validation_alias="MYGOLD_OPENCLAW_TIMEOUT_SECONDS")
+    # 16:10 时 A 股和港股都已收盘。任务会先刷新数据库里全部实际持仓的报价。
+    portfolio_report_hour: int = Field(default=16, validation_alias="MYGOLD_PORTFOLIO_REPORT_HOUR")
+    portfolio_report_minute: int = Field(default=10, validation_alias="MYGOLD_PORTFOLIO_REPORT_MINUTE")
+
+    # 收盘播报中的浙商积存金实时价：京东金业主源、GoldMonitor 兜底。
+    gold_jd_product_sku: str = "1961543816"
+    gold_jd_latest_url: str = "https://api.jdjygold.com/gw2/generic/jrm/h5/m/stdLatestPrice"
+    gold_monitor_latest_url: str = "https://jin.20021002.xyz/api.php?type=zs"
 
 
 settings = Settings()

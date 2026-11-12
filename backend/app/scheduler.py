@@ -1,19 +1,21 @@
 import logging
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from sqlalchemy import select
 
-from .alerts import check_fund_alerts
+from .analysis.portfolio_summary import format_close_report, portfolio_summary
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
 from .funds.rankings import collect_rankings
-from .models import FundRankEntry, FundThemeHolder
+from .funds.sources import fetch_market_trade_date
+from .gold import fetch_gold_quote
 from .market_session import should_poll_quotes
 from .notify import notify
 from .stocks.collector import collect_quotes as collect_mainboard_quotes
 from .stocks.collector import collect_universe as collect_mainboard_universe
 from .stocks.collector import has_usable_rows
+from .timeutil import trade_date_today
+from .users import get_user
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -30,13 +32,6 @@ async def job_fund_quotes() -> None:
     except Exception:
         logger.exception("基金持仓股报价采集失败")
         db.rollback()
-        await notify("基金持仓股报价采集失败", level="error")
-    else:
-        try:
-            await check_fund_alerts(db)
-        except Exception:
-            # 提醒失败不能伪装成行情采集失败，也不能阻断下一轮报价。
-            logger.exception("基金阈值提醒检查失败")
     finally:
         db.close()
 
@@ -55,7 +50,6 @@ async def job_fund_navs() -> None:
     except Exception:
         logger.exception("开盘前基金净值刷新失败")
         db.rollback()
-        await notify("开盘前基金净值刷新失败", level="error")
     finally:
         db.close()
 
@@ -69,51 +63,60 @@ async def job_fund_rankings() -> None:
     except Exception:
         logger.exception("基金涨幅榜采集失败")
         db.rollback()
-        await notify("基金涨幅榜采集失败", level="error")
     finally:
         db.close()
 
 
-async def job_monthly_fund_reminder() -> None:
-    """工作日早晨提醒近一个月涨幅榜第一名，消息只提示，不自动交易。"""
+async def job_portfolio_close_report() -> None:
+    """交易日 16:10 刷新数据库全部实际持仓，给指定账号发一次整体收盘播报。"""
+    today = trade_date_today()
+    try:
+        market_trade_date = fetch_market_trade_date(max_age_seconds=0)
+    except Exception:
+        logger.exception("收盘播报无法确认交易日")
+        return
+    if market_trade_date != today:
+        logger.info("收盘播报跳过：%s 不是 A 股交易日（最近交易日 %s）", today, market_trade_date)
+        return
+
     db = SessionLocal()
     try:
-        top = db.scalar(
-            select(FundRankEntry)
-            .where(FundRankEntry.period == "1yzf", FundRankEntry.rank == 1)
-            .order_by(FundRankEntry.updated_at.desc())
-        )
-        theme_top = db.scalar(
-            select(FundThemeHolder)
-            .where(FundThemeHolder.period == "1yzf", FundThemeHolder.rank == 1)
-            .order_by(FundThemeHolder.updated_at.desc())
-        )
-        if top is None:
-            logger.info("近一个月涨幅榜提醒跳过：暂无榜单数据")
+        username = (settings.openclaw_report_username or settings.bootstrap_username).strip()
+        user = get_user(db, username)
+        if user is None:
+            logger.error("收盘播报跳过：数据库里没有账号 %s", username)
             return
-        lines = [
-            "【近一个月涨幅榜第一名】",
-            f"基金名称：{top.name}",
-            f"基金代码：{top.code}",
-            f"近一个月涨幅：{top.return_pct:+.2f}%",
-            f"净值日期：{top.nav_date or '暂无'}",
-        ]
-        if theme_top is not None:
-            lines.extend(
-                [
-                    "",
-                    "【近一个月主线押注最重】",
-                    f"基金名称：{theme_top.fund_name or '暂无'}",
-                    f"基金代码：{theme_top.fund_code}",
-                    f"主线仓位：{theme_top.theme_pct:.2f}%",
-                    f"命中主线股票：{theme_top.hit_count}/{theme_top.theme_stock_count} 只",
-                ]
-            )
-        lines.extend(["", "提醒：今天可关注是否按计划定投 500 元，请自行确认后操作。"])
-        body = "\n".join(lines)
-        await notify("近一个月涨幅榜第一名", body=body)
+
+        # 盘中轮询 15:10 已停。16:10 再拉一次，既拿 A 股收盘价，也拿港股收盘价；
+        # 采集范围来自所有账号数据库收藏，随后 summary 只读取指定账号。
+        try:
+            result = collect_fund_quotes(db)
+            logger.info("收盘播报前刷新持仓报价：%s", result["message"])
+        except Exception:
+            logger.exception("收盘播报前刷新持仓报价失败，使用库里最后一份报价")
+            db.rollback()
+
+        summary = portfolio_summary(db, user.id, trade_date=market_trade_date)
+        if not summary["position_count"]:
+            logger.info("收盘播报跳过：账号 %s 没有填写持仓", username)
+            return
+
+        gold_price = None
+        try:
+            gold_price = (await fetch_gold_quote()).price
+        except Exception:
+            # 金价失败不能吃掉整份持仓播报；正文会明确显示「获取失败」。
+            logger.exception("收盘播报实时金价获取失败")
+
+        body = format_close_report(summary, gold_price, market_trade_date)
+        sent = await notify("每日持仓收盘播报", body=body)
+        if sent:
+            logger.info("已发送 %s 的每日持仓收盘播报（%d 只）", username, summary["position_count"])
+        else:
+            logger.error("%s 的每日持仓收盘播报未发送成功", username)
     except Exception:
-        logger.exception("近一个月涨幅榜提醒失败")
+        logger.exception("每日持仓收盘播报生成失败")
+        db.rollback()
     finally:
         db.close()
 
@@ -174,14 +177,12 @@ async def job_fund_holdings() -> None:
     except Exception:
         logger.exception("基金持仓采集失败")
         db.rollback()
-        await notify("基金持仓采集失败", level="error")
     try:
         navs = collect_fund_navs(db)
         logger.info("基金净值：%s", navs["message"])
     except Exception:
         logger.exception("基金净值采集失败")
         db.rollback()
-        await notify("基金净值采集失败", level="error")
     finally:
         db.close()
 
@@ -259,22 +260,22 @@ def start_scheduler() -> None:
         max_instances=1,
     )
     scheduler.add_job(
-        job_monthly_fund_reminder,
+        job_portfolio_close_report,
         "cron",
         day_of_week="mon-fri",
-        hour=settings.fund_monthly_reminder_hour,
-        minute=settings.fund_monthly_reminder_minute,
-        id="fund-monthly-reminder",
+        hour=settings.portfolio_report_hour,
+        minute=settings.portfolio_report_minute,
+        id="portfolio-close-report",
         replace_existing=True,
         max_instances=1,
         coalesce=True,
     )
     scheduler.start()
     logger.info(
-        "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，16:40 对季报持仓，16:50 重算主板三月均价，21:30 拉涨幅榜，%02d:%02d 推送近月榜首",
+        "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，%02d:%02d 推送持仓收盘播报，16:40 对季报持仓，16:50 重算主板均价，21:30 拉涨幅榜",
         settings.fund_quote_interval_seconds,
-        settings.fund_monthly_reminder_hour,
-        settings.fund_monthly_reminder_minute,
+        settings.portfolio_report_hour,
+        settings.portfolio_report_minute,
     )
 
 

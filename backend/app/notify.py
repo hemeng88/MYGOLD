@@ -1,7 +1,7 @@
 """通过 OpenClaw webhook 推送飞书消息。
 
-MYGOLD 在定时任务的关键节点调 notify()，OpenClaw 跑一次 agent turn 并显式投递回指定飞书用户。
-发送失败只 logger.error，不抛——不影响主流程。
+MYGOLD 每个交易日收盘生成一次持仓播报，OpenClaw 跑 agent turn 后显式投递给指定飞书用户。
+发送失败只 logger.error，不抛，不影响采集和页面主流程。
 """
 
 from __future__ import annotations
@@ -49,9 +49,10 @@ async def notify(
     if body:
         text += f"\n{body}"
 
-    # /hooks/agent 显式 deliver，agent 处理完直接把结果送回指定飞书用户
+    # 明确要求 OpenClaw 原样投递。收益率由后端按数据库确定性计算，不让 agent 改写数字。
+    delivery_text = "请将下面这条 MYGOLD 系统消息原样发送给用户，不要补充、删减或改写：\n\n" + text
     payload = {
-        "message": text,
+        "message": delivery_text,
         "name": "MYGOLD",
         "deliver": True,
         "channel": "feishu",
@@ -61,7 +62,7 @@ async def notify(
 
     try:
         # agent turn 要起模型推理，使用配置里的超时，避免代码和部署配置不一致。
-        async with httpx.AsyncClient(timeout=settings.fund_alert_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.openclaw_timeout_seconds) as client:
             resp = await client.post(
                 url,
                 json=payload,

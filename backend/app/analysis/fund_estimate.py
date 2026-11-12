@@ -177,6 +177,8 @@ def summarize_fund(
         "drag_name": None,
         "drag_contrib_pct": None,
         "as_of": None,
+        # 只给组合汇总内部校验数据新鲜度；API 的 Pydantic response model 会忽略这个私有键。
+        "_trade_date": None,
         "ready": False,
         "message": None,
     }
@@ -214,6 +216,7 @@ def summarize_fund(
             "stale": stale,
             "settled": settled,
             "as_of": max(stamps) if stamps else None,
+            "_trade_date": quote_trade_date,
             "holdings": rows,
         }
     )
@@ -318,6 +321,7 @@ def summarize_stock(favorite: FundFavorite, quote: Optional[FundStockQuote], tod
         "drag_name": None,
         "drag_contrib_pct": None,
         "as_of": quote.collected_at if quote else None,
+        "_trade_date": quote.trade_date if quote else None,
         "ready": change is not None,
         "message": None if change is not None else "股票行情还没有报价，刷新一次",
     }
