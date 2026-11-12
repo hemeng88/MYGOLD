@@ -190,6 +190,15 @@ export interface ExposureItem {
   funds: ExposureFundItem[];
 }
 
+export interface MainboardSearchItem {
+  code: string;
+  name: string;
+  secid: string;
+  board: string;
+  eligible: boolean;
+  reason: string | null;
+}
+
 export interface MainboardItem {
   code: string;
   name: string;
@@ -234,10 +243,15 @@ export interface MainboardPeriodStat {
 export interface MainboardDetail {
   code: string;
   name: string;
+  board: string;
+  eligible: boolean;
+  block_reason: string | null;
   period: MainboardPeriod;
   period_label: string;
   last: number | null;
   change_pct: number | null;
+  price_date: string | null;
+  price_is_stale: boolean;
   lot_cost: number | null;
   avg: number | null;
   high: number | null;

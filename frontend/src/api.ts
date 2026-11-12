@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
-import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, Me } from "./types";
+import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -103,6 +103,8 @@ export const api = {
     request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
   mainboard: (period: MainboardPeriod, signal?: AbortSignal) =>
     request<MainboardList>(`/api/stocks/mainboard?period=${period}`, { signal }),
+  searchStocks: (q: string, signal?: AbortSignal) =>
+    request<MainboardSearchItem[]>(`/api/stocks/search?q=${encodeURIComponent(q)}`, { signal }),
   mainboardDetail: (code: string, period: MainboardPeriod, signal?: AbortSignal) =>
     request<MainboardDetail>(`/api/stocks/mainboard/${encodeURIComponent(code)}?period=${period}`, { signal }),
   refreshMainboard: (includeKlines = false) =>

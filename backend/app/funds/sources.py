@@ -262,7 +262,7 @@ def _stock_secid(code: str) -> Optional[str]:
         return None
     if code.startswith(("6", "68")):
         return "1." + code
-    if code.startswith(("0", "2", "3", "4", "8")):
+    if code.startswith(("0", "2", "3", "4", "8")) or code.startswith("92"):
         return "0." + code
     return None
 
@@ -287,15 +287,20 @@ def search_stocks(keyword: str, limit: int = 12) -> List[Dict]:
     for row in rows:
         code = str(row.get("Code") or row.get("SecurityCode") or row.get("SECURITY_CODE") or "").strip()
         secid = str(row.get("QuoteID") or row.get("SecID") or row.get("secid") or "").strip()
-        if row.get("Classify") and row["Classify"] != "AStock":
+        # Classify 对科创板是 "23"、北交所是 "NEEQ"，不能只接受 AStock。
+        # 最终再靠证券类型 + 代码与 secid 的严格映射排除港股、指数、基金和期货。
+        classify = str(row.get("Classify") or "")
+        if classify and classify not in {"AStock", "23", "NEEQ"}:
             continue
         security_type = str(row.get("SecurityTypeName") or "")
-        if security_type and security_type not in {"沪A", "深A", "A股", "股票"}:
+        if security_type and security_type not in {
+            "沪A", "深A", "A股", "股票", "主板", "创业板", "科创板", "京A", "北交所"
+        }:
             continue
         if not secid or "." not in secid or len(code) != 6 or not code.isdigit():
             continue
         market, _, sec_code = secid.partition(".")
-        # 只接受匹配的沪深股票市场；不能把其它证券猜成 A 股。
+        # 只接受代码与东方财富市场号严格对应的 A 股；不能把指数、基金或港股猜成股票。
         if sec_code != code or secid != _stock_secid(code) or secid in seen:
             continue
         if query.isdigit() and len(query) == 6 and code != query:
@@ -350,7 +355,7 @@ def _sina_code(secid: str) -> Optional[str]:
     if market == "1":
         return "sh" + code
     if market == "0":
-        return "sz" + code
+        return ("bj" if code.startswith(("4", "8", "92")) else "sz") + code
     if market == "116":
         return "hk" + code
     return None

@@ -282,7 +282,12 @@ def list_mainboard(db: Session, period: Optional[str] = None) -> Dict:
 
 
 INDEX_TTL_SECONDS = 600
+ON_DEMAND_TTL_SECONDS = 60
 _index_cache: Dict[str, Tuple[float, List[Tuple[str, float]]]] = {}
+# 任意 A 股详情切换周期时会连续请求；行情和日线缓存一分钟，避免五个周期打五轮外部源。
+_on_demand_cache: Dict[
+    str, Tuple[float, Optional[Dict], List[Tuple[str, float]], Optional[str]]
+] = {}
 
 
 def _index_bars(symbol: str, loader: Callable[[str], List]) -> List[Tuple[str, float]]:
@@ -312,31 +317,32 @@ def _series_out(window: List[Tuple[str, float]]) -> List[Dict]:
     return [{"d": day, "c": round(close, 3)} for day, close in window]
 
 
-def mainboard_detail(
-    db: Session,
+def _detail_from_values(
+    *,
     code: str,
-    period: Optional[str] = None,
-    index_loader: Callable[[str], List] = universe.fetch_index_closes,
-) -> Optional[Dict]:
-    period = normalize_period(period)
-    row = db.scalars(
-        select(MainboardStock).where(MainboardStock.code == code, MainboardStock.eligible == 1)
-    ).first()
-    if row is None:
-        return None
-    closes = [(day, float(close)) for day, close in _load_json(row.closes_json, [])]
-    bars = _with_live_point(closes, row.trade_date, row.last)
+    name: str,
+    board: str,
+    eligible: bool,
+    block_reason: Optional[str],
+    last: Optional[float],
+    change_pct: Optional[float],
+    price_date: Optional[str],
+    market_trade_date: Optional[str],
+    bars: List[Tuple[str, float]],
+    period: str,
+    index_loader: Callable[[str], List],
+) -> Dict:
     window = universe.period_window(bars, period)
     start = window[0][0] if window else None
 
     indexes = []
-    for symbol, name in universe.INDEXES:
+    for symbol, index_name in universe.INDEXES:
         index_bars = _index_bars(symbol, index_loader)
         index_window = [item for item in index_bars if start and item[0] >= start]
         indexes.append(
             {
                 "symbol": symbol,
-                "name": name,
+                "name": index_name,
                 "last": index_window[-1][1] if index_window else None,
                 "change_pct": _pct(index_window[-1][1], index_window[0][1]) if index_window else None,
                 "series": _series_out(index_window),
@@ -351,28 +357,131 @@ def mainboard_detail(
                 "value": key,
                 "label": label,
                 "avg": stats["avg"] if stats else None,
-                "change_pct": _pct(row.last, stats["first"]) if stats else None,
-                "vs_avg_pct": _pct(row.last, stats["avg"]) if stats else None,
+                "change_pct": _pct(last, stats["first"]) if stats else None,
+                "vs_avg_pct": _pct(last, stats["avg"]) if stats else None,
             }
         )
 
     current = universe.period_stats(bars, period) or {}
     return {
-        "code": row.code,
-        "name": row.name,
+        "code": code,
+        "name": name,
+        "board": board,
+        "eligible": eligible,
+        "block_reason": block_reason,
         "period": period,
         "period_label": universe.PERIOD_LABELS[period],
-        "last": row.last,
-        "change_pct": row.change_pct,
-        "lot_cost": row.lot_cost,
+        "last": last,
+        "change_pct": change_pct,
+        "price_date": price_date,
+        "price_is_stale": bool(market_trade_date and price_date and price_date < market_trade_date),
+        "lot_cost": universe.lot_cost(last),
         "avg": current.get("avg"),
         "high": current.get("high"),
         "low": current.get("low"),
-        "vs_avg_pct": _pct(row.last, current.get("avg")),
-        "period_change_pct": _pct(row.last, current.get("first")),
+        "vs_avg_pct": _pct(last, current.get("avg")),
+        "period_change_pct": _pct(last, current.get("first")),
         "window_start": current.get("start"),
         "window_end": current.get("end"),
         "series": _series_out(window),
         "indexes": indexes,
         "periods": periods,
     }
+
+
+def _load_on_demand_stock(
+    code: str,
+    secid: str,
+    symbol: str,
+    quote_loader: Callable[[List[str]], Dict[str, Dict]],
+    kline_loader: Callable[[str], List[Tuple[str, float]]],
+) -> Tuple[Optional[Dict], List[Tuple[str, float]], Optional[str]]:
+    cached = _on_demand_cache.get(code)
+    if cached and time.time() - cached[0] < ON_DEMAND_TTL_SECONDS:
+        return cached[1], cached[2], cached[3]
+
+    try:
+        quote = quote_loader([secid]).get(secid)
+    except Exception:
+        logger.warning("按需查询 %s 现价失败，退回最后一根日线", code)
+        quote = None
+    try:
+        raw_bars = [(day, float(close)) for day, close in kline_loader(symbol)]
+    except Exception:
+        logger.warning("按需查询 %s 日线失败", code)
+        raw_bars = []
+    market_trade_date = fetch_market_trade_date()
+    if raw_bars:
+        _on_demand_cache[code] = (time.time(), quote, raw_bars, market_trade_date)
+    return quote, raw_bars, market_trade_date
+
+
+def mainboard_detail(
+    db: Session,
+    code: str,
+    period: Optional[str] = None,
+    index_loader: Callable[[str], List] = universe.fetch_index_closes,
+    quote_loader: Callable[[List[str]], Dict[str, Dict]] = universe.quote_map,
+    kline_loader: Callable[[str], List[Tuple[str, float]]] = universe.fetch_daily_closes,
+) -> Optional[Dict]:
+    """查询任意 A 股的多周期均值。
+
+    默认可买样本走数据库缓存；不在样本中的创业板、科创板、北交所、ST 和普通 A 股，
+    只在用户主动点开时按需拉行情和近一年日线，不写库、不扩大每日定时采集范围。
+    """
+    period = normalize_period(period)
+    cleaned = str(code or "").strip()
+    secid = universe.secid_of(cleaned)
+    symbol = universe.sina_symbol(cleaned)
+    if not secid or not symbol:
+        return None
+
+    row = db.scalars(select(MainboardStock).where(MainboardStock.code == cleaned)).first()
+    if row is not None and row.eligible == 1:
+        closes = [(day, float(close)) for day, close in _load_json(row.closes_json, [])]
+        if closes:
+            bars = _with_live_point(closes, row.trade_date, row.last)
+            board, eligible, reason = universe.classify(row.code, row.name)
+            return _detail_from_values(
+                code=row.code,
+                name=row.name,
+                board=board,
+                eligible=eligible,
+                block_reason=reason,
+                last=row.last,
+                change_pct=row.change_pct,
+                price_date=row.trade_date or bars[-1][0],
+                market_trade_date=fetch_market_trade_date(),
+                bars=bars,
+                period=period,
+                index_loader=index_loader,
+            )
+
+    # 明确搜索的股票按需查。即便长期停牌也保留历史均值，但 price_date 会标出
+    # 最后一笔行情日期，前端不得把旧收盘价冒充实时现价。
+    quote, raw_bars, market_trade_date = _load_on_demand_stock(
+        cleaned, secid, symbol, quote_loader, kline_loader
+    )
+    summary = universe.summarize_klines(raw_bars)
+    if summary is None:
+        return None
+
+    last = quote.get("price") if quote else summary["last"]
+    price_date = (quote.get("trade_date") if quote else None) or summary["window_end"]
+    bars = _with_live_point(raw_bars, price_date, last)
+    name = (quote.get("name") if quote else None) or (row.name if row else None) or cleaned
+    board, eligible, reason = universe.classify(cleaned, name)
+    return _detail_from_values(
+        code=cleaned,
+        name=name,
+        board=board,
+        eligible=eligible,
+        block_reason=reason,
+        last=last,
+        change_pct=quote.get("change_pct") if quote else None,
+        price_date=price_date,
+        market_trade_date=market_trade_date,
+        bars=bars,
+        period=period,
+        index_loader=index_loader,
+    )

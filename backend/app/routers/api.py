@@ -12,7 +12,7 @@ from ..database import get_db
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
 from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
-from ..funds.sources import search_assets
+from ..funds.sources import search_assets, search_stocks
 from ..schemas import (
     CountdownIn,
     CountdownOut,
@@ -31,8 +31,10 @@ from ..schemas import (
     MainboardDetailResponse,
     MainboardRefreshResult,
     MainboardResponse,
+    MainboardSearchItem,
     MeOut,
 )
+from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..timeutil import now_local, trade_date_today
 
@@ -177,6 +179,35 @@ def fund_refresh(
         }
 
 
+@guarded.get("/stocks/search", response_model=List[MainboardSearchItem])
+def stocks_search(
+    q: str = Query(min_length=1, max_length=32, description="A 股代码或名称关键字"),
+    limit: int = Query(default=12, ge=1, le=30),
+    _user: User = Depends(require_auth),
+):
+    """主动搜索全 A 股，不受默认沪深300主板非 ST 样本限制。"""
+    try:
+        rows = search_stocks(q, limit=limit)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="股票搜索失败：%s" % exc) from exc
+    out = []
+    for row in rows:
+        secid = row["secid"]
+        code = secid.partition(".")[2]
+        board, eligible, reason = stock_universe.classify(code, row["name"])
+        out.append(
+            {
+                "code": code,
+                "name": row["name"],
+                "secid": secid,
+                "board": board,
+                "eligible": eligible,
+                "reason": reason,
+            }
+        )
+    return out
+
+
 @guarded.get("/stocks/mainboard", response_model=MainboardResponse)
 def stocks_mainboard(
     period: str = Query(default="3m", description="均价周期：1m / 3m / 6m / ytd / 1y"),
@@ -207,10 +238,13 @@ def stocks_mainboard_detail(
     db: Session = Depends(get_db),
     _user: User = Depends(require_auth),
 ):
-    """单只主板股票的周期走势，附上证、深成、沪深300 同期走势。"""
-    detail = mainboard_detail(db, code, period)
+    """单只 A 股的周期均值和走势；主动查询不受默认可买样本限制。"""
+    cleaned = (code or "").strip()
+    if stock_universe.secid_of(cleaned) is None:
+        raise HTTPException(status_code=400, detail="股票代码应该是 6 位 A 股代码")
+    detail = mainboard_detail(db, cleaned, period)
     if detail is None:
-        raise HTTPException(status_code=404, detail="不在主板可买样本里")
+        raise HTTPException(status_code=404, detail="查不到这只股票的足够历史数据")
     return detail
 
 

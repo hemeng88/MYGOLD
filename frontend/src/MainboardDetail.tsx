@@ -258,12 +258,23 @@ export function MainboardDetailModal({
         {!current && !error ? <Skeleton height={260} radius="md" /> : null}
         {current ? (
           <>
-            <Group gap={6}>
+            <Group gap={6} wrap="wrap">
               <Badge size="sm" variant="light" color="gray">{current.code}</Badge>
+              <Badge size="sm" variant="light" color="gray">{current.board}</Badge>
+              {!current.eligible ? (
+                <Badge size="sm" variant="light" color="yellow">
+                  {current.block_reason || "非默认可买样本"} · 仅查询
+                </Badge>
+              ) : null}
               <Text size="xs" c="dimmed">
                 {current.window_start && current.window_end ? `${current.window_start} 至 ${current.window_end}` : ""}
               </Text>
             </Group>
+            {current.price_is_stale ? (
+              <Text size="xs" c="yellow">
+                当前显示的是 {current.price_date || "较早日期"} 的最后行情，不是实时价格；均值仍按已有历史计算。
+              </Text>
+            ) : null}
             <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
               <Paper className="stat-tile" p="xs">
                 <Text size="xs" c="dimmed">现价 / 当日</Text>

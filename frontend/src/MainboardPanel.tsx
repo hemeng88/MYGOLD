@@ -5,7 +5,7 @@ import { IconRefresh, IconSearch } from "@tabler/icons-react";
 import { api } from "./api";
 import { MainboardDetailModal } from "./MainboardDetail";
 import { usePolling } from "./usePolling";
-import type { MainboardBlockedItem, MainboardItem, MainboardPeriod } from "./types";
+import type { MainboardBlockedItem, MainboardItem, MainboardPeriod, MainboardSearchItem } from "./types";
 
 function fmt(n: number | null | undefined, digits = 2) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -60,11 +60,14 @@ export function MainboardPanel() {
   const fetchList = useCallback((signal: AbortSignal) => api.mainboard(period, signal), [period]);
   const { data, loading, error, reload } = usePolling(fetchList);
   const [keyword, setKeyword] = useState("");
+  const [searchResults, setSearchResults] = useState<MainboardSearchItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState("vs_asc");
-  const [picked, setPicked] = useState<MainboardItem | null>(null);
+  const [picked, setPicked] = useState<Pick<MainboardItem, "code" | "name"> | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const bootstrapped = useRef(false);
+  const searchRevision = useRef(0);
   const periodLabel = PERIODS.find((item) => item.value === period)?.label || "";
   const stale = data != null && data.period !== period;
 
@@ -88,6 +91,29 @@ export function MainboardPanel() {
       setRefreshing(false);
     }
   }, [reload]);
+
+  const onSearchAll = async () => {
+    const query = keyword.trim();
+    if (!query) {
+      setSearchResults(null);
+      return;
+    }
+    const revision = ++searchRevision.current;
+    setSearching(true);
+    try {
+      const rows = await api.searchStocks(query);
+      if (searchRevision.current === revision) setSearchResults(rows);
+    } catch (err) {
+      if (searchRevision.current !== revision) return;
+      notifications.show({
+        color: "red",
+        title: "股票搜索失败",
+        message: err instanceof Error ? err.message : "稍后重试",
+      });
+    } finally {
+      if (searchRevision.current === revision) setSearching(false);
+    }
+  };
 
   useEffect(() => {
     if (bootstrapped.current || loading || !data || data.ready || refreshing) return;
@@ -168,7 +194,7 @@ export function MainboardPanel() {
       ) : (
         <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            新开普通账户一般只能买沪深主板。样本是沪深300里的主板非 ST，盘中刷现价，收盘后重拉近一年日线、重算各周期均价。点开个股看走势和大盘对比。不是买卖建议。
+            新开普通账户一般只能买沪深主板。默认样本是沪深300里的主板非 ST，盘中刷现价，收盘后重算各周期均价；你主动搜索的任意 A 股都可以点开查均值，即使当前账户买不了。不是买卖建议。
           </Text>
           <SegmentedControl
             fullWidth
@@ -201,12 +227,30 @@ export function MainboardPanel() {
             <TextInput
               size="sm"
               style={{ flex: "1 1 160px" }}
-              placeholder="搜代码或名称"
+              placeholder="搜代码或名称；回车可查全 A 股"
               value={keyword}
-              onChange={(event) => setKeyword(event.currentTarget.value)}
+              onChange={(event) => {
+                searchRevision.current += 1;
+                setSearching(false);
+                setKeyword(event.currentTarget.value);
+                setSearchResults(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void onSearchAll();
+              }}
               leftSection={<IconSearch size={14} />}
-              aria-label="搜索主板股票"
+              aria-label="搜索股票"
             />
+            <Button
+              size="sm"
+              variant="light"
+              color="gold"
+              loading={searching}
+              onClick={() => void onSearchAll()}
+              leftSection={<IconSearch size={14} />}
+            >
+              查全 A 股
+            </Button>
             <Select
               size="sm"
               style={{ width: 150 }}
@@ -229,6 +273,45 @@ export function MainboardPanel() {
             />
             <Text size="xs" c="dimmed">{items.length} 只</Text>
           </Group>
+
+          {searchResults ? (
+            <Stack gap={6}>
+              <Text size="xs" c="dimmed">
+                全 A 股搜索结果 · 点开只查询均值，不代表当前账户可以买
+              </Text>
+              {searchResults.length ? searchResults.map((row) => (
+                <Paper
+                  key={row.secid}
+                  className="day-card"
+                  p="sm"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setPicked({ code: row.code, name: row.name })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setPicked({ code: row.code, name: row.name });
+                    }
+                  }}
+                >
+                  <Group justify="space-between" wrap="nowrap" gap="sm">
+                    <div style={{ minWidth: 0 }}>
+                      <Text fw={600} truncate>{row.name}</Text>
+                      <Text size="xs" c="dimmed">{row.code}</Text>
+                    </div>
+                    <Group gap={6} wrap="nowrap">
+                      <Badge size="sm" variant="light" color="gray">{row.board}</Badge>
+                      <Badge size="sm" variant="light" color={row.eligible ? "teal" : "yellow"}>
+                        {row.eligible ? "通常可买" : `${row.reason || "权限受限"} · 仅查询`}
+                      </Badge>
+                    </Group>
+                  </Group>
+                </Paper>
+              )) : (
+                <Text size="sm" c="dimmed" ta="center" py="xs">没有搜到 A 股</Text>
+              )}
+            </Stack>
+          ) : null}
 
           {data?.message && !data.ready ? (
             <Text size="sm" c="dimmed">{data.message}</Text>

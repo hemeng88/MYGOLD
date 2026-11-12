@@ -19,6 +19,9 @@ class MainboardUniverseTests(unittest.TestCase):
         self.assertEqual(universe.board_of("300750"), "创业板")
         self.assertEqual(universe.board_of("688981"), "科创板")
         self.assertEqual(universe.board_of("830799"), "北交所")
+        self.assertEqual(universe.board_of("920799"), "北交所")
+        self.assertEqual(universe.secid_of("920799"), "0.920799")
+        self.assertEqual(universe.sina_symbol("920799"), "bj920799")
         self.assertTrue(universe.is_st("*ST闻泰"))
         self.assertTrue(universe.is_st("ST extra"))
         self.assertFalse(universe.is_st("贵州茅台"))
@@ -125,7 +128,41 @@ class MainboardCollectorTests(unittest.TestCase):
         self.assertEqual(detail["series"][-1], {"d": "2026-10-30", "c": 8.0})
         self.assertEqual(len(detail["indexes"]), 3)
         self.assertEqual(detail["indexes"][0]["name"], "上证指数")
-        self.assertIsNone(collector.mainboard_detail(self.db, "300750", "1m"))
+        queried = collector.mainboard_detail(
+            self.db,
+            "300750",
+            "1m",
+            index_loader=lambda symbol: index_bars,
+            quote_loader=lambda _secids: {
+                "0.300750": {
+                    "secid": "0.300750",
+                    "price": 12.0,
+                    "change_pct": 1.5,
+                    "name": "宁德时代",
+                    "trade_date": "2026-10-29",
+                }
+            },
+            kline_loader=lambda _symbol: bars,
+        )
+        self.assertIsNotNone(queried)
+        self.assertEqual(queried["code"], "300750")
+        self.assertEqual(queried["board"], "创业板")
+        self.assertFalse(queried["eligible"])
+        self.assertEqual(queried["block_reason"], "创业板")
+        self.assertEqual(queried["last"], 12.0)
+        self.assertIsNotNone(queried["avg"])
+        # 切换周期复用一分钟按需缓存，不能每点一次就重新打一轮行情源。
+        cached = collector.mainboard_detail(
+            self.db,
+            "300750",
+            "3m",
+            index_loader=lambda symbol: index_bars,
+            quote_loader=lambda _secids: (_ for _ in ()).throw(AssertionError("不应重拉报价")),
+            kline_loader=lambda _symbol: (_ for _ in ()).throw(AssertionError("不应重拉日线")),
+        )
+        self.assertEqual(cached["code"], "300750")
+        # 主动查询不把创业板塞进默认可买列表。
+        self.assertEqual([item["code"] for item in collector.list_mainboard(self.db)["items"]], ["600519"])
 
     @patch("backend.app.stocks.collector.fetch_market_trade_date", return_value="2026-10-29")
     def test_empty_hs300_keeps_old_rows(self, _trade_date):

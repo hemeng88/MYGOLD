@@ -242,6 +242,15 @@ class ExposureResponse(BaseModel):
     message: Optional[str] = None
 
 
+class MainboardSearchItem(BaseModel):
+    code: str
+    name: str
+    secid: str
+    board: str
+    eligible: bool
+    reason: Optional[str] = None
+
+
 class MainboardItem(BaseModel):
     code: str
     name: str
@@ -289,10 +298,15 @@ class MainboardPeriodStat(BaseModel):
 class MainboardDetailResponse(BaseModel):
     code: str
     name: str
+    board: str
+    eligible: bool
+    block_reason: Optional[str] = None
     period: str
     period_label: str
     last: Optional[float] = None
     change_pct: Optional[float] = None
+    price_date: Optional[str] = None
+    price_is_stale: bool = False
     lot_cost: Optional[float] = None
     avg: Optional[float] = None
     high: Optional[float] = None

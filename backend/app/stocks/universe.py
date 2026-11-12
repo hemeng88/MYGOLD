@@ -74,7 +74,7 @@ def sina_symbol(code: str) -> Optional[str]:
     if market == "1":
         return "sh" + stock_code
     if market == "0":
-        return "sz" + stock_code
+        return ("bj" if stock_code.startswith(("4", "8", "92")) else "sz") + stock_code
     return None
 
 
