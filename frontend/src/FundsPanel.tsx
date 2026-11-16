@@ -63,6 +63,41 @@ const SORT_OPTIONS = [
   { value: "estimate_pct", label: "估算涨跌幅" },
 ];
 
+function currentValue(item: FundItem): number | null {
+  return item.estimate_value ?? item.nav_value;
+}
+
+function todayReturnPct(item: FundItem): number | null {
+  if (item.today_pnl == null) return null;
+  const value = currentValue(item);
+  if (value == null) return null;
+  const previousValue = value - item.today_pnl;
+  return previousValue > 0 ? (item.today_pnl / previousValue) * 100 : null;
+}
+
+function fundSortValue(item: FundItem, sortBy: FundSort): number | null {
+  if (sortBy === "cost") return item.cost;
+  if (sortBy === "total_pnl") return item.total_pnl;
+  if (sortBy === "total_pnl_pct") return item.total_pnl_pct;
+  if (sortBy === "today_pnl") return item.today_pnl;
+  if (sortBy === "today_pnl_pct") return todayReturnPct(item);
+  return item.estimate_pct;
+}
+
+function fundSortMetric(item: FundItem, sortBy: FundSort) {
+  const effectiveSort = sortBy === "default" ? "estimate_pct" : sortBy;
+  const option = SORT_OPTIONS.find((row) => row.value === effectiveSort);
+  const value = fundSortValue(item, effectiveSort as FundSort);
+  const amount = effectiveSort === "cost" || effectiveSort === "total_pnl" || effectiveSort === "today_pnl";
+  const signedAmount = effectiveSort !== "cost";
+  return {
+    label: option?.label || "估算涨跌幅",
+    value,
+    amount,
+    signedAmount,
+  };
+}
+
 export function FundsPanel() {
   const { data: list, loading, error, reload: loadList } = usePolling(api.funds);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -240,19 +275,8 @@ export function FundsPanel() {
   const items = list?.items || [];
   const sortedItems = useMemo(() => {
     if (sortBy === "default") return items;
-    const value = (item: FundItem): number | null => {
-      if (sortBy === "cost") return item.cost;
-      if (sortBy === "total_pnl") return item.total_pnl;
-      if (sortBy === "total_pnl_pct") return item.total_pnl_pct;
-      if (sortBy === "today_pnl") return item.today_pnl;
-      if (sortBy === "today_pnl_pct") {
-        if (item.today_pnl == null || item.nav_value == null || item.nav_value === 0) return null;
-        return (item.today_pnl / item.nav_value) * 100;
-      }
-      return item.estimate_pct;
-    };
     return items
-      .map((item, index) => ({ item, index, value: value(item) }))
+      .map((item, index) => ({ item, index, value: fundSortValue(item, sortBy) }))
       .sort((a, b) => {
         if (a.value == null && b.value == null) return a.index - b.index;
         if (a.value == null) return 1;
@@ -480,6 +504,7 @@ export function FundsPanel() {
             <FundRow
               key={item.code}
               item={item}
+              sortBy={sortBy}
               active={picked === item.code}
               onPick={() => setPicked(picked === item.code ? null : item.code)}
               onEdit={() => setEditingCode(item.code)}
@@ -635,18 +660,21 @@ export function FundsPanel() {
 
 function FundRow({
   item,
+  sortBy,
   active,
   onPick,
   onEdit,
   onRemove,
 }: {
   item: FundItem;
+  sortBy: FundSort;
   active: boolean;
   onPick: () => void;
   onEdit: () => void;
   onRemove: () => void;
 }) {
   const confidence = CONFIDENCE[item.confidence] || CONFIDENCE.low;
+  const sortMetric = fundSortMetric(item, sortBy);
   return (
     <Paper className={active ? "day-card day-card-active" : "day-card"} p="sm" onClick={onPick}>
       <Group className="fund-row-main" justify="space-between" align="flex-start" wrap="nowrap" gap="xs">
@@ -692,20 +720,32 @@ function FundRow({
         </div>
         <Group className="fund-row-actions" gap={4} wrap="nowrap" align="flex-start">
           <div style={{ textAlign: "right" }}>
-            <Text fw={700} c={tone(item.estimate_pct)}>
-              {item.estimate_pct == null ? "—" : `${signed(item.estimate_pct)}%`}
+            <Text size="xs" c="dimmed">{sortMetric.label}</Text>
+            <Text
+              fw={700}
+              c={sortMetric.label === "成本金额" ? undefined : tone(sortMetric.value)}
+            >
+              {sortMetric.value == null
+                ? "—"
+                : sortMetric.amount
+                  ? `${sortMetric.signedAmount ? money(sortMetric.value) : fmt(sortMetric.value, 0)} 元`
+                  : `${signed(sortMetric.value)}%`}
             </Text>
             {item.shares && item.cost ? (
               <>
-                <Text size="xs" c="dimmed">
-                  成本 {fmt(item.cost, 0)} 元
-                </Text>
-                <Text size="sm" fw={600} c={tone(item.today_pnl)}>
-                  今日{money(item.today_pnl)}
-                </Text>
-                <Text size="xs" c={tone(item.total_pnl)}>
-                  累计{money(item.total_pnl)}
-                </Text>
+                {sortBy !== "cost" ? (
+                  <Text size="xs" c="dimmed">成本 {fmt(item.cost, 0)} 元</Text>
+                ) : null}
+                {sortBy !== "today_pnl" ? (
+                  <Text size="sm" fw={600} c={tone(item.today_pnl)}>
+                    今日{money(item.today_pnl)} 元
+                  </Text>
+                ) : null}
+                {sortBy !== "total_pnl" ? (
+                  <Text size="xs" c={tone(item.total_pnl)}>
+                    累计{money(item.total_pnl)} 元
+                  </Text>
+                ) : null}
               </>
             ) : (
               <Text size="xs" c="dimmed">
