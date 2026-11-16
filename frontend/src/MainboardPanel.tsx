@@ -44,13 +44,14 @@ const PERIODS: { value: MainboardPeriod; label: string }[] = [
 ];
 
 type SortKey = keyof MainboardItem;
-const SORTS: { value: string; label: string; key: SortKey; desc: boolean }[] = [
+type SortRule = { value: string; label: string; key: SortKey; desc: boolean };
+const SORTS: SortRule[] = [
   { value: "vs_asc", label: "低于均价最多", key: "vs_avg_pct", desc: false },
   { value: "vs_desc", label: "高于均价最多", key: "vs_avg_pct", desc: true },
-  { value: "day_desc", label: "当日涨幅", key: "change_pct", desc: true },
-  { value: "day_asc", label: "当日跌幅", key: "change_pct", desc: false },
-  { value: "period_desc", label: "区间涨幅", key: "period_change_pct", desc: true },
-  { value: "period_asc", label: "区间跌幅", key: "period_change_pct", desc: false },
+  { value: "day_desc", label: "当日收益率最高", key: "change_pct", desc: true },
+  { value: "day_asc", label: "当日收益率最低", key: "change_pct", desc: false },
+  { value: "period_desc", label: "累计收益率最高", key: "period_change_pct", desc: true },
+  { value: "period_asc", label: "累计收益率最低", key: "period_change_pct", desc: false },
   { value: "price_asc", label: "现价从低到高", key: "last", desc: false },
   { value: "price_desc", label: "现价从高到低", key: "last", desc: true },
 ];
@@ -69,6 +70,7 @@ export function MainboardPanel() {
   const bootstrapped = useRef(false);
   const searchRevision = useRef(0);
   const periodLabel = PERIODS.find((item) => item.value === period)?.label || "";
+  const activeSort = SORTS.find((item) => item.value === sort) || SORTS[0];
   const stale = data != null && data.period !== period;
 
   const onRefresh = useCallback(async (includeKlines = false) => {
@@ -123,7 +125,7 @@ export function MainboardPanel() {
 
   const items = useMemo(() => {
     const key = keyword.trim();
-    const rule = SORTS.find((item) => item.value === sort) || SORTS[0];
+    const rule = activeSort;
     const rows = (data?.items || []).filter((row) => {
       if (key && !row.code.includes(key) && !row.name.includes(key)) return false;
       if (filter === "below" && (row.vs_avg_pct == null || row.vs_avg_pct >= 0)) return false;
@@ -140,7 +142,7 @@ export function MainboardPanel() {
       if (bv == null) return -1;
       return rule.desc ? bv - av : av - bv;
     });
-  }, [data?.items, keyword, filter, sort]);
+  }, [data?.items, keyword, filter, activeSort]);
 
   const blockedByReason = useMemo(() => {
     const groups: Record<string, MainboardBlockedItem[]> = {};
@@ -319,7 +321,13 @@ export function MainboardPanel() {
 
           <Stack gap={8} style={{ opacity: stale ? 0.5 : 1 }}>
             {items.map((row) => (
-              <MainboardRow key={row.secid} item={row} periodLabel={periodLabel} onOpen={() => setPicked(row)} />
+              <MainboardRow
+                key={row.secid}
+                item={row}
+                periodLabel={periodLabel}
+                sortRule={activeSort}
+                onOpen={() => setPicked(row)}
+              />
             ))}
           </Stack>
 
@@ -345,7 +353,19 @@ export function MainboardPanel() {
   );
 }
 
-function MainboardRow({ item, periodLabel, onOpen }: { item: MainboardItem; periodLabel: string; onOpen: () => void }) {
+function MainboardRow({
+  item,
+  periodLabel,
+  sortRule,
+  onOpen,
+}: {
+  item: MainboardItem;
+  periodLabel: string;
+  sortRule: SortRule;
+  onOpen: () => void;
+}) {
+  const sortValue = item[sortRule.key] as number | null;
+  const priceSort = sortRule.key === "last";
   return (
     <Paper
       className="day-card"
@@ -370,17 +390,26 @@ function MainboardRow({ item, periodLabel, onOpen }: { item: MainboardItem; peri
             {periodLabel}均价 {fmt(item.avg)} · 一手约 {money(item.lot_cost)}
           </Text>
           <Text size="xs" c={tone(item.period_change_pct)} mt={2}>
-            {periodLabel}涨跌 {item.period_change_pct == null ? "—" : `${signed(item.period_change_pct)}%`}
+            {periodLabel}累计收益率 {item.period_change_pct == null ? "—" : `${signed(item.period_change_pct)}%`}
           </Text>
         </div>
         <div style={{ textAlign: "right", flex: "0 0 auto" }}>
-          <Text fw={600}>{fmt(item.last)}</Text>
-          <Text size="xs" c={tone(item.vs_avg_pct)}>
-            相对均价 {item.vs_avg_pct == null ? "—" : `${signed(item.vs_avg_pct)}%`}
+          <Text size="xs" c="dimmed">{sortRule.label}</Text>
+          <Text fw={700} c={priceSort ? undefined : tone(sortValue)}>
+            {sortValue == null ? "—" : priceSort ? fmt(sortValue) : `${signed(sortValue)}%`}
           </Text>
-          <Text size="xs" c={tone(item.change_pct)}>
-            当日 {item.change_pct == null ? "—" : `${signed(item.change_pct)}%`}
-          </Text>
+          {sortRule.key !== "last" ? (
+            <Text size="xs" c="dimmed">现价 {fmt(item.last)}</Text>
+          ) : (
+            <Text size="xs" c={tone(item.vs_avg_pct)}>
+              相对均价 {item.vs_avg_pct == null ? "—" : `${signed(item.vs_avg_pct)}%`}
+            </Text>
+          )}
+          {sortRule.key !== "change_pct" ? (
+            <Text size="xs" c={tone(item.change_pct)}>
+              当日 {item.change_pct == null ? "—" : `${signed(item.change_pct)}%`}
+            </Text>
+          ) : null}
         </div>
       </Group>
     </Paper>
