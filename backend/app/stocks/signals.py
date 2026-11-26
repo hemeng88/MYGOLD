@@ -11,6 +11,7 @@ from ..funds.sources import _num, fetch_market_trade_date
 from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
+from . import deepseek
 
 RULES = [
     "范围：沪深 A 股及北交所；剔除 ST、退市标记、停牌或缺失关键报价的证券。",
@@ -126,9 +127,11 @@ def _run():
     finally:
         with _lock:
             _state["running"] = False
+            snapshot = deepcopy(_state)
+        deepseek.request_analysis(snapshot)
 
 
-def get_signals(refresh=False):
+def get_signals(refresh=False, analyze=False):
     global _last_attempt
     with _lock:
         elapsed = time.monotonic() - _last_attempt
@@ -147,4 +150,8 @@ def get_signals(refresh=False):
         from datetime import datetime
         result["stale"] = (moment - datetime.fromisoformat(result["fetched_at"])).total_seconds() > 600
     result["market_date_current"] = result["trade_date"] == moment.date().isoformat()
+    if analyze:
+        deepseek.request_analysis(result, retry=True)
+    result["ai"] = deepseek.analysis_state(result)
+    result["engine"] = "公开规则扫描 v1 · DeepSeek 候选点评" if result["ai"]["configured"] else "公开规则扫描 v1（DeepSeek 未配置）"
     return result

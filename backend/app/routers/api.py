@@ -307,4 +307,9 @@ def stock_signals_refresh(_user: User = Depends(require_auth)):
     return get_signals(refresh=True)
 
 
+@guarded.post("/stocks/signals/analyze")
+def stock_signals_analyze(_user: User = Depends(require_auth)):
+    return get_signals(analyze=True)
+
+
 router.include_router(guarded)

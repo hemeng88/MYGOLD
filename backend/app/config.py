@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     auth_token_days: int = 30
 
     request_timeout_seconds: float = 15.0
+
+    # 仅服务端读取；不通过接口或前端返回密钥。填写后启用候选股票 AI 分析。
+    deepseek_api_key: SecretStr = Field(default="", validation_alias="MYGOLD_DEEPSEEK_API_KEY")
+    deepseek_model: str = Field(default="deepseek-flash", validation_alias="MYGOLD_DEEPSEEK_MODEL")
+    deepseek_timeout_seconds: float = Field(default=45.0, ge=1, le=120, validation_alias="MYGOLD_DEEPSEEK_TIMEOUT_SECONDS")
 
     # 每个交易日收盘后的飞书持仓播报。留空 webhook 时不发送任何外部请求。
     openclaw_webhook_url: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_URL")

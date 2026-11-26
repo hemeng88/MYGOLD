@@ -66,6 +66,7 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
 export const api = {
   stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
   refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
+  analyzeStockSignals: () => request<StockSignals>("/api/stocks/signals/analyze", { method: "POST" }),
   login: async (username: string, password: string) => {
     const result = await request<LoginResult>(
       "/api/auth/login",

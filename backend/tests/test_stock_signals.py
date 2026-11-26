@@ -29,6 +29,8 @@ class SignalsTests(unittest.TestCase):
             get.assert_called_with()
             self.assertEqual(client.post("/api/stocks/signals/refresh").status_code, 200)
             get.assert_called_with(refresh=True)
+            self.assertEqual(client.post("/api/stocks/signals/analyze").status_code, 200)
+            get.assert_called_with(analyze=True)
 
     def test_prices_come_from_observed_data(self):
         item = candidate(quote())

@@ -366,6 +366,7 @@ export interface StockSignal {
 }
 
 export interface StockSignals {
+  ai: StockAI;
   running: boolean;
   fetched_at: string | null;
   trade_date: string | null;
@@ -384,4 +385,23 @@ export interface StockSignals {
   refresh_seconds: number;
   stale: boolean;
   market_date_current: boolean;
+}
+
+export interface StockAIComment {
+  code: string;
+  view: "优先观察" | "等待确认" | "暂不考虑";
+  reason: string;
+  risk: string;
+  trigger: "回踩观察" | "突破观察" | "等待";
+}
+
+export interface StockAI {
+  configured: boolean;
+  model: string;
+  status: "idle" | "running" | "ready" | "failed" | "waiting" | "unconfigured";
+  snapshot_at: string | null;
+  analyzed_at: string | null;
+  summary: string | null;
+  items: StockAIComment[];
+  error: string | null;
 }
