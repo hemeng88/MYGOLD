@@ -1,7 +1,12 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
+
+
+class DeepSeekConfigIn(BaseModel):
+    api_key: Optional[SecretStr] = None
+    model: str = Field(default="deepseek-flash", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_.:-]+$")
 
 
 class StockBoardPreferenceIn(BaseModel):

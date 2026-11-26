@@ -28,13 +28,13 @@ class SignalsTests(unittest.TestCase):
         app = FastAPI()
         app.include_router(router, prefix="/api")
         app.dependency_overrides[require_auth] = lambda: SimpleNamespace(id=1)
-        with TestClient(app) as client, patch("backend.app.routers.api.load_boards", return_value=["主板"]), patch("backend.app.routers.api.get_signals", return_value={"running": True}) as get:
+        with TestClient(app) as client, patch("backend.app.routers.api.ai_settings.resolve", return_value=None), patch("backend.app.routers.api.load_boards", return_value=["主板"]), patch("backend.app.routers.api.get_signals", return_value={"running": True}) as get:
             self.assertEqual(client.get("/api/stocks/signals").json(), {"running": True})
-            get.assert_called_with(boards=["主板"])
+            get.assert_called_with(boards=["主板"], ai_config=None)
             self.assertEqual(client.post("/api/stocks/signals/refresh").status_code, 200)
-            get.assert_called_with(refresh=True, boards=["主板"])
+            get.assert_called_with(refresh=True, boards=["主板"], ai_config=None)
             self.assertEqual(client.post("/api/stocks/signals/analyze").status_code, 200)
-            get.assert_called_with(analyze=True, boards=["主板"])
+            get.assert_called_with(analyze=True, boards=["主板"], ai_config=None)
 
     def test_prices_come_from_observed_data(self):
         item = candidate(quote())

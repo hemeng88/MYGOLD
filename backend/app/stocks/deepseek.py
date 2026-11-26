@@ -46,9 +46,11 @@ class Report(BaseModel):
     items: list[Comment] = Field(min_length=1, max_length=20)
 
 
-def analyze(snapshot, transport=None):
+def analyze(snapshot, transport=None, credentials=None):
     """单次调用，无自动重试收费请求；错误不转发响应体或 Authorization。"""
-    body = {"model": settings.deepseek_model, "stream": False, "max_tokens": 4096,
+    model = credentials.model if credentials else settings.deepseek_model
+    key = credentials.key if credentials else settings.deepseek_api_key
+    body = {"model": model, "stream": False, "max_tokens": 4096,
             "thinking": {"type": "disabled"},
             "response_format": {"type": "json_object"}, "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -63,7 +65,7 @@ def analyze(snapshot, transport=None):
     try:
         with httpx.Client(timeout=settings.deepseek_timeout_seconds, transport=transport) as client:
             response = client.post("https://api.deepseek.com/chat/completions", json=body,
-                                   headers={"Authorization": "Bearer " + settings.deepseek_api_key.get_secret_value()})
+                                   headers={"Authorization": "Bearer " + key.get_secret_value()})
             response.raise_for_status()
         choice = response.json()["choices"][0]
         if choice.get("finish_reason") != "stop":
@@ -105,8 +107,10 @@ _states = {}
 _attempts = {}
 
 
-def _scope(snapshot):
+def _scope(snapshot, credentials=None):
     key = tuple(sorted(snapshot.get("allowed_boards") or ["主板"]))
+    if credentials:
+        key = (credentials.scope,) + key
     if key == ("主板",):
         return _state
     if key not in _states:
@@ -132,25 +136,28 @@ def snapshot_issue(snapshot):
     return None
 
 
-def _run(snapshot):
+def _run(snapshot, credentials=None):
     try:
-        report = analyze(snapshot)
+        report = analyze(snapshot, credentials=credentials)
         with _lock:
-            _scope(snapshot).update(status="ready", analyzed_at=now_local().isoformat(), error=None, **report)
+            _scope(snapshot, credentials).update(status="ready", analyzed_at=now_local().isoformat(), error=None, **report)
     except Exception as exc:
         # 不记录任何请求头、API 密钥或原始响应。
         message = str(exc) if isinstance(exc, ValueError) else "DeepSeek 分析失败，请稍后重试。"
         with _lock:
-            _scope(snapshot).update(status="failed", error=message, items=[], summary=None)
+            _scope(snapshot, credentials).update(status="failed", error=message, items=[], summary=None)
 
 
-def request_analysis(snapshot, retry=False):
+def request_analysis(snapshot, retry=False, credentials=None):
     global _last_attempt
-    if not settings.deepseek_api_key.get_secret_value().strip() or snapshot_issue(snapshot):
+    key_value = credentials.key if credentials else settings.deepseek_api_key
+    if not key_value.get_secret_value().strip() or snapshot_issue(snapshot):
         return
     with _lock:
-        state = _scope(snapshot)
+        state = _scope(snapshot, credentials)
         key = tuple(sorted(snapshot.get("allowed_boards") or ["主板"]))
+        if credentials:
+            key = (credentials.scope,) + key
         same = state["snapshot_at"] == snapshot["fetched_at"]
         if state["status"] == "running" or (same and not retry):
             return
@@ -163,17 +170,18 @@ def request_analysis(snapshot, retry=False):
         _attempts[key] = attempt
         state.update(status="running", snapshot_at=snapshot["fetched_at"], analyzed_at=None,
                       summary=None, items=[], error=None)
-        _executor.submit(_run, deepcopy(snapshot))
+        _executor.submit(_run, deepcopy(snapshot), credentials)
 
 
-def analysis_state(snapshot):
-    configured = bool(settings.deepseek_api_key.get_secret_value().strip())
+def analysis_state(snapshot, credentials=None):
+    key_value = credentials.key if credentials else settings.deepseek_api_key
+    configured = bool(key_value.get_secret_value().strip())
     with _lock:
-        result = deepcopy(_scope(snapshot))
-    result.update(configured=configured, model=settings.deepseek_model)
+        result = deepcopy(_scope(snapshot, credentials))
+    result.update(configured=configured, model=credentials.model if credentials else settings.deepseek_model)
     if not configured:
         result.update(status="unconfigured", items=[], summary=None,
-                      error="请在服务器配置 DeepSeek API 密钥并重启服务。")
+                      error=(credentials.error if credentials else None) or "请在页面的 DeepSeek 配置中保存 API Key。")
     else:
         issue = snapshot_issue(snapshot)
         if issue or result["snapshot_at"] != snapshot.get("fetched_at"):

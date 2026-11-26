@@ -165,11 +165,9 @@ def _run(boards):
     finally:
         with _lock:
             _scope(boards)["running"] = False
-            snapshot = deepcopy(_scope(boards))
-        deepseek.request_analysis(snapshot)
 
 
-def get_signals(refresh=False, analyze=False, boards=None):
+def get_signals(refresh=False, analyze=False, boards=None, ai_config=None):
     global _last_attempt
     selected_boards = normalize_boards(boards)
     with _lock:
@@ -193,8 +191,8 @@ def get_signals(refresh=False, analyze=False, boards=None):
         from datetime import datetime
         result["stale"] = (moment - datetime.fromisoformat(result["fetched_at"])).total_seconds() > 600
     result["market_date_current"] = result["trade_date"] == moment.date().isoformat()
-    if analyze:
-        deepseek.request_analysis(result, retry=True)
-    result["ai"] = deepseek.analysis_state(result)
+    # 规则快照共享，AI 请求按当前账号的密钥和配置版本隔离。
+    deepseek.request_analysis(result, retry=analyze, credentials=ai_config)
+    result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
     result["engine"] = "多策略研究 v2 · DeepSeek 候选点评" if result["ai"]["configured"] else "多策略研究 v2（DeepSeek 未配置）"
     return result

@@ -10,6 +10,8 @@ backend/data/*.db-journal
 # 令牌签名密钥，自动生成，绝不能进仓库
 backend/data/auth_secret
 data/auth_secret
+backend/data/api_key_secret
+data/api_key_secret
 /data/
 .env
 .env.local

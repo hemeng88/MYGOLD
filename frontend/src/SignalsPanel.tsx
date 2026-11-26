@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Alert, Badge, Button, Group, Loader, MultiSelect, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { api } from "./api";
 import { usePolling } from "./usePolling";
+import { DeepSeekSettingsPanel } from "./DeepSeekSettingsPanel";
 
 function percent(value: number | null | undefined) {
   return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -95,13 +96,14 @@ export function SignalsPanel() {
           <Paper className="stat-tile" p="sm">
             <Group justify="space-between" mb="xs">
               <Text fw={600} size="sm">DeepSeek 候选点评</Text>
+              <DeepSeekSettingsPanel onChanged={reload} />
               <Button size="compact-xs" variant="light" color="gold"
                 loading={analyzing || data.ai?.status === "running"}
                 disabled={!data.ai?.configured || data.running || !data.complete || data.stale || !data.market_date_current || !data.items.length}
                 onClick={() => void analyze()}>分析本轮候选</Button>
             </Group>
             {!data.ai?.configured ? (
-              <Text size="xs" c="dimmed">DeepSeek 尚未启用。请在服务器配置 API 密钥并重启，密钥无需填到网页或聊天中。</Text>
+              <Text size="xs" c="dimmed">DeepSeek 尚未启用。点击“配置 DeepSeek”填写 API Key 并保存即可使用。</Text>
             ) : (
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">{data.ai.model} · 比较本轮最多 20 只候选及历史研究摘要；未接入新闻、财报或账户资料。</Text>

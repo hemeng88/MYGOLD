@@ -441,3 +441,11 @@ export interface StockAI {
   items: StockAIComment[];
   error: string | null;
 }
+
+export interface DeepSeekSettings {
+  configured: boolean;
+  model: string;
+  source: "account" | "server" | "disabled" | "none";
+  updated_at: string | null;
+  error: string | null;
+}

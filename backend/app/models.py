@@ -226,6 +226,16 @@ class MainboardStock(Base):
     periods_json: Mapped[str] = mapped_column(Text, nullable=True)
 
 
+class DeepSeekAccountConfig(Base):
+    __tablename__ = "deepseek_account_configs"
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=True)
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    revision: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class StockResearchPreference(Base):
     __tablename__ = "stock_research_preferences"
     user_id: Mapped[int] = mapped_column(Integer, primary_key=True)

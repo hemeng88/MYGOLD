@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { StockSignals } from "./types";
+import type { StockSignals, DeepSeekSettings } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
 import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
@@ -64,6 +64,13 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
 }
 
 export const api = {
+  deepSeekSettings: () => request<DeepSeekSettings>("/api/settings/deepseek"),
+  saveDeepSeekSettings: (apiKey: string, model: string) => request<DeepSeekSettings>("/api/settings/deepseek", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey || null, model }),
+  }),
+  deleteDeepSeekSettings: () => request<DeepSeekSettings>("/api/settings/deepseek", { method: "DELETE" }),
+  testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/deepseek/test", { method: "POST" }),
   stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
   refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
   analyzeStockSignals: () => request<StockSignals>("/api/stocks/signals/analyze", { method: "POST" }),
