@@ -86,22 +86,18 @@ class Settings(BaseSettings):
     deepseek_model: str = Field(default="deepseek-flash", validation_alias="MYGOLD_DEEPSEEK_MODEL")
     deepseek_timeout_seconds: float = Field(default=45.0, ge=1, le=120, validation_alias="MYGOLD_DEEPSEEK_TIMEOUT_SECONDS")
 
-    # 每个交易日收盘后的飞书持仓播报。留空 webhook 时不发送任何外部请求。
+    # 保留 OpenClaw 通用推送环境配置；当前没有自动推送内容或任务。
     openclaw_webhook_url: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_URL")
     openclaw_webhook_token: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_WEBHOOK_TOKEN")
     # /hooks/agent 显式投递目标，例如 Feishu open_id
     openclaw_target: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_TARGET")
-    # 默认读取初始账号；服务器有多个账号时必须明确指定播报谁的持仓。
+    # 旧播报账号与时间参数兼容保留，当前不触发任务。
     openclaw_report_username: str = Field(default="", validation_alias="MYGOLD_OPENCLAW_REPORT_USERNAME")
     openclaw_timeout_seconds: float = Field(default=15.0, validation_alias="MYGOLD_OPENCLAW_TIMEOUT_SECONDS")
-    # 16:10 时 A 股和港股都已收盘。任务会先刷新数据库里全部实际持仓的报价。
+    # 兼容旧环境配置，不再注册收盘播报任务。
     portfolio_report_hour: int = Field(default=16, validation_alias="MYGOLD_PORTFOLIO_REPORT_HOUR")
     portfolio_report_minute: int = Field(default=10, validation_alias="MYGOLD_PORTFOLIO_REPORT_MINUTE")
 
-    # 收盘播报中的浙商积存金实时价：京东金业主源、GoldMonitor 兜底。
-    gold_jd_product_sku: str = "1961543816"
-    gold_jd_latest_url: str = "https://api.jdjygold.com/gw2/generic/jrm/h5/m/stdLatestPrice"
-    gold_monitor_latest_url: str = "https://jin.20021002.xyz/api.php?type=zs"
 
 
 settings = Settings()

@@ -38,11 +38,26 @@ class DeepSeekTests(unittest.TestCase):
             body = json.loads(request.content)
             self.assertEqual(body["response_format"], {"type": "json_object"})
             public_input = json.loads(body["messages"][1]["content"])
-            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards"})
+            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards", "factor_context"})
             return httpx.Response(200, json=response())
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")):
             result = deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler))
         self.assertEqual(result, REPORT)
+
+    def test_factor_context_and_financials_are_sent_and_priority_gate_is_enforced(self):
+        snapshot = deepcopy(SNAPSHOT)
+        snapshot["factor_context"] = {"market": {"status": "weak"}}
+        snapshot["items"][0].update(priority_eligible=False, technical_priority_eligible=True,
+                                     factors={"fundamentals": {"status": "risk"}, "blockers": ["营业收入同比下降"]})
+        report = deepcopy(REPORT)
+        report["items"][0]["view"] = "优先观察"
+        def handler(request):
+            public = json.loads(json.loads(request.content)["messages"][1]["content"])
+            self.assertEqual(public["factor_context"], snapshot["factor_context"])
+            self.assertEqual(public["items"][0]["factors"], snapshot["items"][0]["factors"])
+            return httpx.Response(200, json=response(report))
+        with self.assertRaises(ValueError):
+            deepseek.analyze(snapshot, httpx.MockTransport(handler))
 
     def test_rejects_invented_missing_duplicate_codes_and_prices(self):
         cases = []

@@ -349,6 +349,23 @@ export interface Exposure {
   message: string | null;
 }
 export interface StockSignal {
+  technical_priority_eligible?: boolean;
+  factors?: {
+    passed: boolean;
+    blockers: string[];
+    fundamentals: {
+      status: string; label: string; reasons: string[]; source: string;
+      report_date?: string; notice_date?: string;
+      revenue_yoy_pct?: number | null; profit_yoy_pct?: number | null;
+      net_profit?: number | null; roe_pct?: number | null;
+    };
+    industry: {
+      status: string; label: string; name?: string | null;
+      method: string; sample_count?: number; member_count?: number; coverage_pct?: number;
+      change_pct: number | null; relative_pct: number | null;
+      as_of: string | null; reason: string; source: string;
+    };
+  };
   strategies?: string[];
   strategy_labels?: string[];
   historical_as_of?: string;
@@ -374,6 +391,15 @@ export interface StockSignal {
 }
 
 export interface StockSignals {
+  factor_context?: {
+    checked: number; passed: number; priority_count: number; note: string;
+    market: {
+      status: string; label: string; reason: string; source: string;
+      advance_pct: number | null; mean_change_pct: number | null; stock_count: number;
+      trade_date: string | null; index_as_of: string | null;
+      index_close: number | null; ma20: number | null; ma60: number | null;
+    };
+  };
   allowed_boards: string[];
   eligible?: number;
   research?: StockResearch;

@@ -93,6 +93,20 @@ export function SignalsPanel() {
             {!data.market_date_current && data.trade_date ? <Text size="xs" mt={4}>最近交易日不是今天，当前价格仅作收盘参考。</Text> : null}
           </Alert>
           {data.errors.map((message) => <Text key={message} size="xs" c="red">{message}</Text>)}
+          {data.factor_context ? (
+            <Paper className="stat-tile" p="sm">
+              <Group justify="space-between" mb="xs"><Text fw={600} size="sm">大盘环境与多因子检查</Text><Badge color={data.factor_context.market.status === "favorable" ? "teal" : "yellow"}>{data.factor_context.market.label}</Badge></Group>
+              <SimpleGrid cols={{ base: 2, sm: 3 }} spacing="xs">
+                <div><Text size="xs" c="dimmed">全A有效报价上涨占比</Text><Text size="sm">{percent(data.factor_context.market.advance_pct)}</Text><Text size="xs" c="dimmed">共 {data.factor_context.market.stock_count} 只</Text></div>
+                <div><Text size="xs" c="dimmed">全A有效报价等权涨跌</Text><Text size="sm">{percent(data.factor_context.market.mean_change_pct)}</Text></div>
+                <div><Text size="xs" c="dimmed">沪深300最近完整收盘</Text><Text size="sm">{data.factor_context.market.index_close?.toFixed(2) ?? "—"}</Text><Text size="xs" c="dimmed">{data.factor_context.market.index_as_of || "待核实"} · 20/60日均价 {data.factor_context.market.ma20?.toFixed(2) ?? "—"} / {data.factor_context.market.ma60?.toFixed(2) ?? "—"}</Text></div>
+              </SimpleGrid>
+              <Text size="xs" c="dimmed" mt="xs">{data.factor_context.market.reason}</Text>
+              <Text size="xs" mt={4}>检查 {data.factor_context.checked} 只技术候选 · 新增因子通过 {data.factor_context.passed} 只 · 同时通过历史证据与新增因子 {data.factor_context.priority_count} 只</Text>
+              <Text size="xs" c="dimmed" mt={4}>{data.factor_context.note}</Text>
+              <Text size="xs" c="dimmed" mt={4}>{data.factor_context.market.source}；公开行情延迟与个股报价日期仍需核实。</Text>
+            </Paper>
+          ) : null}
           <Paper className="stat-tile" p="sm">
             <Group justify="space-between" mb="xs">
               <Text fw={600} size="sm">AI 候选点评</Text>
@@ -106,7 +120,7 @@ export function SignalsPanel() {
               <Text size="xs" c="dimmed">AI 分析尚未启用。点击“配置 AI 模型”选择服务商、填写 Key 并保存即可使用。</Text>
             ) : (
               <Stack gap={4}>
-                <Text size="xs" c="dimmed">{data.ai.provider_label || "AI"} · {data.ai.model} · 比较本轮最多 20 只候选及历史研究摘要；未接入新闻、财报或账户资料。</Text>
+                <Text size="xs" c="dimmed">{data.ai.provider_label || "AI"} · {data.ai.model} · 比较最多20只候选、历史研究、已披露财报指标、行业当日强弱和大盘环境；未接入新闻、完整财报或账户资料。</Text>
                 <Text size="xs" c="dimmed">配置后有效扫描自动分析，会消耗对应服务商的 API 额度；手动分析至少间隔一分钟，页面轮询不重复调用。</Text>
                 {data.ai.status === "running" ? <Text size="sm">AI 正在比较本轮候选…</Text> : null}
                 {data.ai.error ? <Text size="xs" c={data.ai.status === "failed" ? "red" : "dimmed"}>{data.ai.error}</Text> : null}
@@ -168,6 +182,19 @@ export function SignalsPanel() {
               </SimpleGrid>
               <Text size="xs" c="dimmed" mt="xs">{item.reason}</Text>
               {item.historical_as_of ? <Text size="xs" c="dimmed" mt={4}>技术信号日 {item.historical_as_of} · 20日均价 {item.ma20?.toFixed(2)} · 60日均价 {item.ma60?.toFixed(2)} · 日收益波动率 {percent(item.vol20_pct)}</Text> : null}
+              {item.factors ? (
+                <Paper className="stat-tile" p="xs" mt="xs">
+                  <Group gap="xs"><Badge size="xs" color={item.factors.fundamentals.status === "pass" ? "teal" : "yellow"}>{item.factors.fundamentals.label}</Badge><Badge size="xs" color={item.factors.industry.status === "pass" ? "teal" : "yellow"}>{item.factors.industry.name || "行业未知"} · {item.factors.industry.label}</Badge></Group>
+                  <Text size="xs" mt={4}>报告期 {item.factors.fundamentals.report_date || "未知"} · 公告日 {item.factors.fundamentals.notice_date || "未知"}</Text>
+                  <Text size="xs" mt={4}>营收同比 {percent(item.factors.fundamentals.revenue_yoy_pct)} · 归母净利润同比 {percent(item.factors.fundamentals.profit_yoy_pct)} · 加权ROE {percent(item.factors.fundamentals.roe_pct)}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>归母净利润 {item.factors.fundamentals.net_profit == null ? "—" : `${(item.factors.fundamentals.net_profit / 100000000).toFixed(2)} 亿元`}；财务指标为报告期累计值，ROE未经年化。{item.factors.fundamentals.reasons.join("；")}</Text>
+                  <Text size="xs" mt={4}>行业当日涨跌 {percent(item.factors.industry.change_pct)} · 相对全A等权 {item.factors.industry.relative_pct == null ? "—" : `${item.factors.industry.relative_pct > 0 ? "+" : ""}${item.factors.industry.relative_pct.toFixed(2)} 个百分点`}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.factors.industry.method}{item.factors.industry.sample_count != null ? ` · 同业有效报价 ${item.factors.industry.sample_count}/${item.factors.industry.member_count} 只 · 覆盖 ${item.factors.industry.coverage_pct?.toFixed(1)}%` : ""}</Text>
+                  <Text size="xs" c="dimmed" mt={4}>{item.factors.industry.reason} · 行业行情时间 {item.factors.industry.as_of?.replace("T", " ") || "未知"}</Text>
+                  {item.factors.blockers.length ? <Text size="xs" c="yellow" mt={4}>等待确认：{item.factors.blockers.join("；")}</Text> : null}
+                  <Text size="xs" c="dimmed" mt={4}>{item.factors.fundamentals.source}；{item.factors.industry.source}</Text>
+                </Paper>
+              ) : null}
               {item.validation?.length ? <Text size="xs" c={item.priority_eligible ? "dimmed" : "yellow"} mt={4}>{item.validation.join(" · ")}{item.priority_eligible ? "" : "；AI 仅可等待或暂不考虑。"}</Text> : null}
               {comment ? (
                 <Stack gap={4} mt="xs">

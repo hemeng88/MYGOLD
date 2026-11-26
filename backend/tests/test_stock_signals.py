@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
 
 from fastapi import FastAPI
@@ -19,7 +19,7 @@ def quote(code="000823", symbol="sz000823", **changes):
     return row
 
 
-def research_stub(items, trade_date):
+def research_stub(items, trade_date, **kwargs):
     return items[:20], {"strategies": []}, {}
 
 
@@ -71,6 +71,27 @@ class SignalsTests(unittest.TestCase):
         result = scan_market(count_loader=lambda node: 0, research_builder=research_stub)
         self.assertFalse(result["complete"])
         self.assertEqual(result["items"], [])
+
+    @patch("backend.app.stocks.signals.fetch_market_trade_date", return_value="2026-11-26")
+    def test_factors_run_before_tracking_and_receive_all_market_boards(self, _date):
+        rows = [quote(), quote("300001", "sz300001")]
+        def enrich(items, market_items, histories, trade_date, complete):
+            self.assertEqual([row["board"] for row in items], ["主板"])
+            self.assertEqual({row["board"] for row in market_items}, {"主板", "创业板"})
+            items[0]["priority_eligible"] = False
+            items[0]["factors"] = {"blockers": ["行业偏弱"]}
+            return {"market": {"status": "weak"}}
+        def track(db, result, histories):
+            self.assertFalse(result["items"][0]["priority_eligible"])
+            self.assertIn("factor_context", result)
+            return {}
+        with patch("backend.app.stocks.signals.research.build_research", side_effect=research_stub), \
+                patch("backend.app.stocks.signals.SessionLocal", MagicMock()), \
+                patch("backend.app.stocks.signals.paper.pending_symbols", return_value=[]), \
+                patch("backend.app.stocks.signals.paper.update", side_effect=track), \
+                patch("backend.app.stocks.signals.factors.enrich", side_effect=enrich):
+            result = scan_market(get_json=lambda *args: rows, count_loader=lambda node: 2)
+        self.assertEqual(result["factor_context"]["market"]["status"], "weak")
 
 
 if __name__ == "__main__":

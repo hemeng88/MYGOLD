@@ -12,7 +12,7 @@ from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
 from . import deepseek
-from . import research, paper
+from . import research, paper, factors
 from ..database import SessionLocal
 from .preferences import normalize_boards
 
@@ -21,6 +21,7 @@ RULES = [
     "不再用固定涨幅、换手率或一亿元门槛筛候选；先保留关键行情有效、有成交的股票。",
     "按板块轮询抽取成交活跃日线样本，再分别检验趋势延续、趋势回调和低波动三套假设。",
     "三套策略轮询分配最多20个展示位置，重叠股票合并；不再按当日涨幅取前20。",
+    "技术候选再检查已披露财报、行业当日相对强弱和大盘环境；缺数据、基本面未过或行业/大盘偏弱时禁止AI标为优先观察。",
     "价格参考：成交均价至现价为回踩观察区，当日高点为突破参考，当日低点为失效参考。",
     "历史验证为当前样本事件研究，存在样本选择偏差；前向跟踪尚需积累，失效参考价不保证成交。",
 ]
@@ -118,7 +119,8 @@ def scan_market(get_json=None, count_loader=None, progress=None, research_builde
         board = universe.board_of(str(row.get("code") or ""))
         boards[board] = boards.get(board, 0) + 1
     selected_boards = normalize_boards(allowed_boards)
-    items = [result for row in by_symbol.values() if (result := candidate(row)) is not None and result["board"] in selected_boards]
+    market_items = [result for row in by_symbol.values() if (result := candidate(row)) is not None]
+    items = [row for row in market_items if row["board"] in selected_boards]
     # 日期来自交易日接口，并非单只证券的报价时间戳，前端明确区分。
     try:
         trade_date = fetch_market_trade_date()
@@ -142,6 +144,7 @@ def scan_market(get_json=None, count_loader=None, progress=None, research_builde
             "items": selected, "research": report, "allowed_boards": selected_boards}
     # 在后台任务中持久化，独立测试可注入纯研究函数，不读写用户数据库。
     if research_builder is None:
+        result["factor_context"] = factors.enrich(selected, market_items, histories, trade_date, not errors)
         try:
             with SessionLocal() as db:
                 result["paper"] = paper.update(db, result, histories)
@@ -194,5 +197,5 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None):
     # 规则快照共享，AI 请求按当前账号的密钥和配置版本隔离。
     deepseek.request_analysis(result, retry=analyze, credentials=ai_config)
     result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
-    result["engine"] = "多策略研究 v2 · %s 候选点评" % result["ai"]["provider_label"] if result["ai"]["configured"] else "多策略研究 v2（AI 未配置）"
+    result["engine"] = "技术策略 + 财报/行业/大盘 · %s 候选点评" % result["ai"]["provider_label"] if result["ai"]["configured"] else "技术策略 + 财报/行业/大盘（AI 未配置）"
     return result

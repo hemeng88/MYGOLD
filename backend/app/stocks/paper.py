@@ -55,4 +55,4 @@ def update(db, snapshot, histories):
     completed = [row for row in rows if row.net_pct is not None]
     return {"recorded": len(rows), "completed": len(completed), "pending": len(rows) - len(completed),
             "avg_net_pct": round(sum(row.net_pct for row in completed) / len(completed), 3) if completed else None,
-            "note": "真实记录后才开始跟踪：次一交易日收盘假设入场，五交易日后收盘退出；非真实成交，多个样本可能相关。"}
+            "note": "跟踪全部技术候选（包含多因子未过者），不代表新增因子组合收益。真实记录后次一交易日收盘假设入场，五交易日后退出；非真实成交，多个样本可能相关。"}

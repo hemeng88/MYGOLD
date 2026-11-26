@@ -1,6 +1,6 @@
 """通过 OpenClaw webhook 推送飞书消息。
 
-MYGOLD 每个交易日收盘生成一次持仓播报，OpenClaw 跑 agent turn 后显式投递给指定飞书用户。
+仅保留通用发送能力，当前没有自动发送任务或预设消息内容。
 发送失败只 logger.error，不抛，不影响采集和页面主流程。
 """
 
@@ -49,7 +49,7 @@ async def notify(
     if body:
         text += f"\n{body}"
 
-    # 明确要求 OpenClaw 原样投递。收益率由后端按数据库确定性计算，不让 agent 改写数字。
+    # 通用传输层只转发调用方提供的内容，不自行生成消息。
     delivery_text = "请将下面这条 MYGOLD 系统消息原样发送给用户，不要补充、删减或改写：\n\n" + text
     payload = {
         "message": delivery_text,
