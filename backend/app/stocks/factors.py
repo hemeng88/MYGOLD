@@ -1,7 +1,7 @@
 """当前候选的财务、行业与市场检查；不回填到历史技术策略收益中。"""
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 import math
 import threading
 import time
@@ -141,13 +141,14 @@ def fundamentals(rows, today=None):
     return result
 
 
-def market_context(items, histories, trade_date, complete):
+def market_context(items, histories, trade_date, complete, mode="intraday"):
     today = now_local().date()
     changes = [row["change_pct"] for row in items]
     count = len(changes)
     breadth = sum(value > 0 for value in changes) / count * 100 if count else None
     mean = sum(changes) / count if count else None
-    bars = research.clean_bars(histories.get("sh000300") or [], today.isoformat())
+    cutoff = (today + timedelta(days=1 if mode == "close" else 0)).isoformat()
+    bars = research.clean_bars(histories.get("sh000300") or [], cutoff)
     stats = research.features(bars)
     result = {"status": "unknown", "label": "大盘数据待核实", "advance_pct": round(breadth, 2) if breadth is not None else None,
               "mean_change_pct": round(mean, 3) if mean is not None else None,
@@ -242,8 +243,8 @@ def _parallel(keys, loader, timeout):
     return output
 
 
-def enrich(items, market_items, histories, trade_date, complete):
-    market = market_context(market_items, histories, trade_date, complete)
+def enrich(items, market_items, histories, trade_date, complete, mode="intraday"):
+    market = market_context(market_items, histories, trade_date, complete, mode=mode)
 
     def load(item):
         financial = fundamentals(financial_rows(item))

@@ -35,6 +35,13 @@ class SignalsTests(unittest.TestCase):
             get.assert_called_with(refresh=True, boards=["主板"], ai_config=None)
             self.assertEqual(client.post("/api/stocks/signals/analyze").status_code, 200)
             get.assert_called_with(analyze=True, boards=["主板"], ai_config=None)
+            self.assertEqual(client.get("/api/stocks/signals?mode=close").status_code, 200)
+            get.assert_called_with(mode="close", boards=["主板"], ai_config=None)
+            self.assertEqual(client.post("/api/stocks/signals/refresh?mode=close").status_code, 200)
+            get.assert_called_with(refresh=True, mode="close", boards=["主板"], ai_config=None)
+            self.assertEqual(client.post("/api/stocks/signals/analyze?mode=close").status_code, 200)
+            get.assert_called_with(analyze=True, mode="close", boards=["主板"], ai_config=None)
+            self.assertEqual(client.get("/api/stocks/signals?mode=invalid").status_code, 422)
 
     def test_prices_come_from_observed_data(self):
         item = candidate(quote())

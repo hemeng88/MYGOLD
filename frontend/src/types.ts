@@ -391,6 +391,10 @@ export interface StockSignal {
 }
 
 export interface StockSignals {
+  mode?: "intraday" | "close";
+  close_ready?: boolean;
+  can_generate_close?: boolean;
+  close_notice?: string | null;
   factor_context?: {
     checked: number; passed: number; priority_count: number; note: string;
     market: {

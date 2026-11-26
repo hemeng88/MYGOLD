@@ -38,7 +38,7 @@ class DeepSeekTests(unittest.TestCase):
             body = json.loads(request.content)
             self.assertEqual(body["response_format"], {"type": "json_object"})
             public_input = json.loads(body["messages"][1]["content"])
-            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards", "factor_context"})
+            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards", "factor_context", "mode"})
             return httpx.Response(200, json=response())
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")):
             result = deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler))

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
-from datetime import date
+from datetime import date, timedelta, time as clock_time
 import math
 import statistics
 import threading
@@ -48,9 +48,11 @@ def clean_bars(bars, before):
     return sorted(unique.items())
 
 
-def history(symbol, transport=None):
+def history(symbol, transport=None, include_today=False):
     global _preferred_url
-    today = now_local().date().isoformat()
+    moment = now_local()
+    include_today = include_today and moment.time() >= clock_time(15, 30)
+    today = (moment.date() + timedelta(days=1 if include_today else 0)).isoformat()
     with _lock:
         cached = _cache.get(symbol)
         if cached and cached[0] == today:
@@ -205,8 +207,10 @@ def balanced_candidates(groups, limit=20):
     return out
 
 
-def build_research(items, trade_date, loader=None, progress=None, extra_symbols=()):
-    loader = loader or history
+def build_research(items, trade_date, loader=None, progress=None, extra_symbols=(), mode="intraday"):
+    closing = mode == "close" and now_local().time() >= clock_time(15, 30)
+    cutoff = (now_local().date() + timedelta(days=1 if closing else 0)).isoformat()
+    loader = loader or (lambda symbol: history(symbol, include_today=closing))
     sample = stratified_sample(items, settings.stock_research_sample_size)
     histories, errors = {}, []
     pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="research-history")
@@ -217,7 +221,7 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         for future in as_completed(futures, timeout=90):
             symbol = futures[future]
             try:
-                histories[symbol] = clean_bars(future.result(), now_local().date().isoformat())
+                histories[symbol] = clean_bars(future.result(), cutoff)
             except Exception:
                 errors.append(symbol)
             if progress:
@@ -227,6 +231,8 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     benchmark = dict(histories.get("sh000300") or [])
+    close_ready = bool(closing and trade_date == now_local().date().isoformat()
+                       and benchmark and max(benchmark) == trade_date)
     dates = sorted(benchmark) or sorted({date for bars in histories.values() for date, _ in bars})
     split = dates[int(len(dates) * 0.65)] if len(dates) >= 100 else None
     groups = {key: [] for key in STRATEGIES}
@@ -248,6 +254,11 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         # 老日线可用于历史研究，不能伪装成最新技术信号。
         if not benchmark or bars[-1][0] != dates[-1] or (now_local().date() - date.fromisoformat(bars[-1][0])).days > 10:
             continue
+        if mode == "close" and (not close_ready or bars[-1][0] != trade_date):
+            continue
+        if mode == "close" and abs(item["price"] / bars[-1][1] - 1) > 0.005:
+            # 当前前复权收盘应与最新现价一致；源未对齐时不拿旧报价生成观察区间。
+            continue
         hits = triggers(stats)
         if not hits:
             continue
@@ -263,6 +274,11 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         reports.append({"key": key, **specification, "current_matches": len(groups[key]),
                         "train": summarize(studies[key]["train"]), "test": test,
                         "status": evidence_status(test)})
+    close_pending = [item["symbol"] for item in sample
+                     if not histories.get(item["symbol"]) or
+                     (len(histories[item["symbol"]]) >= 120 and histories[item["symbol"]][-1][0] != trade_date)] if mode == "close" else []
+    if mode == "close":
+        close_ready = close_ready and usable > 0 and not close_pending
     selected = balanced_candidates(groups)
     evidence = {row["key"]: row["status"] for row in reports}
     for item in selected:
@@ -270,13 +286,15 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         item["priority_eligible"] = any(evidence[key] == "待前向验证" for key in item["strategies"])
         item["status"] = "待前向验证" if item["priority_eligible"] else "验证证据不足"
     result = {"version": VERSION, "sample_requested": len(sample), "sample_usable": usable,
+              "close_ready": close_ready,
+              "close_pending": len(close_pending),
               "history_failed": len(set(errors)), "history_insufficient": insufficient, "split_date": split,
               "history_start": dates[0] if dates else None, "history_end": dates[-1] if dates else None,
               "benchmark_available": bool(benchmark), "strategies": reports,
               "assumptions": [
                   "按板块分层抽取当前成交活跃样本，非历史全市场回测，存在幸存者及当前样本选择偏差。",
                   "三套规则预先固定，没有用样本外成绩挑参数；统一日期按前65%/后35%分为研究区间和样本外。",
-                  "只使用今天之前的完整日线；信号次日收盘假设入场，持有五个交易日，单股单策略不重叠。",
+                  ("收盘模式在15:30后纳入当日完整日线，需沪深300和个股日期均为当日；" if mode == "close" else "盘中模式只使用今天之前的完整日线；") + "历史事件信号次日收盘假设入场，持有五个交易日，单股单策略不重叠。",
                   "假设买卖佣金各0.03%、滑点各0.05%、卖出税费0.05%；不代表实际券商费率，另展示双倍成本结果。",
                   "只有前复权收盘，未模拟涨跌停、最低佣金、整手、容量及真实成交；展示的是事件均值，不是组合收益率。",
                   "股票研究仅采用腾讯明确标注的前复权日线；取不到不混用未复权数据，缺少120根日线的样本不参与。",

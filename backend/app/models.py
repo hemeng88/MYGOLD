@@ -265,6 +265,15 @@ class StrategyObservation(Base):
     checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
 
+class StockCloseWatchlist(Base):
+    """按板块范围保存最近一份成功生成的收盘观察池，不包含用户或AI密钥。"""
+
+    __tablename__ = "stock_close_watchlists"
+    scope: Mapped[str] = mapped_column(String(128), primary_key=True)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class CountdownItem(Base):
     """账号私有的倒计时。单次日期或每月循环，可选到分钟。"""
 

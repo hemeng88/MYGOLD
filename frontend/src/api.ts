@@ -72,9 +72,9 @@ export const api = {
   deleteDeepSeekSettings: () => request<DeepSeekSettings>("/api/settings/ai", { method: "DELETE" }),
   testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test", { method: "POST" }),
   testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
-  stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
-  refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
-  analyzeStockSignals: () => request<StockSignals>("/api/stocks/signals/analyze", { method: "POST" }),
+  stockSignals: (signal?: AbortSignal, mode = "intraday") => request<StockSignals>(`/api/stocks/signals?mode=${mode}`, { signal }),
+  refreshStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/refresh?mode=${mode}`, { method: "POST" }),
+  analyzeStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/analyze?mode=${mode}`, { method: "POST" }),
   saveStockBoards: (boards: string[]) => request<{ boards: string[] }>("/api/stocks/signals/preferences", {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boards }),
   }),

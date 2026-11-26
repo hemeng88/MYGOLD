@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -302,18 +302,21 @@ def fund(code: str, db: Session = Depends(get_db), user: User = Depends(require_
 
 
 @guarded.get("/stocks/signals")
-def stock_signals(user: User = Depends(require_auth), db: Session = Depends(get_db)):
-    return get_signals(boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id))
+def stock_signals(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
+    options = {"mode": mode} if mode != "intraday" else {}
+    return get_signals(boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/refresh")
-def stock_signals_refresh(user: User = Depends(require_auth), db: Session = Depends(get_db)):
-    return get_signals(refresh=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id))
+def stock_signals_refresh(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
+    options = {"mode": mode} if mode != "intraday" else {}
+    return get_signals(refresh=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/analyze")
-def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depends(get_db)):
-    return get_signals(analyze=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id))
+def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
+    options = {"mode": mode} if mode != "intraday" else {}
+    return get_signals(analyze=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
 
 
 @guarded.put("/stocks/signals/preferences")

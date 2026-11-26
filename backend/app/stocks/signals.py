@@ -6,13 +6,14 @@ from copy import deepcopy
 import math
 import threading
 import time
+from datetime import time as clock_time
 
 from ..funds.sources import _num, fetch_market_trade_date
 from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
 from . import deepseek
-from . import research, paper, factors
+from . import research, paper, factors, watchlists
 from ..database import SessionLocal
 from .preferences import normalize_boards
 
@@ -35,10 +36,10 @@ _states = {}
 _attempts = {}
 
 
-def _scope(boards):
-    if boards == ["主板"]:
+def _scope(boards, mode="intraday"):
+    if boards == ["主板"] and mode == "intraday":
         return _state
-    key = tuple(boards)
+    key = tuple(boards) if mode == "intraday" else (mode, *boards)
     if key not in _states:
         _states[key] = {"running": False, "fetched_at": None, "trade_date": None, "scanned": 0,
                         "expected": 0, "complete": False, "items": [], "errors": [], "progress": 0,
@@ -82,7 +83,7 @@ def candidate(row):
             "status": "观察候选"}
 
 
-def scan_market(get_json=None, count_loader=None, progress=None, research_builder=None, allowed_boards=None):
+def scan_market(get_json=None, count_loader=None, progress=None, research_builder=None, allowed_boards=None, mode="intraday"):
     get_json = get_json or universe._get_json
     count_loader = count_loader or universe.fetch_node_count
     by_symbol, errors, expected = {}, [], 0
@@ -134,17 +135,22 @@ def scan_market(get_json=None, count_loader=None, progress=None, research_builde
                 extras = paper.pending_symbols(db, boards=selected_boards)
         except Exception:
             extras = []
-        selected, report, histories = builder(items, trade_date, extra_symbols=extras)
+        options = {"mode": mode} if mode == "close" else {}
+        selected, report, histories = builder(items, trade_date, extra_symbols=extras, **options)
     else:
         selected, report, histories = builder(items, trade_date)
     result = {"fetched_at": fetched_at, "trade_date": trade_date,
             "scanned": len(by_symbol), "expected": expected, "progress": len(by_symbol),
             "complete": not errors, "errors": errors, "boards": boards,
             "eligible": len(items), "matched": sum(row.get("current_matches", 0) for row in report.get("strategies", [])),
-            "items": selected, "research": report, "allowed_boards": selected_boards}
+            "items": selected, "research": report, "allowed_boards": selected_boards, "mode": mode,
+            "close_ready": bool(report.get("close_ready")) if mode == "close" else False}
     # 在后台任务中持久化，独立测试可注入纯研究函数，不读写用户数据库。
     if research_builder is None:
-        result["factor_context"] = factors.enrich(selected, market_items, histories, trade_date, not errors)
+        options = {"mode": mode} if mode == "close" else {}
+        result["factor_context"] = factors.enrich(selected, market_items, histories, trade_date, not errors, **options)
+        if mode == "close":
+            return result
         try:
             with SessionLocal() as db:
                 result["paper"] = paper.update(db, result, histories)
@@ -154,39 +160,67 @@ def scan_market(get_json=None, count_loader=None, progress=None, research_builde
     return result
 
 
-def _run(boards):
+def _run(boards, mode="intraday"):
     def progress(value):
         with _lock:
-            _scope(boards)["progress"] = value
+            _scope(boards, mode)["progress"] = value
     try:
-        result = scan_market(progress=progress, allowed_boards=boards)
+        result = scan_market(progress=progress, allowed_boards=boards, mode=mode)
+        if mode == "close":
+            if not result["close_ready"] or not result["complete"]:
+                with _lock:
+                    _scope(boards, mode).update(errors=result["errors"] or ["等待当日完整收盘日线，稍后可重新生成；保留上一份观察池。"])
+                return
+            with SessionLocal() as db:
+                watchlists.save(db, result)
         with _lock:
-            _scope(boards).update(result)
+            _scope(boards, mode).update(result)
     except Exception as exc:
         with _lock:
-            _scope(boards).update(errors=["扫描失败：%s" % exc], complete=False)
+            _scope(boards, mode).update(errors=["扫描失败：%s" % exc])
+            if mode != "close":
+                _scope(boards, mode)["complete"] = False
     finally:
         with _lock:
-            _scope(boards)["running"] = False
+            _scope(boards, mode)["running"] = False
 
 
-def get_signals(refresh=False, analyze=False, boards=None, ai_config=None):
+def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode="intraday"):
     global _last_attempt
     selected_boards = normalize_boards(boards)
+    if mode not in ("intraday", "close"):
+        raise ValueError("无效选股模式")
+    moment = now_local()
     with _lock:
-        state = _scope(selected_boards)
-        last_attempt = _attempts.get(tuple(selected_boards), 0)
+        state = _scope(selected_boards, mode)
+        if mode == "close" and not state.get("loaded"):
+            try:
+                with SessionLocal() as db:
+                    saved = watchlists.load(db, selected_boards)
+                    if saved:
+                        state.update(saved)
+                state["loaded"] = True
+            except Exception:
+                state["errors"] = ["收盘观察池读取失败，请检查数据库或重新生成。"]
+        key = tuple(selected_boards) if mode == "intraday" else (mode, *selected_boards)
+        last_attempt = _attempts.get(key, 0)
         elapsed = time.monotonic() - last_attempt
         due = not last_attempt or (elapsed >= 300 and should_poll_quotes())
+        allowed = True
+        if mode == "close":
+            allowed = moment.weekday() < 5 and moment.time() >= clock_time(15, 30)
+            due = state.get("trade_date") != moment.date().isoformat() and (not last_attempt or elapsed >= 300)
         # 共享任务：多账号、多标签页不会重复拉取全市场。
-        if not state["running"] and (due or (refresh and elapsed >= 60)):
+        if allowed and not state["running"] and (due or (refresh and elapsed >= 60)):
             _last_attempt = time.monotonic()
-            _attempts[tuple(selected_boards)] = _last_attempt
+            _attempts[key] = _last_attempt
             state.update(running=True, progress=0, allowed_boards=selected_boards)
-            _executor.submit(_run, selected_boards)
+            _executor.submit(_run, selected_boards, mode)
         result = deepcopy(state)
     result["allowed_boards"] = selected_boards
-    moment = now_local()
+    result["mode"] = mode
+    result["can_generate_close"] = moment.weekday() < 5 and moment.time() >= clock_time(15, 30)
+    result["close_notice"] = "交易日15:30后生成下一交易日观察池；生成后保存，次日仍可查看。价格及因子固定于生成时，盘中请切换模式重新确认。" if mode == "close" else None
     result.update(session=session_label(moment), source="新浪公开行情",
                   rules=RULES,
                   refresh_seconds=300, stale=True)
@@ -195,7 +229,8 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None):
         result["stale"] = (moment - datetime.fromisoformat(result["fetched_at"])).total_seconds() > 600
     result["market_date_current"] = result["trade_date"] == moment.date().isoformat()
     # 规则快照共享，AI 请求按当前账号的密钥和配置版本隔离。
-    deepseek.request_analysis(result, retry=analyze, credentials=ai_config)
+    if not result.get("errors"):
+        deepseek.request_analysis(result, retry=analyze, credentials=ai_config)
     result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
     result["engine"] = "技术策略 + 财报/行业/大盘 · %s 候选点评" % result["ai"]["provider_label"] if result["ai"]["configured"] else "技术策略 + 财报/行业/大盘（AI 未配置）"
     return result
