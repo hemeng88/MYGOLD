@@ -1,0 +1,287 @@
+"""多策略研究：预先固定规则、时间切分、次日收盘入场的五交易日事件研究。
+
+数据只有前复权收盘，不声称可以复现真实委托成交，也不将事件收益当成组合收益。
+"""
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
+from datetime import date
+import math
+import statistics
+import threading
+
+import httpx
+
+from ..config import settings
+from ..timeutil import now_local
+from . import universe
+
+VERSION = "multi-v2"
+STRATEGIES = {
+    "trend": {"label": "趋势延续", "rule": "20日均价高于60日均价，收盘高于20日均价且10日涨幅为正"},
+    "pullback": {"label": "趋势回调", "rule": "20日均价高于60日均价，收盘在20日均价的97%～101%，5日涨幅为负"},
+    "low_vol": {"label": "低波动观察", "rule": "20日收益波动率不高于2%，20日均价不低于60日均价，收盘距20日均价不超过3%"},
+}
+HOLD = 5
+# 假设成本（非券商报价）：买卖各0.03%佣金、各0.05%滑点，卖出另计0.05%税费。
+BUY_COST = 0.0008
+SELL_COST = 0.0013
+_cache = {}
+_lock = threading.Lock()
+_preferred_url = None
+TENCENT_MIRROR = "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/fqkline/get"
+
+
+def clean_bars(bars, before):
+    unique = {}
+    for day, value in bars:
+        try:
+            price = float(value)
+        except (ValueError, TypeError):
+            continue
+        try:
+            date.fromisoformat(day)
+        except (ValueError, TypeError):
+            continue
+        if day < before and math.isfinite(price) and price > 0:
+            unique[day] = price
+    return sorted(unique.items())
+
+
+def history(symbol, transport=None):
+    global _preferred_url
+    today = now_local().date().isoformat()
+    with _lock:
+        cached = _cache.get(symbol)
+        if cached and cached[0] == today:
+            return cached[1]
+    # 研究不能混用未复权新浪日线和前复权日线，避免除权被误判为暴跌。
+    with _lock:
+        preferred = _preferred_url
+    urls = list(dict.fromkeys([preferred or settings.fund_kline_tencent_url,
+                              settings.fund_kline_tencent_url, TENCENT_MIRROR]))
+    last_error = None
+    with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True, transport=transport) as client:
+        for url in urls:
+            try:
+                response = client.get(url, params={"param": "%s,day,,,260,qfq" % symbol},
+                                      headers={"User-Agent": universe.SINA_HEADERS["User-Agent"], "Referer": "https://gu.qq.com/"})
+                response.raise_for_status()
+                block = ((response.json() or {}).get("data") or {}).get(symbol) or {}
+                raw = block.get("day") if symbol == "sh000300" else block.get("qfqday")
+                bars = clean_bars([(str(row[0])[:10], row[2]) for row in (raw or []) if len(row) > 2], today)
+                if bars:
+                    with _lock:
+                        _cache[symbol] = (today, bars)
+                        _preferred_url = url
+                    return bars
+            except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
+                last_error = exc
+    if last_error:
+        raise last_error
+    return []
+
+
+def features(bars):
+    if len(bars) < 60:
+        return None
+    closes = [row[1] for row in bars[-60:]]
+    returns = [closes[i] / closes[i - 1] - 1 for i in range(40, 60)]
+    return {"as_of": bars[-1][0], "ma20": statistics.mean(closes[-20:]),
+            "ma60": statistics.mean(closes), "return5": closes[-1] / closes[-6] - 1,
+            "return10": closes[-1] / closes[-11] - 1, "vol20": statistics.pstdev(returns),
+            "last": closes[-1]}
+
+
+def triggers(stats):
+    if not stats:
+        return []
+    price, ma20, ma60 = (stats[k] for k in ("last", "ma20", "ma60"))
+    out = []
+    if ma20 > ma60 and price > ma20 and stats["return10"] > 0:
+        out.append("trend")
+    if ma20 > ma60 and 0.97 * ma20 <= price <= 1.01 * ma20 and stats["return5"] < 0:
+        out.append("pullback")
+    if stats["vol20"] <= 0.02 and ma20 >= ma60 and abs(price / ma20 - 1) <= 0.03:
+        out.append("low_vol")
+    return out
+
+
+def net_return(entry, exit_price, multiplier=1):
+    return exit_price * (1 - SELL_COST * multiplier) / (entry * (1 + BUY_COST * multiplier)) - 1
+
+
+def event_study(bars, strategy, split_date, benchmark):
+    """信号仅看 t 及之前数据，t+1 收盘进入，持有五根后退出；单股不重叠。"""
+    result = {"train": [], "test": []}
+    next_free = 0
+    for index in range(59, len(bars) - HOLD - 1):
+        if index < next_free or strategy not in triggers(features(bars[:index + 1])):
+            continue
+        entry_i, exit_i = index + 1, index + 1 + HOLD
+        signal_date, entry_date, exit_date = bars[index][0], bars[entry_i][0], bars[exit_i][0]
+        # 不让训练区间的持仓跨入样本外，也不让样本外用训练末日的信号。
+        if exit_date < split_date:
+            part = "train"
+        elif signal_date >= split_date:
+            part = "test"
+        else:
+            continue
+        # 缺失交易日或停牌的股票不能按“下一根”假装次日成交。
+        if benchmark:
+            dates = list(benchmark)
+            if signal_date not in benchmark:
+                continue
+            pos = dates.index(signal_date)
+            if dates[pos + 1:pos + HOLD + 2] != [row[0] for row in bars[entry_i:exit_i + 1]]:
+                continue
+        entry, exit_price = bars[entry_i][1], bars[exit_i][1]
+        net = net_return(entry, exit_price)
+        base = benchmark[exit_date] / benchmark[entry_date] - 1 if entry_date in benchmark and exit_date in benchmark else None
+        result[part].append({"signal_date": signal_date, "entry_date": entry_date, "exit_date": exit_date,
+                             "net": net, "double_cost_net": net_return(entry, exit_price, 2),
+                             "excess": net - base if base is not None else None})
+        next_free = exit_i + 1
+    return result
+
+
+def summarize(events):
+    excess = [row["excess"] for row in events if row["excess"] is not None]
+    return {"trades": len(events),
+            "win_pct": round(sum(row["net"] > 0 for row in events) / len(events) * 100, 2) if events else None,
+            "avg_net_pct": round(statistics.mean(row["net"] for row in events) * 100, 3) if events else None,
+            "worst_trade_pct": round(min(row["net"] for row in events) * 100, 3) if events else None,
+            "double_cost_pct": round(statistics.mean(row["double_cost_net"] for row in events) * 100, 3) if events else None,
+            "avg_excess_pct": round(statistics.mean(excess) * 100, 3) if excess else None,
+            "benchmark_trades": len(excess)}
+
+
+def evidence_status(metrics):
+    if metrics["trades"] < 30:
+        return "样本不足"
+    if metrics["avg_net_pct"] is None or metrics["avg_net_pct"] <= 0:
+        return "样本外净收益非正"
+    if metrics["double_cost_pct"] is None or metrics["double_cost_pct"] <= 0:
+        return "成本敏感"
+    if metrics["avg_excess_pct"] is None:
+        return "缺少基准验证"
+    if metrics["avg_excess_pct"] <= 0:
+        return "未跑赢基准"
+    return "待前向验证"
+
+
+def stratified_sample(items, limit):
+    """按板块轮询取成交额高者，不按涨幅挑选；名称/代码只用作稳定排序。"""
+    groups = {}
+    for item in sorted(items, key=lambda row: (-row["amount"], row["code"])):
+        groups.setdefault(item["board"], []).append(item)
+    selected = []
+    while groups and len(selected) < limit:
+        for board in sorted(list(groups)):
+            selected.append(groups[board].pop(0))
+            if not groups[board]:
+                del groups[board]
+            if len(selected) >= limit:
+                break
+    return selected
+
+
+def balanced_candidates(groups, limit=20):
+    out, picked = [], set()
+    # 同一股票可属于多种策略，但只占一个候选位置。
+    queues = {key: sorted(value, key=lambda row: (-row["amount"], row["code"])) for key, value in groups.items()}
+    while queues and len(out) < limit:
+        for key in list(queues):
+            while queues[key] and queues[key][0]["code"] in picked:
+                queues[key].pop(0)
+            if queues[key]:
+                item = queues[key].pop(0)
+                picked.add(item["code"])
+                out.append(item)
+            if not queues[key]:
+                del queues[key]
+            if len(out) >= limit:
+                break
+    return out
+
+
+def build_research(items, trade_date, loader=None, progress=None, extra_symbols=()):
+    loader = loader or history
+    sample = stratified_sample(items, settings.stock_research_sample_size)
+    histories, errors = {}, []
+    pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="research-history")
+    symbols = {item["symbol"] for item in sample} | set(extra_symbols)
+    futures = {pool.submit(loader, symbol): symbol for symbol in symbols}
+    futures[pool.submit(loader, "sh000300")] = "sh000300"
+    try:
+        for future in as_completed(futures, timeout=90):
+            symbol = futures[future]
+            try:
+                histories[symbol] = clean_bars(future.result(), now_local().date().isoformat())
+            except Exception:
+                errors.append(symbol)
+            if progress:
+                progress(len(histories))
+    except TimeoutError:
+        errors.extend(symbol for future, symbol in futures.items() if not future.done())
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    benchmark = dict(histories.get("sh000300") or [])
+    dates = sorted(benchmark) or sorted({date for bars in histories.values() for date, _ in bars})
+    split = dates[int(len(dates) * 0.65)] if len(dates) >= 100 else None
+    groups = {key: [] for key in STRATEGIES}
+    studies = {key: {"train": [], "test": []} for key in STRATEGIES}
+    usable = 0
+    insufficient = 0
+    for item in sample:
+        bars = histories.get(item["symbol"]) or []
+        stats = features(bars)
+        if not stats or len(bars) < 120:
+            insufficient += 1
+            continue
+        usable += 1
+        if split:
+            for key in STRATEGIES:
+                result = event_study(bars, key, split, benchmark)
+                for part in ("train", "test"):
+                    studies[key][part].extend(result[part])
+        # 老日线可用于历史研究，不能伪装成最新技术信号。
+        if not benchmark or bars[-1][0] != dates[-1] or (now_local().date() - date.fromisoformat(bars[-1][0])).days > 10:
+            continue
+        hits = triggers(stats)
+        if not hits:
+            continue
+        row = dict(item, strategies=hits, strategy_labels=[STRATEGIES[key]["label"] for key in hits],
+                   historical_as_of=stats["as_of"], ma20=round(stats["ma20"], 3), ma60=round(stats["ma60"], 3),
+                   vol20_pct=round(stats["vol20"] * 100, 3), status="待前向验证",
+                   reason=" / ".join(STRATEGIES[key]["label"] for key in hits) + "：基于最近完整交易日日线触发")
+        for key in hits:
+            groups[key].append(row)
+    reports = []
+    for key, specification in STRATEGIES.items():
+        test = summarize(studies[key]["test"])
+        reports.append({"key": key, **specification, "current_matches": len(groups[key]),
+                        "train": summarize(studies[key]["train"]), "test": test,
+                        "status": evidence_status(test)})
+    selected = balanced_candidates(groups)
+    evidence = {row["key"]: row["status"] for row in reports}
+    for item in selected:
+        item["validation"] = [STRATEGIES[key]["label"] + "：" + evidence[key] for key in item["strategies"]]
+        item["priority_eligible"] = any(evidence[key] == "待前向验证" for key in item["strategies"])
+        item["status"] = "待前向验证" if item["priority_eligible"] else "验证证据不足"
+    result = {"version": VERSION, "sample_requested": len(sample), "sample_usable": usable,
+              "history_failed": len(set(errors)), "history_insufficient": insufficient, "split_date": split,
+              "history_start": dates[0] if dates else None, "history_end": dates[-1] if dates else None,
+              "benchmark_available": bool(benchmark), "strategies": reports,
+              "assumptions": [
+                  "按板块分层抽取当前成交活跃样本，非历史全市场回测，存在幸存者及当前样本选择偏差。",
+                  "三套规则预先固定，没有用样本外成绩挑参数；统一日期按前65%/后35%分为研究区间和样本外。",
+                  "只使用今天之前的完整日线；信号次日收盘假设入场，持有五个交易日，单股单策略不重叠。",
+                  "假设买卖佣金各0.03%、滑点各0.05%、卖出税费0.05%；不代表实际券商费率，另展示双倍成本结果。",
+                  "只有前复权收盘，未模拟涨跌停、最低佣金、整手、容量及真实成交；展示的是事件均值，不是组合收益率。",
+                  "股票研究仅采用腾讯明确标注的前复权日线；取不到不混用未复权数据，缺少120根日线的样本不参与。",
+                  "超额收益相对同起止日沪深300价格涨幅（不含分红）；缺基准数据则留空。",
+                  "样本外不足30个事件、净收益非正、成本加倍后非正或未跑赢基准时，不允许AI标为优先观察。",
+                  "样本外仍共享当前股票样本，不能证明未来收益；通过历史初筛也仅标为待前向验证。",
+              ]}
+    return selected, result, histories

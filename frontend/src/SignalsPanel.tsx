@@ -1,13 +1,34 @@
 import { useState } from "react";
-import { Alert, Badge, Button, Group, Loader, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Group, Loader, MultiSelect, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { api } from "./api";
 import { usePolling } from "./usePolling";
+
+function percent(value: number | null | undefined) {
+  return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
 
 export function SignalsPanel() {
   const { data, error, loading, reload } = usePolling(api.stockSignals);
   const [busy, setBusy] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [savingBoards, setSavingBoards] = useState(false);
+  const saveBoards = async (boards: string[]) => {
+    if (!boards.length) {
+      setRefreshError("请至少选择一个参与选股的板块。");
+      return;
+    }
+    setSavingBoards(true);
+    setRefreshError(null);
+    try {
+      await api.saveStockBoards(boards);
+      await reload();
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : "板块配置保存失败");
+    } finally {
+      setSavingBoards(false);
+    }
+  };
   const analyze = async () => {
     setAnalyzing(true);
     setRefreshError(null);
@@ -45,15 +66,28 @@ export function SignalsPanel() {
       {loading && !data ? <Loader color="gold" size="sm" /> : null}
       {data ? (
         <Stack gap="sm">
+          <Paper className="stat-tile" p="sm">
+            <MultiSelect
+              label="参与选股板块"
+              description="默认仅主板。更改后自动按账号保存，并重新生成该范围的候选与研究结果。"
+              data={["主板", "创业板", "科创板", "北交所"]}
+              value={data.allowed_boards || ["主板"]}
+              onChange={(boards) => void saveBoards(boards)}
+              disabled={savingBoards}
+              clearable={false}
+              aria-label="参与选股板块"
+            />
+            <Text size="xs" c="dimmed" mt={4}>{savingBoards ? "正在保存板块配置…" : `当前选股范围：${(data.allowed_boards || ["主板"]).join("、")}；未选板块不进入日线样本、历史验证或 AI 候选。`}</Text>
+          </Paper>
           <Text size="xs" c="dimmed">{data.engine} · {data.source}</Text>
           <Group gap="xs">
             <Badge color={data.complete ? "teal" : "yellow"}>{data.complete ? "分页完整" : "尚未完成全市场覆盖"}</Badge>
-            <Text size="xs">{data.running ? `正在扫描：已读取 ${data.progress} 只` : `已扫描 ${data.scanned} / ${data.expected || "待获取"} 只 · 命中 ${data.matched} 只`}</Text>
+            <Text size="xs">{data.running ? `正在扫描与研究：已读取 ${data.progress} 只` : `已扫描 ${data.scanned} / ${data.expected || "待获取"} 只 · 展示 ${data.items.length} 只候选`}</Text>
           </Group>
-          <Text size="xs" c="dimmed">{Object.entries(data.boards).map(([board, count]) => `${board} ${count} 只`).join(" · ")}</Text>
+          <Text size="xs" c="dimmed">全市场报价覆盖（不代表全部参与选股）：{Object.entries(data.boards).map(([board, count]) => `${board} ${count} 只`).join(" · ")}</Text>
           <Text size="xs" c="dimmed">抓取完成：{data.fetched_at?.replace("T", " ").slice(0, 19) || "等待首轮扫描"} · 市场最近交易日：{data.trade_date || "待核实"}</Text>
           <Alert color="yellow">
-            <Text size="xs">以下为未回测规则生成的观察候选，不是买入指令。公开行情延迟未知，报价时刻只有时间、没有证券级日期，交易前需要核实。</Text>
+            <Text size="xs">以下候选由三套待验证假设产生。历史研究仅覆盖当前抽取的样本，存在选择偏差；公开行情延迟未知，报价日期未逐只验证。</Text>
             {data.stale && data.fetched_at ? <Text size="xs" mt={4}>数据已超过十分钟，仅供历史参考。</Text> : null}
             {!data.market_date_current && data.trade_date ? <Text size="xs" mt={4}>最近交易日不是今天，当前价格仅作收盘参考。</Text> : null}
           </Alert>
@@ -70,7 +104,7 @@ export function SignalsPanel() {
               <Text size="xs" c="dimmed">DeepSeek 尚未启用。请在服务器配置 API 密钥并重启，密钥无需填到网页或聊天中。</Text>
             ) : (
               <Stack gap={4}>
-                <Text size="xs" c="dimmed">{data.ai.model} · 只分析本轮最多 20 只候选；仅使用公开行情，未接入新闻、财报或账户资料。</Text>
+                <Text size="xs" c="dimmed">{data.ai.model} · 比较本轮最多 20 只候选及历史研究摘要；未接入新闻、财报或账户资料。</Text>
                 <Text size="xs" c="dimmed">配置后有效扫描自动分析，会消耗 DeepSeek API 额度；手动分析至少间隔一分钟，页面轮询不重复调用。</Text>
                 {data.ai.status === "running" ? <Text size="sm">DeepSeek 正在比较本轮候选…</Text> : null}
                 {data.ai.error ? <Text size="xs" c={data.ai.status === "failed" ? "red" : "dimmed"}>{data.ai.error}</Text> : null}
@@ -79,6 +113,38 @@ export function SignalsPanel() {
               </Stack>
             )}
           </Paper>
+          {data.research ? (
+            <Paper className="stat-tile" p="sm">
+              <Text fw={600} size="sm" mb={4}>策略对照 · 样本外验证</Text>
+              <Text size="xs" c="dimmed" mb="xs">本轮行情有效 {data.eligible ?? "—"} 只；抽取日线样本 {data.research.sample_requested} 只，可用 {data.research.sample_usable} 只，历史不足 {data.research.history_insufficient} 只，获取失败 {data.research.history_failed} 个请求。历史验证范围不是全部 A 股。</Text>
+              <Text size="xs" c="dimmed" mb="xs">历史区间 {data.research.history_start || "—"}～{data.research.history_end || "—"} · 样本外从 {data.research.split_date || "待取得足够历史"} 开始</Text>
+              {!data.research.benchmark_available ? <Text size="xs" c="yellow" mb="xs">沪深 300 基准缺失，本轮不产生新的技术候选。</Text> : null}
+              <Stack gap="xs">
+                {data.research.strategies.map((strategy) => (
+                  <Paper key={strategy.key} p="sm" className="stat-tile">
+                    <Group justify="space-between" mb={4}><Text size="sm" fw={600}>{strategy.label} · 当前命中 {strategy.current_matches}</Text><Badge size="xs" color="yellow">{strategy.status}</Badge></Group>
+                    <Text size="xs" c="dimmed" mb="xs">{strategy.rule}</Text>
+                    <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+                      <div><Text size="xs" c="dimmed">研究区间 · 平均净事件收益</Text><Text size="sm">{percent(strategy.train.avg_net_pct)}</Text><Text size="xs" c="dimmed">{strategy.train.trades} 个事件</Text></div>
+                      <div><Text size="xs" c="dimmed">样本外 · 平均净事件收益</Text><Text size="sm">{percent(strategy.test.avg_net_pct)}</Text><Text size="xs" c="dimmed">{strategy.test.trades} 个事件 · 正收益占比 {strategy.test.win_pct == null ? "—" : `${strategy.test.win_pct.toFixed(1)}%`}</Text></div>
+                      <div><Text size="xs" c="dimmed">样本外 · 双倍交易成本</Text><Text size="sm">{percent(strategy.test.double_cost_pct)}</Text><Text size="xs" c="dimmed">最差单次 {percent(strategy.test.worst_trade_pct)}</Text></div>
+                      <div><Text size="xs" c="dimmed">样本外 · 相对沪深 300</Text><Text size="sm">{percent(strategy.test.avg_excess_pct)}</Text><Text size="xs" c="dimmed">{strategy.test.benchmark_trades} 个可比事件</Text></div>
+                    </SimpleGrid>
+                  </Paper>
+                ))}
+              </Stack>
+              <Text size="xs" fw={600} mt="sm" mb={4}>验证口径与限制</Text>
+              {data.research.assumptions.map((text) => <Text key={text} size="xs" c="dimmed" mb={4}>{text}</Text>)}
+            </Paper>
+          ) : null}
+          {data.paper ? (
+            <Paper className="stat-tile" p="sm">
+              <Text fw={600} size="sm" mb={4}>前向模拟跟踪</Text>
+              <Text size="sm">已记录 {data.paper.recorded} 个策略事件 · 完成 {data.paper.completed} · 待观察 {data.paper.pending}</Text>
+              <Text size="xs" mt={4}>已完成事件的平均净收益：{percent(data.paper.avg_net_pct)}</Text>
+              <Text size="xs" c="dimmed" mt={4}>{data.paper.note}</Text>
+            </Paper>
+          ) : null}
           <Paper className="stat-tile" p="sm">
             <Text fw={600} size="sm" mb={4}>筛选与价格规则</Text>
             {data.rules.map((rule) => <Text key={rule} size="xs" c="dimmed" mb={4}>{rule}</Text>)}
@@ -90,7 +156,7 @@ export function SignalsPanel() {
             <Paper className="day-card" p="sm" key={item.code}>
               <Group justify="space-between" mb="xs">
                 <div><Text fw={600}>{item.name}</Text><Text size="xs" c="dimmed">{item.code} · {item.board} · 报价时刻 {item.quote_time || "未知"}</Text></div>
-                <div style={{ textAlign: "right" }}><Text fw={700} c="red">{item.price.toFixed(2)} · +{item.change_pct.toFixed(2)}%</Text><Badge size="xs" color="yellow">{item.status}</Badge></div>
+                <div style={{ textAlign: "right" }}><Text fw={700} c={item.change_pct >= 0 ? "red" : "teal"}>{item.price.toFixed(2)} · {percent(item.change_pct)}</Text><Badge size="xs" color="yellow">{item.status}</Badge></div>
               </Group>
               <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
                 <div><Text size="xs" c="dimmed">回踩观察区（元）</Text><Text size="sm">{item.watch_low.toFixed(2)}～{item.watch_high.toFixed(2)}</Text></div>
@@ -99,6 +165,8 @@ export function SignalsPanel() {
                 <div><Text size="xs" c="dimmed">成交额 / 换手率</Text><Text size="sm">{(item.amount / 100000000).toFixed(2)} 亿 / {item.turnover_pct.toFixed(2)}%</Text></div>
               </SimpleGrid>
               <Text size="xs" c="dimmed" mt="xs">{item.reason}</Text>
+              {item.historical_as_of ? <Text size="xs" c="dimmed" mt={4}>技术信号日 {item.historical_as_of} · 20日均价 {item.ma20?.toFixed(2)} · 60日均价 {item.ma60?.toFixed(2)} · 日收益波动率 {percent(item.vol20_pct)}</Text> : null}
+              {item.validation?.length ? <Text size="xs" c={item.priority_eligible ? "dimmed" : "yellow"} mt={4}>{item.validation.join(" · ")}{item.priority_eligible ? "" : "；AI 仅可等待或暂不考虑。"}</Text> : null}
               {comment ? (
                 <Stack gap={4} mt="xs">
                   <Group gap="xs"><Badge size="sm" color={comment.view === "优先观察" ? "teal" : "gray"}>AI · {comment.view}</Badge><Text size="xs">{comment.trigger}</Text></Group>

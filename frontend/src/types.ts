@@ -349,6 +349,14 @@ export interface Exposure {
   message: string | null;
 }
 export interface StockSignal {
+  strategies?: string[];
+  strategy_labels?: string[];
+  historical_as_of?: string;
+  ma20?: number;
+  ma60?: number;
+  vol20_pct?: number;
+  validation?: string[];
+  priority_eligible?: boolean;
   code: string;
   name: string;
   board: string;
@@ -366,6 +374,10 @@ export interface StockSignal {
 }
 
 export interface StockSignals {
+  allowed_boards: string[];
+  eligible?: number;
+  research?: StockResearch;
+  paper?: { recorded: number; completed: number; pending: number; avg_net_pct: number | null; note: string };
   ai: StockAI;
   running: boolean;
   fetched_at: string | null;
@@ -393,6 +405,30 @@ export interface StockAIComment {
   reason: string;
   risk: string;
   trigger: "回踩观察" | "突破观察" | "等待";
+}
+
+export interface EventMetrics {
+  trades: number;
+  win_pct: number | null;
+  avg_net_pct: number | null;
+  worst_trade_pct: number | null;
+  double_cost_pct: number | null;
+  avg_excess_pct: number | null;
+  benchmark_trades: number;
+}
+
+export interface StockResearch {
+  version: string;
+  sample_requested: number;
+  sample_usable: number;
+  history_failed: number;
+  history_insufficient: number;
+  split_date: string | null;
+  history_start: string | null;
+  history_end: string | null;
+  benchmark_available: boolean;
+  assumptions: string[];
+  strategies: { key: string; label: string; rule: string; current_matches: number; train: EventMetrics; test: EventMetrics; status: string }[];
 }
 
 export interface StockAI {

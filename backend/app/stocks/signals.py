@@ -12,13 +12,17 @@ from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
 from . import deepseek
+from . import research, paper
+from ..database import SessionLocal
+from .preferences import normalize_boards
 
 RULES = [
     "范围：沪深 A 股及北交所；剔除 ST、退市标记、停牌或缺失关键报价的证券。",
-    "观察条件：成交额不少于 1 亿元，涨幅 0.5%～5%，换手率 1%～15%。",
-    "现价不低于当日成交均价，且高于当日开盘价；按涨幅降序展示前 20 只。",
+    "不再用固定涨幅、换手率或一亿元门槛筛候选；先保留关键行情有效、有成交的股票。",
+    "按板块轮询抽取成交活跃日线样本，再分别检验趋势延续、趋势回调和低波动三套假设。",
+    "三套策略轮询分配最多20个展示位置，重叠股票合并；不再按当日涨幅取前20。",
     "价格参考：成交均价至现价为回踩观察区，当日高点为突破参考，当日低点为失效参考。",
-    "规则尚未回测；价格不含手续费、滑点或次日跳空，失效价不能保证止损成交。",
+    "历史验证为当前样本事件研究，存在样本选择偏差；前向跟踪尚需积累，失效参考价不保证成交。",
 ]
 _lock = threading.Lock()
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ashare-scan")
@@ -26,6 +30,19 @@ _last_attempt = 0.0
 _state = {"running": False, "fetched_at": None, "trade_date": None, "scanned": 0,
           "expected": 0, "complete": False, "items": [], "errors": [], "progress": 0,
           "boards": {}, "matched": 0}
+_states = {}
+_attempts = {}
+
+
+def _scope(boards):
+    if boards == ["主板"]:
+        return _state
+    key = tuple(boards)
+    if key not in _states:
+        _states[key] = {"running": False, "fetched_at": None, "trade_date": None, "scanned": 0,
+                        "expected": 0, "complete": False, "items": [], "errors": [], "progress": 0,
+                        "boards": {}, "matched": 0}
+    return _states[key]
 
 
 def _number(value):
@@ -50,21 +67,21 @@ def candidate(row):
     change, turnover = fields["changepercent"], fields["turnoverratio"]
     if min(price, opening, high, low, volume) <= 0 or not low <= opening <= high or not low <= price <= high:
         return None
-    if amount < 100_000_000 or not 0.5 <= change <= 5 or not 1 <= turnover <= 15:
+    if amount <= 0 or turnover < 0:
         return None
     average = amount / volume
-    if not low <= average <= price or price <= opening:
+    if not low <= average <= high:
         return None
-    return {"code": code, "name": name, "board": universe.board_of(code), "price": price,
+    return {"code": code, "symbol": symbol, "name": name, "board": universe.board_of(code), "price": price,
             "change_pct": change, "amount": amount, "turnover_pct": turnover,
-            "watch_low": round(average, 2), "watch_high": price,
+            "watch_low": round(min(average, price), 2), "watch_high": round(max(average, price), 2),
             "breakout_price": high, "invalidation_price": low,
             "quote_time": str(row.get("ticktime") or "") or None,
             "reason": "成交额充足、温和上涨，现价高于开盘价且不低于当日成交均价",
             "status": "观察候选"}
 
 
-def scan_market(get_json=None, count_loader=None, progress=None):
+def scan_market(get_json=None, count_loader=None, progress=None, research_builder=None, allowed_boards=None):
     get_json = get_json or universe._get_json
     count_loader = count_loader or universe.fetch_node_count
     by_symbol, errors, expected = {}, [], 0
@@ -100,51 +117,77 @@ def scan_market(get_json=None, count_loader=None, progress=None):
     for row in by_symbol.values():
         board = universe.board_of(str(row.get("code") or ""))
         boards[board] = boards.get(board, 0) + 1
-    items = [result for row in by_symbol.values() if (result := candidate(row)) is not None]
-    items.sort(key=lambda item: (-item["change_pct"], item["code"]))
+    selected_boards = normalize_boards(allowed_boards)
+    items = [result for row in by_symbol.values() if (result := candidate(row)) is not None and result["board"] in selected_boards]
     # 日期来自交易日接口，并非单只证券的报价时间戳，前端明确区分。
     try:
         trade_date = fetch_market_trade_date()
     except Exception:
         trade_date = None
-    return {"fetched_at": now_local().isoformat(), "trade_date": trade_date,
+    fetched_at = now_local().isoformat()
+    builder = research_builder or research.build_research
+    if research_builder is None:
+        try:
+            with SessionLocal() as db:
+                extras = paper.pending_symbols(db, boards=selected_boards)
+        except Exception:
+            extras = []
+        selected, report, histories = builder(items, trade_date, extra_symbols=extras)
+    else:
+        selected, report, histories = builder(items, trade_date)
+    result = {"fetched_at": fetched_at, "trade_date": trade_date,
             "scanned": len(by_symbol), "expected": expected, "progress": len(by_symbol),
             "complete": not errors, "errors": errors, "boards": boards,
-            "matched": len(items), "items": items[:20]}
+            "eligible": len(items), "matched": sum(row.get("current_matches", 0) for row in report.get("strategies", [])),
+            "items": selected, "research": report, "allowed_boards": selected_boards}
+    # 在后台任务中持久化，独立测试可注入纯研究函数，不读写用户数据库。
+    if research_builder is None:
+        try:
+            with SessionLocal() as db:
+                result["paper"] = paper.update(db, result, histories)
+        except Exception:
+            result["paper"] = {"recorded": 0, "completed": 0, "pending": 0, "avg_net_pct": None,
+                               "note": "前向跟踪记录失败，请检查数据库结构和服务日志。"}
+    return result
 
 
-def _run():
+def _run(boards):
     def progress(value):
         with _lock:
-            _state["progress"] = value
+            _scope(boards)["progress"] = value
     try:
-        result = scan_market(progress=progress)
+        result = scan_market(progress=progress, allowed_boards=boards)
         with _lock:
-            _state.update(result)
+            _scope(boards).update(result)
     except Exception as exc:
         with _lock:
-            _state.update(errors=["扫描失败：%s" % exc], complete=False)
+            _scope(boards).update(errors=["扫描失败：%s" % exc], complete=False)
     finally:
         with _lock:
-            _state["running"] = False
-            snapshot = deepcopy(_state)
+            _scope(boards)["running"] = False
+            snapshot = deepcopy(_scope(boards))
         deepseek.request_analysis(snapshot)
 
 
-def get_signals(refresh=False, analyze=False):
+def get_signals(refresh=False, analyze=False, boards=None):
     global _last_attempt
+    selected_boards = normalize_boards(boards)
     with _lock:
-        elapsed = time.monotonic() - _last_attempt
-        due = not _last_attempt or (elapsed >= 300 and should_poll_quotes())
+        state = _scope(selected_boards)
+        last_attempt = _attempts.get(tuple(selected_boards), 0)
+        elapsed = time.monotonic() - last_attempt
+        due = not last_attempt or (elapsed >= 300 and should_poll_quotes())
         # 共享任务：多账号、多标签页不会重复拉取全市场。
-        if not _state["running"] and (due or (refresh and elapsed >= 60)):
+        if not state["running"] and (due or (refresh and elapsed >= 60)):
             _last_attempt = time.monotonic()
-            _state.update(running=True, progress=0)
-            _executor.submit(_run)
-        result = deepcopy(_state)
+            _attempts[tuple(selected_boards)] = _last_attempt
+            state.update(running=True, progress=0, allowed_boards=selected_boards)
+            _executor.submit(_run, selected_boards)
+        result = deepcopy(state)
+    result["allowed_boards"] = selected_boards
     moment = now_local()
     result.update(session=session_label(moment), source="新浪公开行情",
-                  engine="公开规则扫描 v1（未接入券商或 AI）", rules=RULES,
+                  rules=RULES,
                   refresh_seconds=300, stale=True)
     if result["fetched_at"]:
         from datetime import datetime
@@ -153,5 +196,5 @@ def get_signals(refresh=False, analyze=False):
     if analyze:
         deepseek.request_analysis(result, retry=True)
     result["ai"] = deepseek.analysis_state(result)
-    result["engine"] = "公开规则扫描 v1 · DeepSeek 候选点评" if result["ai"]["configured"] else "公开规则扫描 v1（DeepSeek 未配置）"
+    result["engine"] = "多策略研究 v2 · DeepSeek 候选点评" if result["ai"]["configured"] else "多策略研究 v2（DeepSeek 未配置）"
     return result

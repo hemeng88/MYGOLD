@@ -38,7 +38,7 @@ class DeepSeekTests(unittest.TestCase):
             body = json.loads(request.content)
             self.assertEqual(body["response_format"], {"type": "json_object"})
             public_input = json.loads(body["messages"][1]["content"])
-            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items"})
+            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards"})
             return httpx.Response(200, json=response())
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")):
             result = deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler))
@@ -67,6 +67,12 @@ class DeepSeekTests(unittest.TestCase):
         for payload in (response(finish="length"), {"choices": [{"finish_reason": "stop", "message": {"content": " "}}]}):
             with self.assertRaises(ValueError):
                 self.call(payload)
+
+    def test_ai_cannot_prioritize_unvalidated_candidate(self):
+        report = deepcopy(REPORT)
+        report["items"][0]["view"] = "优先观察"
+        with self.assertRaises(ValueError):
+            self.call(response(report))
 
     def test_api_errors_hide_raw_response(self):
         for status in (401, 402, 429, 500):

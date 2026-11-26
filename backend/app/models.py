@@ -226,6 +226,31 @@ class MainboardStock(Base):
     periods_json: Mapped[str] = mapped_column(Text, nullable=True)
 
 
+class StockResearchPreference(Base):
+    __tablename__ = "stock_research_preferences"
+    user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    boards_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StrategyObservation(Base):
+    """保存首次出现的策略候选；后续用完整日线做前向事件跟踪，不是真实委托。"""
+
+    __tablename__ = "strategy_observations"
+    __table_args__ = (UniqueConstraint("version", "signal_date", "code", "strategy", name="uq_strategy_observation"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[str] = mapped_column(String(16), nullable=False)
+    signal_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(16), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(16), nullable=False)
+    reference_price: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    entry_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    exit_date: Mapped[str] = mapped_column(String(10), nullable=True)
+    net_pct: Mapped[float] = mapped_column(Float, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+
 class CountdownItem(Base):
     """账号私有的倒计时。单次日期或每月循环，可选到分钟。"""
 

@@ -37,6 +37,8 @@ from ..schemas import (
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..stocks.signals import get_signals
+from ..stocks.preferences import load_boards, save_boards
+from ..schemas import StockBoardPreferenceIn
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -298,18 +300,26 @@ def fund(code: str, db: Session = Depends(get_db), user: User = Depends(require_
 
 
 @guarded.get("/stocks/signals")
-def stock_signals(_user: User = Depends(require_auth)):
-    return get_signals()
+def stock_signals(user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return get_signals(boards=load_boards(db, user.id))
 
 
 @guarded.post("/stocks/signals/refresh")
-def stock_signals_refresh(_user: User = Depends(require_auth)):
-    return get_signals(refresh=True)
+def stock_signals_refresh(user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return get_signals(refresh=True, boards=load_boards(db, user.id))
 
 
 @guarded.post("/stocks/signals/analyze")
-def stock_signals_analyze(_user: User = Depends(require_auth)):
-    return get_signals(analyze=True)
+def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return get_signals(analyze=True, boards=load_boards(db, user.id))
+
+
+@guarded.put("/stocks/signals/preferences")
+def stock_signals_preferences(payload: StockBoardPreferenceIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        return {"boards": save_boards(db, user.id, payload.boards)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 router.include_router(guarded)

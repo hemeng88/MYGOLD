@@ -67,6 +67,9 @@ export const api = {
   stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
   refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
   analyzeStockSignals: () => request<StockSignals>("/api/stocks/signals/analyze", { method: "POST" }),
+  saveStockBoards: (boards: string[]) => request<{ boards: string[] }>("/api/stocks/signals/preferences", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boards }),
+  }),
   login: async (username: string, password: string) => {
     const result = await request<LoginResult>(
       "/api/auth/login",
