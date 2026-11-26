@@ -36,6 +36,7 @@ from ..schemas import (
 )
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
+from ..stocks.signals import get_signals
 from ..timeutil import now_local, trade_date_today
 
 router = APIRouter()
@@ -294,6 +295,16 @@ def fund(code: str, db: Session = Depends(get_db), user: User = Depends(require_
     if not fund_favorites.get_favorite(db, user.id, code):
         raise HTTPException(status_code=404, detail="这只基金还没收藏")
     return fund_detail(db, user.id, code)
+
+
+@guarded.get("/stocks/signals")
+def stock_signals(_user: User = Depends(require_auth)):
+    return get_signals()
+
+
+@guarded.post("/stocks/signals/refresh")
+def stock_signals_refresh(_user: User = Depends(require_auth)):
+    return get_signals(refresh=True)
 
 
 router.include_router(guarded)

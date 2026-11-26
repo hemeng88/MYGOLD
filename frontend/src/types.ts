@@ -348,3 +348,40 @@ export interface Exposure {
   ready: boolean;
   message: string | null;
 }
+export interface StockSignal {
+  code: string;
+  name: string;
+  board: string;
+  price: number;
+  change_pct: number;
+  amount: number;
+  turnover_pct: number;
+  watch_low: number;
+  watch_high: number;
+  breakout_price: number;
+  invalidation_price: number;
+  quote_time: string | null;
+  reason: string;
+  status: string;
+}
+
+export interface StockSignals {
+  running: boolean;
+  fetched_at: string | null;
+  trade_date: string | null;
+  scanned: number;
+  expected: number;
+  progress: number;
+  complete: boolean;
+  items: StockSignal[];
+  errors: string[];
+  boards: Record<string, number>;
+  matched: number;
+  session: string;
+  source: string;
+  engine: string;
+  rules: string[];
+  refresh_seconds: number;
+  stale: boolean;
+  market_date_current: boolean;
+}

@@ -10,6 +10,7 @@ import { ExposurePanel } from "./ExposurePanel";
 import { FundRankPanel } from "./FundRankPanel";
 import { FundsPanel } from "./FundsPanel";
 import { MainboardPanel } from "./MainboardPanel";
+import { SignalsPanel } from "./SignalsPanel";
 import { MiscPanel } from "./MiscPanel";
 import { InstallHint } from "./InstallHint";
 import { LoginScreen } from "./LoginScreen";
@@ -129,6 +130,9 @@ export default function App() {
             <Tabs.Panel value="mainboard" pt="sm">
               <MainboardPanel />
             </Tabs.Panel>
+            <Tabs.Panel value="signals" pt="sm">
+              <SignalsPanel />
+            </Tabs.Panel>
             <Tabs.Panel value="misc" pt="sm">
               <MiscPanel />
             </Tabs.Panel>
@@ -145,6 +149,9 @@ export default function App() {
               </Tabs.Tab>
               <Tabs.Tab value="mainboard" leftSection={<IconBuildingBank size={16} />}>
                 主板
+              </Tabs.Tab>
+              <Tabs.Tab value="signals" leftSection={<IconChartLine size={16} />}>
+                全 A 股
               </Tabs.Tab>
               <Tabs.Tab value="misc" leftSection={<IconCalendarEvent size={16} />}>
                 杂项

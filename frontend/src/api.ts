@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import type { StockSignals } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
 import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
@@ -63,6 +64,8 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
 }
 
 export const api = {
+  stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
+  refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
   login: async (username: string, password: string) => {
     const result = await request<LoginResult>(
       "/api/auth/login",
