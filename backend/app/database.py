@@ -74,6 +74,10 @@ def ensure_schema():
     Base.metadata.create_all(bind=engine)
     inspector = inspect(engine)
     # 基金持仓份额和成本价是后加的，老库要补列
+    _ensure_column(inspector, "deepseek_account_configs", "provider", "provider VARCHAR(16) DEFAULT 'deepseek'")
+    _ensure_column(inspector, "deepseek_account_configs", "base_url", "base_url VARCHAR(512) DEFAULT 'https://api.deepseek.com'")
+    _ensure_column(inspector, "deepseek_account_configs", "json_mode", "json_mode VARCHAR(16) DEFAULT 'json_object'")
+    _ensure_column(inspector, "deepseek_account_configs", "token_field", "token_field VARCHAR(32) DEFAULT 'max_tokens'")
     _ensure_column(inspector, "fund_favorites", "shares", "shares FLOAT")
     _ensure_column(inspector, "fund_favorites", "cost_price", "cost_price FLOAT")
     _ensure_column(inspector, "fund_favorites", "asset_type", "asset_type VARCHAR(12) DEFAULT 'fund'")

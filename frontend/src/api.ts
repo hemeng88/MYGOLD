@@ -64,13 +64,14 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
 }
 
 export const api = {
-  deepSeekSettings: () => request<DeepSeekSettings>("/api/settings/deepseek"),
-  saveDeepSeekSettings: (apiKey: string, model: string) => request<DeepSeekSettings>("/api/settings/deepseek", {
+  deepSeekSettings: () => request<DeepSeekSettings>("/api/settings/ai"),
+  saveDeepSeekSettings: (apiKey: string, model: string, provider: string, baseUrl: string, jsonMode: string, tokenField: string) => request<DeepSeekSettings>("/api/settings/ai", {
     method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey || null, model }),
+    body: JSON.stringify({ api_key: apiKey || null, model, provider, base_url: baseUrl, json_mode: jsonMode, token_field: tokenField }),
   }),
-  deleteDeepSeekSettings: () => request<DeepSeekSettings>("/api/settings/deepseek", { method: "DELETE" }),
-  testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/deepseek/test", { method: "POST" }),
+  deleteDeepSeekSettings: () => request<DeepSeekSettings>("/api/settings/ai", { method: "DELETE" }),
+  testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test", { method: "POST" }),
+  testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
   stockSignals: (signal?: AbortSignal) => request<StockSignals>("/api/stocks/signals", { signal }),
   refreshStockSignals: () => request<StockSignals>("/api/stocks/signals/refresh", { method: "POST" }),
   analyzeStockSignals: () => request<StockSignals>("/api/stocks/signals/analyze", { method: "POST" }),

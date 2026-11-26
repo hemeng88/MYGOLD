@@ -325,28 +325,41 @@ def stock_signals_preferences(payload: StockBoardPreferenceIn, user: User = Depe
 
 
 @guarded.get("/settings/deepseek")
+@guarded.get("/settings/ai")
 def deepseek_config_get(user: User = Depends(require_auth), db: Session = Depends(get_db)):
     return ai_settings.public_status(ai_settings.resolve(db, user.id))
 
 
 @guarded.put("/settings/deepseek")
+@guarded.put("/settings/ai")
 def deepseek_config_save(payload: DeepSeekConfigIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
-        return ai_settings.save(db, user.id, payload.api_key, payload.model)
+        return ai_settings.save(db, user.id, payload.api_key, payload.model, provider=payload.provider,
+                                base_url=payload.base_url, json_mode=payload.json_mode, token_field=payload.token_field)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @guarded.delete("/settings/deepseek")
+@guarded.delete("/settings/ai")
 def deepseek_config_delete(user: User = Depends(require_auth), db: Session = Depends(get_db)):
     return ai_settings.disable(db, user.id)
 
 
 @guarded.post("/settings/deepseek/test")
+@guarded.post("/settings/ai/test")
 def deepseek_config_test(user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
         return ai_settings.test_connection(ai_settings.resolve(db, user.id), user.id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.post("/settings/ai/test-generation")
+def model_config_generation_test(user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        return ai_settings.test_generation(ai_settings.resolve(db, user.id))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

@@ -432,6 +432,7 @@ export interface StockResearch {
 }
 
 export interface StockAI {
+  provider_label?: string;
   configured: boolean;
   model: string;
   status: "idle" | "running" | "ready" | "failed" | "waiting" | "unconfigured";
@@ -443,6 +444,11 @@ export interface StockAI {
 }
 
 export interface DeepSeekSettings {
+  provider: string;
+  base_url: string;
+  json_mode: string;
+  token_field: string;
+  providers: { id: string; label: string; base_url: string; default_model: string; token_field: string }[];
   configured: boolean;
   model: string;
   source: "account" | "server" | "disabled" | "none";

@@ -234,6 +234,10 @@ class DeepSeekAccountConfig(Base):
     enabled: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     revision: Mapped[str] = mapped_column(String(36), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False, default="deepseek")
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False, default="https://api.deepseek.com")
+    json_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="json_object")
+    token_field: Mapped[str] = mapped_column(String(32), nullable=False, default="max_tokens")
 
 
 class StockResearchPreference(Base):

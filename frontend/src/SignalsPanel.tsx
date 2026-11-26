@@ -95,7 +95,7 @@ export function SignalsPanel() {
           {data.errors.map((message) => <Text key={message} size="xs" c="red">{message}</Text>)}
           <Paper className="stat-tile" p="sm">
             <Group justify="space-between" mb="xs">
-              <Text fw={600} size="sm">DeepSeek 候选点评</Text>
+              <Text fw={600} size="sm">AI 候选点评</Text>
               <DeepSeekSettingsPanel onChanged={reload} />
               <Button size="compact-xs" variant="light" color="gold"
                 loading={analyzing || data.ai?.status === "running"}
@@ -103,12 +103,12 @@ export function SignalsPanel() {
                 onClick={() => void analyze()}>分析本轮候选</Button>
             </Group>
             {!data.ai?.configured ? (
-              <Text size="xs" c="dimmed">DeepSeek 尚未启用。点击“配置 DeepSeek”填写 API Key 并保存即可使用。</Text>
+              <Text size="xs" c="dimmed">AI 分析尚未启用。点击“配置 AI 模型”选择服务商、填写 Key 并保存即可使用。</Text>
             ) : (
               <Stack gap={4}>
-                <Text size="xs" c="dimmed">{data.ai.model} · 比较本轮最多 20 只候选及历史研究摘要；未接入新闻、财报或账户资料。</Text>
-                <Text size="xs" c="dimmed">配置后有效扫描自动分析，会消耗 DeepSeek API 额度；手动分析至少间隔一分钟，页面轮询不重复调用。</Text>
-                {data.ai.status === "running" ? <Text size="sm">DeepSeek 正在比较本轮候选…</Text> : null}
+                <Text size="xs" c="dimmed">{data.ai.provider_label || "AI"} · {data.ai.model} · 比较本轮最多 20 只候选及历史研究摘要；未接入新闻、财报或账户资料。</Text>
+                <Text size="xs" c="dimmed">配置后有效扫描自动分析，会消耗对应服务商的 API 额度；手动分析至少间隔一分钟，页面轮询不重复调用。</Text>
+                {data.ai.status === "running" ? <Text size="sm">AI 正在比较本轮候选…</Text> : null}
                 {data.ai.error ? <Text size="xs" c={data.ai.status === "failed" ? "red" : "dimmed"}>{data.ai.error}</Text> : null}
                 {data.ai.summary ? <Text size="sm">{data.ai.summary}</Text> : null}
                 {data.ai.status === "ready" && data.ai.analyzed_at ? <Text size="xs" c="dimmed">分析完成：{data.ai.analyzed_at.replace("T", " ").slice(0, 19)} · 基于本页同一行情快照</Text> : null}

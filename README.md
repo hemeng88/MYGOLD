@@ -138,14 +138,42 @@
 不能以抓取时间冒充证券报价日期。超过十分钟的缓存标明过期；非当日行情仅作收盘参考。
 接口 `GET /api/stocks/signals` 与 `POST /api/stocks/signals/refresh` 均需要登录。
 
-### DeepSeek 候选点评
+### AI 模型配置与候选点评
 
-推荐在“全 A 股”页点击“配置 DeepSeek”：填写 API Key 和模型名称，保存后立即生效，
+“配置 AI 模型”支持 DeepSeek、通义千问/百炼、智谱 GLM、OpenAI 预设，以及公网 HTTPS 的
+自定义 OpenAI Chat Completions 兼容接口。选择服务商后填模型名称和对应 Key，保存立即生效。
+OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型填写；不代表所有模型都支持该协议。
+百炼默认地址仍有效，也可填写控制台提供的业务空间或地域专属地址。
+原生 Anthropic、Gemini 或只支持 Responses 的接口不能直接使用，需通过兼容网关或另行适配。
+
+切换服务商或 Base URL 必须重新填入 Key，避免将旧服务商密钥误发给新地址；
+服务商与地址不变时可留空保留 Key。自定义地址不允许 HTTP、内网、本机、URL 账号密码或查询参数；
+请求前核查所有 DNS 地址并固定本次连接 IP，保留域名作 TLS 校验且不跟随重定向。
+配置只保存一个当前使用的服务；更换后缓存和任务以新配置版本隔离。
+
+“JSON 输出方式”可在接口 JSON 模式和提示词兼容模式间选择；后者不发送 `response_format`，
+但仍对模型最终 JSON 严格校验。Token 上限字段可选 `max_tokens` 或 `max_completion_tokens`，
+默认按服务商预设，生成上限为4096。DeepSeek 专用 `thinking` 不会传给 OpenAI；
+百炼的 Qwen 模型使用其支持的 `enable_thinking` 关闭思考。
+具体模型能否使用这些参数，应在保存后通过验证确认，不进行自动收费重试。
+
+参考官方协议：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、
+[百炼兼容接口](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)、
+[智谱兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)。
+
+“测试连接”只检查 `/models`；若服务没有模型列表，不会直接判定 Key 无效。
+可单独点击“验证分析格式（少量费用）”，这会向已保存的服务发一次固定测试数据，
+通过真实分析的同一 JSON 校验流程；不会上传账户持仓，也不自动重试。
+通用接口为 `GET/PUT/DELETE /api/settings/ai`、`POST /api/settings/ai/test`、
+`POST /api/settings/ai/test-generation`，全部需要登录。旧 `/api/settings/deepseek` 接口作为兼容别名保留。
+旧数据库升级时补充服务商、地址、JSON及Token字段，原先加密保存的DeepSeek Key不重写。
+
+推荐在“全 A 股”页点击“配置 AI 模型”：填写 API Key 和模型名称，保存后立即生效，
 无需编辑服务器文件或重启。密钥输入留空表示保留当前 Key；更换时填写新 Key。
 页面只显示启用状态和配置来源，保存后的原文不会返回浏览器，也不写入浏览器本地存储。
 请通过 HTTPS 站点填写，存储加密不能替代传输加密。
 
-“测试连接”读取 DeepSeek `/models`，验证已保存 Key 的鉴权及所选模型是否存在，
+“测试连接”读取所选服务商的 `/models`，验证已保存 Key 的鉴权及所选模型是否存在，
 不会调用聊天生成，也不证明余额充足或股票分析一定成功。测试间隔至少十秒。
 “删除并停用”会清除当前账号的个人密钥、停止后续分析，并抑制该账号对服务器环境 Key 的回退，
 不会影响其他账号。重新填写并保存即可启用。

@@ -194,5 +194,5 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None):
     # 规则快照共享，AI 请求按当前账号的密钥和配置版本隔离。
     deepseek.request_analysis(result, retry=analyze, credentials=ai_config)
     result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
-    result["engine"] = "多策略研究 v2 · DeepSeek 候选点评" if result["ai"]["configured"] else "多策略研究 v2（DeepSeek 未配置）"
+    result["engine"] = "多策略研究 v2 · %s 候选点评" % result["ai"]["provider_label"] if result["ai"]["configured"] else "多策略研究 v2（AI 未配置）"
     return result
