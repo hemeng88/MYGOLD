@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { StockSignals, DeepSeekSettings } from "./types";
+import type { SingleStockReview, StockSignals, DeepSeekSettings, StockPortfolioConfig, StockPortfolioJob } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
 import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
@@ -73,6 +73,17 @@ export const api = {
   testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test", { method: "POST" }),
   testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
   stockSignals: (signal?: AbortSignal, mode = "intraday") => request<StockSignals>(`/api/stocks/signals?mode=${mode}`, { signal }),
+  stockPortfolioStatus: (signal: AbortSignal) => request<StockPortfolioJob>("/api/stocks/portfolio-study", { signal }),
+  startStockPortfolio: (mode: "intraday" | "close", config: StockPortfolioConfig) =>
+    request<StockPortfolioJob>(`/api/stocks/portfolio-study?mode=${mode}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
+    }),
+  singleStockPreview: (code: string) =>
+    request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}`),
+  singleStockAnalysis: (code: string, snapshotId: string) =>
+    request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}/analyze?${new URLSearchParams({ snapshot_id: snapshotId })}`, { method: "POST" }),
+  singleStockStatus: (code: string, snapshotId: string, signal: AbortSignal) =>
+    request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}/status?${new URLSearchParams({ snapshot_id: snapshotId })}`, { signal }),
   refreshStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/refresh?mode=${mode}`, { method: "POST" }),
   analyzeStockSignals: (mode: "intraday" | "close", snapshotId: string, codes: string[]) =>
     request<StockSignals>(`/api/stocks/signals/analyze?${new URLSearchParams({ mode, snapshot_id: snapshotId })}`, {

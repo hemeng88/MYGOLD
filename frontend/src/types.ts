@@ -348,7 +348,10 @@ export interface Exposure {
   ready: boolean;
   message: string | null;
 }
+export type LiquidityBand = "high" | "upper_mid" | "mid";
+
 export interface StockSignal {
+  liquidity_band?: LiquidityBand;
   close_history?: {
     appearances: number;
     consecutive_archives: number;
@@ -475,6 +478,9 @@ export interface StockResearch {
   version: string;
   sample_requested: number;
   sample_usable: number;
+  sample_bands?: Partial<Record<LiquidityBand, number>>;
+  candidate_bands?: Partial<Record<LiquidityBand, number>>;
+  close_pending?: number;
   history_failed: number;
   history_insufficient: number;
   split_date: string | null;
@@ -485,6 +491,44 @@ export interface StockResearch {
   assumptions: string[];
   strategies: { key: string; label: string; rule: string; current_matches: number; train: EventMetrics; test: EventMetrics; status: string }[];
 }
+
+export interface StockPortfolioConfig {
+  starting_cash: number;
+  max_positions: number;
+  max_position_pct: number;
+  commission_pct: number;
+  min_commission: number;
+  slippage_pct: number;
+}
+
+export interface StockPortfolioResult {
+  start_date: string;
+  end_date: string;
+  sample_size: number;
+  data_symbols: number;
+  sessions: number;
+  starting_cash: number;
+  end_equity: number;
+  return_pct: number;
+  benchmark_pct: number;
+  max_drawdown_pct: number;
+  closed_trades: number;
+  win_pct: number | null;
+  open_positions: number;
+  cost_total: number;
+  skipped: { no_buy_fill: number; outside_price_range: number; insufficient_budget: number; position_limit: number; delayed_exit_days: number };
+  curve: { date: string; equity: number }[];
+}
+
+export type StockPortfolioJob = { status: "idle" } | {
+  status: "running" | "complete" | "error";
+  id: string;
+  config: StockPortfolioConfig;
+  price_min: number;
+  price_max: number | null;
+  result?: StockPortfolioResult;
+  error?: string;
+};
 
 export interface StockAI {
   provider_label?: string;
@@ -498,6 +542,28 @@ export interface StockAI {
   summary: string | null;
   items: StockAIComment[];
   error: string | null;
+}
+
+export interface SingleStockReview {
+  code: string;
+  secid: string;
+  name: string;
+  board: string;
+  price: number | null;
+  quote_at: string | null;
+  price_date: string | null;
+  price_source: string;
+  session: string;
+  snapshot_id: string;
+  fetched_at: string;
+  decision: "符合条件，可考虑买入" | "等待确认" | "暂不买入";
+  decision_reason: string;
+  strategy_labels: string[];
+  plan: { entry_low: number; entry_high: number; target: number; stop: number;
+    reward_risk: number; as_of: string; method: string } | null;
+  can_analyze: boolean;
+  analysis_issue: string | null;
+  ai: StockAI;
 }
 
 export interface DeepSeekSettings {

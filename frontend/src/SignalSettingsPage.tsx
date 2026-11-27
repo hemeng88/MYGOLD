@@ -1,6 +1,8 @@
 import { Alert, Badge, Button, Group, MultiSelect, Paper, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { DeepSeekSettingsPanel } from "./DeepSeekSettingsPanel";
-import type { StockSignals } from "./types";
+import { PortfolioStudyPanel } from "./PortfolioStudyPanel";
+import { liquidityBands } from "./liquidityBands";
+import type { LiquidityBand, StockSignals } from "./types";
 
 function percent(value: number | null | undefined) {
   return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -25,9 +27,10 @@ export function SignalSettingsPage({ data, savingBoards, analyzing, canAnalyze, 
     <Paper className="stat-tile" p="sm">
       <Text size="sm" fw={600}>两种使用方式</Text>
       <Text size="xs" mt={4}>盘中观察：采用上一完整交易日日线，配合本轮行情，每两分钟自动安排扫描，正在扫描时不重复启动。</Text>
-      <Text size="xs" mt={4}>收盘选股：交易日15:30后可手动生成，服务器工作日16:00自动归档，17:00重试未成功范围；不需要一直开着页面。日线未更新时保留上一份，不用旧日线代替。</Text>
+      <Text size="xs" mt={4}>收盘选股：交易日15:30后可手动生成，服务器工作日16:00自动归档，17:00重试未成功范围。当日基准日线及足够的个股日线到齐后生成，缺日线的股票退出当日候选。</Text>
       <Text size="xs" mt={4}>收盘池中的价格、财报和行业状态固定在生成时，次日请切换盘中模式确认；这里不承诺下一交易日成交价格，也不会自动下单或推送。</Text>
     </Paper>
+    <PortfolioStudyPanel data={data} />
     {data.parameter_evaluation ? <Paper className="stat-tile" p="sm">
       <Text size="sm" fw={600}>参数滚动评估 · {data.adaptive_applied ? "本轮已采用通过验证的过滤参数" : "本轮采用原规则"}</Text>
       <Text size="xs" mt={4}>已取得 {data.parameter_evaluation.history_days ?? 0} 根基准日线；真实新增归档 {data.parameter_evaluation.forward_days}/{data.parameter_evaluation.required_forward_days} 个日期。{data.parameter_evaluation.reason}</Text>
@@ -111,6 +114,11 @@ export function SignalSettingsPage({ data, savingBoards, analyzing, canAnalyze, 
             <Paper className="stat-tile" p="sm">
               <Text fw={600} size="sm" mb={4}>策略对照 · 样本外验证</Text>
               <Text size="xs" c="dimmed" mb="xs">本轮行情有效 {data.eligible ?? "—"} 只；抽取日线样本 {data.research.sample_requested} 只，可用 {data.research.sample_usable} 只，历史不足 {data.research.history_insufficient} 只，获取失败 {data.research.history_failed} 个请求。历史验证范围不是全部 A 股。</Text>
+              {data.research.sample_bands ? <Group gap="xs" mb="xs">
+                {(Object.keys(liquidityBands) as LiquidityBand[]).map((band) =>
+                  <Badge key={band} variant="light">{liquidityBands[band]} · 样本 {data.research?.sample_bands?.[band] ?? 0} / 入选 {data.research?.candidate_bands?.[band] ?? 0}</Badge>)}
+              </Group> : null}
+              {data.mode === "close" && !!data.research.close_pending ? <Text size="xs" c="dimmed" mb="xs">当日缺日线 {data.research.close_pending} 只。</Text> : null}
               <Text size="xs" c="dimmed" mb="xs">历史区间 {data.research.history_start || "—"}～{data.research.history_end || "—"} · 样本外从 {data.research.split_date || "待取得足够历史"} 开始</Text>
               {!data.research.benchmark_available ? <Text size="xs" c="yellow" mb="xs">沪深 300 基准缺失，本轮不产生新的技术候选。</Text> : null}
               <Stack gap="xs">

@@ -26,6 +26,15 @@ class StockAnalysisIn(BaseModel):
     codes: List[str] = Field(min_length=1, max_length=20)
 
 
+class StockPortfolioIn(BaseModel):
+    starting_cash: float = Field(default=20000, ge=1000, le=10000000)
+    max_positions: int = Field(default=4, ge=1, le=20)
+    max_position_pct: float = Field(default=25, ge=5, le=100)
+    commission_pct: float = Field(default=0.03, ge=0, le=1)
+    min_commission: float = Field(default=5, ge=0, le=100)
+    slippage_pct: float = Field(default=0.05, ge=0, le=2)
+
+
 class FundHoldingItem(BaseModel):
     secid: str
     code: str

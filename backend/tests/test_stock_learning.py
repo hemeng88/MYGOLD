@@ -16,7 +16,7 @@ from backend.app import database
 from backend.app.auth import require_auth
 from backend.app.routers.api import router
 from backend.app.models import StockHistorySnapshot, StockCloseArchive
-from backend.app.stocks import learning, preferences, signals, deepseek
+from backend.app.stocks import learning, preferences, signals, deepseek, research
 from test_stock_signals import quote, research_stub
 
 
@@ -203,8 +203,11 @@ class LearningTests(unittest.TestCase):
         engine = create_engine("sqlite://")
         Base.metadata.create_all(engine)
         with Session(engine) as db:
-            db.add(StockCloseArchive(scope="主板", trade_date="2026-11-25", snapshot_json="{}"))
-            db.add(StockCloseArchive(scope="创业板", trade_date="2026-11-25", snapshot_json="{}"))
+            current = json.dumps({"research": {"version": research.VERSION}})
+            legacy = json.dumps({"research": {"version": "multi-v2"}})
+            db.add(StockCloseArchive(scope="主板", trade_date="2026-11-25", snapshot_json=current))
+            db.add(StockCloseArchive(scope="主板", trade_date="2026-11-24", snapshot_json=legacy))
+            db.add(StockCloseArchive(scope="创业板", trade_date="2026-11-25", snapshot_json=current))
             db.commit()
             with patch.object(learning, "evaluate", return_value={"active": False, "version": learning.VERSION}) as evaluate:
                 learning.persist_evaluation(db, {}, "主板", "2026-11-26")

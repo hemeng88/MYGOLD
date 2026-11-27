@@ -3,6 +3,8 @@ import { Alert, Badge, Button, Checkbox, Group, Loader, NumberInput, SegmentedCo
 import { api } from "./api";
 import { usePolling } from "./usePolling";
 import { SignalSettingsPage } from "./SignalSettingsPage";
+import { SingleStockAnalysisModal } from "./SingleStockAnalysisModal";
+import { liquidityBands } from "./liquidityBands";
 
 function percent(value: number | null | undefined) {
   return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -11,6 +13,7 @@ function percent(value: number | null | undefined) {
 export function SignalsPanel() {
   const [mode, setMode] = useState<"intraday" | "close">("intraday");
   const [page, setPage] = useState<"results" | "settings">("results");
+  const [singleOpen, setSingleOpen] = useState(false);
   const fetchSignals = useCallback((signal: AbortSignal) => api.stockSignals(signal, mode), [mode]);
   const { data: response, error, loading, reload } = usePolling(fetchSignals);
   const data = response && (response.mode || "intraday") === mode ? response : null;
@@ -94,12 +97,14 @@ export function SignalsPanel() {
   }
   return (
     <Paper className="glass" p="md">
+      <SingleStockAnalysisModal opened={singleOpen} onClose={() => setSingleOpen(false)} />
       <Group justify="space-between" mb="sm">
         <div>
           <Text fw={600}>全 A 股 · 策略观察</Text>
           <Text size="xs" c="dimmed">{mode === "close" ? `观察池基准日 ${data?.trade_date || "尚未生成"} · 供下一交易日参考` : `${data?.session || "读取中"} · ${data?.items.length ?? 0} 只候选`}</Text>
         </div>
         <Group gap="xs">
+          <Button size="sm" variant="light" color="gold" onClick={() => setSingleOpen(true)}>单股分析</Button>
           <Button size="sm" variant="light" color="teal" loading={analyzing || data?.ai?.status === "running"} disabled={!canAnalyze} onClick={() => void analyze()}>
             {analysisLabel}
           </Button>
@@ -147,7 +152,7 @@ export function SignalsPanel() {
                 <div><Text size="xs" c="dimmed">失效参考（{mode === "close" ? "基准日" : "当日"}低点）</Text><Text size="sm">{item.invalidation_price.toFixed(2)}</Text></div>
                 <div><Text size="xs" c="dimmed">成交额 / 换手率</Text><Text size="sm">{(item.amount / 100000000).toFixed(2)} 亿 / {item.turnover_pct.toFixed(2)}%</Text></div>
               </SimpleGrid>
-              <Text size="xs" c="dimmed" mt="xs">{item.board === "主板" ? `100股参考金额 ${(item.price * 100).toFixed(0)} 元 · ` : ""}{item.strategy_labels?.join(" / ") || item.reason}{item.historical_as_of ? ` · 信号日 ${item.historical_as_of}` : ""}</Text>
+              <Text size="xs" c="dimmed" mt="xs">{item.liquidity_band ? `${liquidityBands[item.liquidity_band]} · ` : ""}{item.board === "主板" ? `100股参考金额 ${(item.price * 100).toFixed(0)} 元 · ` : ""}{item.strategy_labels?.join(" / ") || item.reason}{item.historical_as_of ? ` · 信号日 ${item.historical_as_of}` : ""}</Text>
               {item.factors ? <Group gap={4} mt={4}><Badge size="xs" variant="light" color={item.factors.fundamentals.status === "pass" ? "teal" : "yellow"}>{item.factors.fundamentals.label}</Badge><Badge size="xs" variant="light" color={item.factors.industry.status === "pass" ? "teal" : "yellow"}>{item.factors.industry.name || "行业未知"} · {item.factors.industry.label}</Badge></Group> : null}
               <details style={{ marginTop: 8 }}><summary style={{ cursor: "pointer", fontSize: 12 }}>查看财报、行业与验证依据</summary>
               {item.close_history ? <Stack gap={4} mt="xs">

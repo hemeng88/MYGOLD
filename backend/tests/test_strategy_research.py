@@ -132,6 +132,33 @@ class ResearchTests(unittest.TestCase):
         selected = research.balanced_candidates(groups, 3)
         self.assertEqual([row["code"] for row in selected], ["a", "c", "d"])
 
+    def test_mainboard_sample_spans_three_turnover_bands_and_candidates_keep_all_three(self):
+        items = [{"code": "%06d" % i, "board": "主板", "amount": 1000 - i} for i in range(300)]
+        sample = research.stratified_sample(items, 90)
+        self.assertEqual(sample, research.stratified_sample(list(reversed(items)), 90))
+        for tier, start, end in (("high", 0, 60), ("upper_mid", 60, 150), ("mid", 150, 240)):
+            members = [int(row["code"]) for row in sample if row["liquidity_band"] == tier]
+            self.assertEqual(len(members), 30)
+            self.assertTrue(all(start <= rank < end for rank in members))
+        selected = research.balanced_candidates({"trend": sample, "pullback": sample})
+        self.assertEqual(len({row["code"] for row in selected}), 20)
+        self.assertGreaterEqual(sum(row["liquidity_band"] == "mid" for row in selected), 6)
+
+    def test_close_can_tolerate_a_missing_history_without_using_it_as_todays_signal(self):
+        bars = series()
+        moment = datetime.fromisoformat(bars[-1][0]).replace(hour=16)
+        items = [{"code": "%06d" % i, "symbol": "sz%06d" % i, "board": "主板",
+                  "amount": 1000 - i, "price": bars[-1][1]} for i in range(10)]
+        for missing in (1, 2):
+            late = {row["symbol"] for row in items[:missing]}
+            with self.subTest(missing=missing), patch.object(research, "now_local", return_value=moment):
+                candidates, report, _ = research.build_research(
+                    items, bars[-1][0], loader=lambda symbol: bars[:-1] if symbol in late else bars, mode="close")
+                self.assertEqual(report["close_pending"], missing)
+                self.assertEqual(report["close_ready"], missing == 1)
+                self.assertTrue(candidates)
+                self.assertTrue(all(row["symbol"] not in late for row in candidates))
+
 
 class PaperTests(unittest.TestCase):
     def test_first_observation_preserved_then_evaluated_with_future_data(self):

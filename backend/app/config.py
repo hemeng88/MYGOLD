@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     auth_token_days: int = 30
 
     request_timeout_seconds: float = 15.0
-    stock_research_sample_size: int = Field(default=60, ge=12, le=120, validation_alias="MYGOLD_STOCK_RESEARCH_SAMPLE_SIZE")
+    stock_research_sample_size: int = Field(default=90, ge=12, le=120, validation_alias="MYGOLD_STOCK_RESEARCH_SAMPLE_SIZE")
 
     # 仅服务端读取；不通过接口或前端返回密钥。填写后启用候选股票 AI 分析。
     deepseek_api_key: SecretStr = Field(default="", validation_alias="MYGOLD_DEEPSEEK_API_KEY")

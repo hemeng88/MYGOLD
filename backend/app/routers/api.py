@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from ..analysis.fund_estimate import exposure, fund_detail, list_funds
@@ -37,9 +37,10 @@ from ..schemas import (
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..stocks.signals import SnapshotChanged, get_signals
+from ..stocks import single_stock, portfolio
 from ..stocks.preferences import load_boards, save_boards
 from ..schemas import StockBoardPreferenceIn
-from ..schemas import StockAnalysisIn, StockPricePreferenceIn
+from ..schemas import StockAnalysisIn, StockPortfolioIn, StockPricePreferenceIn
 from ..stocks.preferences import load_prices, save_prices
 from ..schemas import DeepSeekConfigIn
 from ..stocks import ai_settings
@@ -335,6 +336,51 @@ def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depe
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.get("/stocks/portfolio-study")
+def stock_portfolio_status(user: User = Depends(require_auth)):
+    return portfolio.status(user.id)
+
+
+@guarded.post("/stocks/portfolio-study", status_code=202)
+def stock_portfolio_start(payload: StockPortfolioIn, mode: Literal["intraday", "close"] = "intraday",
+                          user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    low, high = load_prices(db, user.id)
+    snapshot = get_signals(boards=load_boards(db, user.id), mode=mode, price_min=low, price_max=high,
+                           for_portfolio=True)
+    try:
+        return portfolio.start(user.id, snapshot, low, high, payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+
+
+@guarded.get("/stocks/single-analysis/{code}")
+def single_stock_preview(code: str, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    low, high = load_prices(db, user.id)
+    try:
+        snapshot = single_stock.create_preview(user.id, code, load_boards(db, user.id), low, high)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return single_stock.view(snapshot, ai_settings.resolve(db, user.id))
+
+
+@guarded.get("/stocks/single-analysis/{code}/status")
+@guarded.post("/stocks/single-analysis/{code}/analyze")
+def single_stock_review(code: str, request: Request, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                        user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        snapshot = single_stock.saved_preview(user.id, code, snapshot_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    analyze = request.method == "POST"
+    if analyze:
+        low, high = load_prices(db, user.id)
+        if (snapshot["allowed_boards"], snapshot["price_min"], snapshot["price_max"]) != (load_boards(db, user.id), low, high):
+            raise HTTPException(status_code=409, detail="选股范围已变化，请重新查询股票。")
+    return single_stock.view(snapshot, ai_settings.resolve(db, user.id), analyze=analyze)
 
 
 @guarded.put("/stocks/signals/preferences")

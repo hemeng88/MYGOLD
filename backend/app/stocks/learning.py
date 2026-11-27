@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from ..database import SessionLocal
 from ..models import StockHistorySnapshot, StockRuleEvaluation, StockCloseArchive, StockMarketArchive
 
-VERSION = "tuning-v2"
+VERSION = "tuning-v3"
 
 
 def cached_history(symbol, cutoff):
@@ -58,9 +58,11 @@ def accepts(stats, parameters, index_stats):
 
 
 def forward_context(db, scope, cutoff):
+    from . import research
     rows = list(db.scalars(select(StockCloseArchive).where(StockCloseArchive.scope == scope,
         StockCloseArchive.trade_date < cutoff).order_by(StockCloseArchive.trade_date.desc()).limit(90)).all())
-    return [(row.trade_date, json.loads(row.snapshot_json)) for row in reversed(rows)]
+    archives = [(row.trade_date, json.loads(row.snapshot_json)) for row in reversed(rows)]
+    return [(day, archive) for day, archive in archives if (archive.get("research") or {}).get("version") == research.VERSION]
 
 
 def pending_symbols(db, scope, cutoff):
@@ -173,8 +175,6 @@ def persist_evaluation(db, histories, scope, as_of):
         incoming = sum(symbol != "sh000300" and len(bars) >= 120 for symbol, bars in histories.items())
         if previous.get("version") == VERSION and not (previous.get("sample_count", 0) < min(12, incoming)):
             return previous
-    count = db.scalar(select(func.count()).select_from(StockCloseArchive).where(
-        StockCloseArchive.scope == scope, StockCloseArchive.trade_date < as_of)) or 0
     pools = forward_context(db, scope, as_of)
     if len(pools) >= 60:
         symbols = {item.get("symbol") for _, pool in pools for item in pool.get("baseline_items", pool.get("items", [])) if item.get("symbol")}
@@ -183,7 +183,7 @@ def persist_evaluation(db, histories, scope, as_of):
         rows = db.scalars(select(StockHistorySnapshot).join(latest,
             (StockHistorySnapshot.symbol == latest.c.symbol) & (StockHistorySnapshot.as_of == latest.c.last_asof))).all()
         histories = dict(histories, **{row.symbol: json.loads(row.bars_json) for row in rows})
-    report = evaluate(histories, scope, count, forward_pools=pools)
+    report = evaluate(histories, scope, len(pools), forward_pools=pools)
     if row is None:
         row = StockRuleEvaluation(scope=scope)
         db.add(row)

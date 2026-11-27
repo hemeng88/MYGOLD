@@ -6,11 +6,14 @@ from ..timeutil import now_local
 from .research import VERSION, HOLD, net_return
 from . import universe
 
+ADAPTIVE_VERSION = "adaptive-v2"
+TRACKED_VERSIONS = (VERSION, ADAPTIVE_VERSION, "multi-v2", "adaptive-v1")
+
 
 def pending_symbols(db, limit=20, boards=None):
     # 每轮最多额外取20个未完成观察的历史，避免无上限网络请求。
     symbols = list(db.scalars(select(StrategyObservation.symbol)
-                .where(StrategyObservation.version.in_([VERSION, "adaptive-v1"]), StrategyObservation.net_pct.is_(None))
+                .where(StrategyObservation.version.in_(TRACKED_VERSIONS), StrategyObservation.net_pct.is_(None))
                 .group_by(StrategyObservation.symbol)
                 .order_by(func.min(StrategyObservation.checked_at), StrategyObservation.symbol)).all())
     return [symbol for symbol in symbols if not boards or universe.board_of(symbol[2:]) in boards][:limit]
@@ -18,8 +21,8 @@ def pending_symbols(db, limit=20, boards=None):
 
 def update(db, snapshot, histories):
     today = now_local().date().isoformat()
-    version = "adaptive-v1" if snapshot.get("adaptive_applied") else VERSION
-    rows = list(db.scalars(select(StrategyObservation).where(StrategyObservation.version.in_([VERSION, "adaptive-v1"]))).all())
+    version = ADAPTIVE_VERSION if snapshot.get("adaptive_applied") else VERSION
+    rows = list(db.scalars(select(StrategyObservation).where(StrategyObservation.version.in_(TRACKED_VERSIONS))).all())
     existing = {(row.version, row.signal_date, row.code, row.strategy) for row in rows}
     # 只有今日完整扫描记录；重启或手动重扫不改写原始价格。
     if snapshot.get("complete") and snapshot.get("trade_date") == today:

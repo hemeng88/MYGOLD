@@ -10,6 +10,8 @@ import math
 import statistics
 import threading
 from copy import deepcopy
+from collections import Counter, deque
+from zlib import crc32
 
 import httpx
 
@@ -17,7 +19,8 @@ from ..config import settings
 from ..timeutil import now_local
 from . import universe
 
-VERSION = "multi-v2"
+VERSION = "multi-v3"
+LIQUIDITY_BANDS = ("high", "upper_mid", "mid")
 STRATEGIES = {
     "trend": {"label": "趋势延续", "rule": "20日均价高于60日均价，收盘高于20日均价且10日涨幅为正"},
     "pullback": {"label": "趋势回调", "rule": "20日均价高于60日均价，收盘在20日均价的97%～101%，5日涨幅为负"},
@@ -94,6 +97,32 @@ def history(symbol, transport=None, include_today=False):
     return []
 
 
+def raw_history(symbol, count=260):
+    headers = {"User-Agent": universe.SINA_HEADERS["User-Agent"], "Referer": "https://gu.qq.com/"}
+    with httpx.Client(timeout=6, headers=headers) as client:
+        for url in dict.fromkeys((TENCENT_MIRROR, settings.fund_kline_tencent_url)):
+            try:
+                response = client.get(url, params={"param": f"{symbol},day,,,{count},"})
+                response.raise_for_status()
+                block = (response.json().get("data") or {}).get(symbol) or {}
+                bars = {}
+                for row in block.get("day") or []:
+                    if len(row) < 6:
+                        continue
+                    try:
+                        day = date.fromisoformat(row[0]).isoformat()
+                        opening, close, high, low, volume = map(float, row[1:6])
+                    except (ValueError, TypeError):
+                        continue
+                    if all(map(math.isfinite, (opening, close, high, low, volume))) and volume > 0 and 0 < low <= min(opening, close) <= max(opening, close) <= high:
+                        bars[day] = (day, close, high, low)
+                if bars:
+                    return sorted(bars.values())
+            except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+                continue
+    return []
+
+
 def features(bars):
     if len(bars) < 60:
         return None
@@ -127,8 +156,10 @@ def event_study(bars, strategy, split_date, benchmark):
     """信号仅看 t 及之前数据，t+1 收盘进入，持有五根后退出；单股不重叠。"""
     result = {"train": [], "test": []}
     next_free = 0
+    dates = list(benchmark)
+    positions = {day: index for index, day in enumerate(dates)}
     for index in range(59, len(bars) - HOLD - 1):
-        if index < next_free or strategy not in triggers(features(bars[:index + 1])):
+        if index < next_free or strategy not in triggers(features(bars[index - 59:index + 1])):
             continue
         entry_i, exit_i = index + 1, index + 1 + HOLD
         signal_date, entry_date, exit_date = bars[index][0], bars[entry_i][0], bars[exit_i][0]
@@ -140,12 +171,9 @@ def event_study(bars, strategy, split_date, benchmark):
         else:
             continue
         # 缺失交易日或停牌的股票不能按“下一根”假装次日成交。
-        if benchmark:
-            dates = list(benchmark)
-            if signal_date not in benchmark:
-                continue
-            pos = dates.index(signal_date)
-            if dates[pos + 1:pos + HOLD + 2] != [row[0] for row in bars[entry_i:exit_i + 1]]:
+        if dates:
+            pos = positions.get(signal_date)
+            if pos is None or dates[pos + 1:pos + HOLD + 2] != [row[0] for row in bars[entry_i:exit_i + 1]]:
                 continue
         entry, exit_price = bars[entry_i][1], bars[exit_i][1]
         net = net_return(entry, exit_price)
@@ -219,31 +247,58 @@ def evidence_status(metrics):
 
 
 def stratified_sample(items, limit):
-    """按板块轮询取成交额高者，不按涨幅挑选；名称/代码只用作稳定排序。"""
+    """按板块和成交额分位分配预算，在每档内均匀取样。"""
     groups = {}
     for item in sorted(items, key=lambda row: (-row["amount"], row["code"])):
         groups.setdefault(item["board"], []).append(item)
-    selected = []
-    while groups and len(selected) < limit:
-        for board in sorted(list(groups)):
-            selected.append(groups[board].pop(0))
-            if not groups[board]:
-                del groups[board]
-            if len(selected) >= limit:
+    strata = {}
+    for board, rows in groups.items():
+        size = len(rows)
+        cuts = (0, math.ceil(size * .20), math.ceil(size * .50),
+                size if size <= limit else math.ceil(size * .80))
+        strata[board] = {band: rows[start:end] for band, start, end in zip(LIQUIDITY_BANDS, cuts, cuts[1:])}
+
+    # 每轮每个板块一个名额，板块内部轮换成交额档位。
+    budgets = Counter()
+    schedule = []
+    while len(schedule) < limit:
+        before = len(schedule)
+        for board, bands in sorted(strata.items()):
+            available = [band for band in bands if budgets[board, band] < len(bands[band])]
+            if available:
+                band = min(available, key=lambda key: budgets[board, key])
+                budgets[board, band] += 1
+                schedule.append((board, band))
+            if len(schedule) >= limit:
                 break
-    return selected
+        if len(schedule) == before:
+            break
+
+    queues = {}
+    for (board, band), count in budgets.items():
+        rows = strata[board][band]
+        # 档内用稳定散列抽样，成交排名小幅变化不会大规模换样。
+        ranked = sorted(rows, key=lambda row: (crc32(row["code"].encode()), row["code"]))
+        queues[board, band] = deque(dict(row, liquidity_band=band) for row in ranked[:count])
+    return [queues[key].popleft() for key in schedule]
 
 
 def balanced_candidates(groups, limit=20):
     out, picked = [], set()
     # 同一股票可属于多种策略，但只占一个候选位置。
-    queues = {key: sorted(value, key=lambda row: (-row["amount"], row["code"])) for key, value in groups.items()}
+    queues = {}
+    for band in (*LIQUIDITY_BANDS, None):
+        for key, rows in groups.items():
+            ranked = sorted((row for row in rows if row.get("liquidity_band") == band),
+                            key=lambda row: (-row.get("amount", 0), row["code"]))
+            if ranked:
+                queues[key, band] = deque(ranked)
     while queues and len(out) < limit:
         for key in list(queues):
             while queues[key] and queues[key][0]["code"] in picked:
-                queues[key].pop(0)
+                queues[key].popleft()
             if queues[key]:
-                item = queues[key].pop(0)
+                item = queues[key].popleft()
                 picked.add(item["code"])
                 out.append(item)
             if not queues[key]:
@@ -338,7 +393,9 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
                      if not histories.get(item["symbol"]) or
                      (len(histories[item["symbol"]]) >= 120 and histories[item["symbol"]][-1][0] != trade_date)] if mode == "close" else []
     if mode == "close":
-        close_ready = close_ready and usable > 0 and not close_pending
+        has_current_stock = any(len(histories.get(row["symbol"], [])) >= 120
+                                and histories[row["symbol"]][-1][0] == trade_date for row in sample)
+        close_ready = close_ready and has_current_stock and len(close_pending) <= len(sample) // 10
     selected = balanced_candidates(groups)
     baseline_items = deepcopy(selected)
     if parameters:
@@ -357,6 +414,12 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         item["status"] = "待前向验证" if item["priority_eligible"] else "验证证据不足"
     result = {"version": VERSION, "sample_requested": len(sample), "sample_usable": usable,
               "_baseline_items": baseline_items,
+              "_study_sample": [{"symbol": row["symbol"], "board": row["board"],
+                                 "liquidity_band": row["liquidity_band"]} for row in sample
+                                if len(histories.get(row["symbol"], [])) >= 120],
+              "_history_cutoff": cutoff,
+              "sample_bands": dict(Counter(row["liquidity_band"] for row in sample)),
+              "candidate_bands": dict(Counter(row["liquidity_band"] for row in selected)),
               "holding_comparison": compare_holding_periods(comparison_histories, benchmark, split),
               "close_ready": close_ready,
               "close_pending": len(close_pending),
@@ -364,9 +427,9 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
               "history_start": dates[0] if dates else None, "history_end": dates[-1] if dates else None,
               "benchmark_available": bool(benchmark), "strategies": reports,
               "assumptions": [
-                  "按板块分层抽取当前成交活跃样本，非历史全市场回测，存在幸存者及当前样本选择偏差。",
+                  "各板块内按当前成交额排名分档抽样。样本多时取前20%、20%～50%、50%～80%；历史结果存在幸存者和当前样本选择偏差。",
                   "三套规则预先固定，没有用样本外成绩挑参数；统一日期按前65%/后35%分为研究区间和样本外。",
-                  ("收盘模式在15:30后纳入当日完整日线，需沪深300和个股日期均为当日；" if mode == "close" else "盘中模式只使用今天之前的完整日线；") + "历史事件信号次日收盘假设入场，持有五个交易日，单股单策略不重叠。",
+                  ("收盘模式在15:30后纳入当日完整日线，沪深300需为当日，最多容许10%抽样股票仍缺日线，缺失标的退出本轮候选；" if mode == "close" else "盘中模式只使用今天之前的完整日线；") + "历史事件信号次日收盘假设入场，持有五个交易日，单股单策略不重叠。",
                   "假设买卖佣金各0.03%、滑点各0.05%、卖出税费0.05%；不代表实际券商费率，另展示双倍成本结果。",
                   "只有前复权收盘，未模拟涨跌停、最低佣金、整手、容量及真实成交；展示的是事件均值，不是组合收益率。",
                   "股票研究仅采用腾讯明确标注的前复权日线；取不到不混用未复权数据，缺少120根日线的样本不参与。",

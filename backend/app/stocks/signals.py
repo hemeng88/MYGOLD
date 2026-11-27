@@ -23,8 +23,8 @@ from .preferences import normalize_boards, price_range, scope_key, parse_scope
 RULES = [
     "范围：沪深 A 股及北交所；剔除 ST、退市标记、停牌或缺失关键报价的证券。",
     "不再用固定涨幅、换手率或一亿元门槛筛候选；先保留关键行情有效、有成交的股票。",
-    "按板块轮询抽取成交活跃日线样本，再分别检验趋势延续、趋势回调和低波动三套假设。",
-    "三套策略轮询分配最多20个展示位置，重叠股票合并；不再按当日涨幅取前20。",
+    "各板块按成交额分档，在每档内分散抽取日线样本，再检验趋势延续、趋势回调和低波动。",
+    "按策略与成交档位轮换分配最多20个展示位置，重复股票只展示一次。",
     "技术候选再检查已披露财报、行业当日相对强弱和大盘环境；缺数据、基本面未过或行业/大盘偏弱时禁止AI标为优先观察。",
     "价格参考：成交均价至现价为回踩观察区，当日高点为突破参考，当日低点为失效参考。",
     "历史验证为当前样本事件研究，存在样本选择偏差；前向跟踪尚需积累，失效参考价不保证成交。",
@@ -284,7 +284,7 @@ def _run(boards, mode="intraday", price_min=0, price_max=None):
 
 
 def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode="intraday", price_min=0, price_max=None,
-                requested_snapshot_id=None, requested_codes=None):
+                requested_snapshot_id=None, requested_codes=None, for_portfolio=False):
     global _last_attempt
     selected_boards = normalize_boards(boards)
     if mode not in ("intraday", "close"):
@@ -317,6 +317,11 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode=
             state.update(running=True, progress=0, allowed_boards=selected_boards)
             _executor.submit(_run, selected_boards, mode, price_min, price_max)
         result = deepcopy(state)
+    if for_portfolio:
+        return result
+    if result.get("research"):
+        result["research"].pop("_study_sample", None)
+        result["research"].pop("_history_cutoff", None)
     result["allowed_boards"] = selected_boards
     result["mode"] = mode
     result["analysis_snapshot_ready"] = bool(result.get("complete") and result.get("fetched_at"))
