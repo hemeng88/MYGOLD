@@ -7,6 +7,7 @@ from datetime import datetime
 import hashlib
 import json
 import logging
+import re
 import threading
 import time
 from typing import Literal
@@ -140,7 +141,12 @@ def analyze(snapshot, transport=None, credentials=None):
         choice = response.json()["choices"][0]
         if choice.get("finish_reason") != "stop":
             raise ValueError("incomplete response")
-        report = Report.model_validate_json(choice["message"]["content"])
+        content = choice["message"]["content"]
+        if credentials.provider in model_providers.MINIMAX_PROVIDERS and isinstance(content, str):
+            fenced = re.fullmatch(r"\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```\s*", content, re.IGNORECASE | re.DOTALL)
+            if fenced:
+                content = fenced.group(1)
+        report = Report.model_validate_json(content)
         codes = [item.code for item in report.items]
         expected = {item["code"] for item in snapshot["items"]}
         if len(set(codes)) != len(codes) or set(codes) != expected:

@@ -548,7 +548,7 @@ export interface DeepSeekSettings {
   base_url: string;
   json_mode: string;
   token_field: string;
-  providers: { id: string; label: string; base_url: string; default_model: string; token_field: string }[];
+  providers: { id: string; label: string; base_url: string; default_model: string; json_mode: string; token_field: string }[];
   configured: boolean;
   model: string;
   source: "account" | "server" | "disabled" | "none";

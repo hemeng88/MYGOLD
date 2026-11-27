@@ -46,14 +46,18 @@ class ProviderTests(unittest.TestCase):
         for provider, spec in model_providers.PROVIDERS.items():
             if provider == "custom":
                 continue
-            model = "qwen-plus" if provider == "qwen" else "test-model"
-            config = replace(base, provider=provider, base_url=spec["base_url"], token_field=spec["token_field"], model=model)
+            config = replace(base, provider=provider, base_url=spec["base_url"], token_field=spec["token_field"],
+                             json_mode=spec["json_mode"], model=spec["default_model"] or "test-model")
             def handler(request):
                 self.assertEqual(str(request.url), spec["base_url"] + "/chat/completions")
                 body = json.loads(request.content)
                 self.assertEqual(body[spec["token_field"]], 4096)
                 self.assertEqual("thinking" in body, provider == "deepseek")
                 self.assertEqual("enable_thinking" in body, provider == "qwen")
+                if provider in model_providers.MINIMAX_PROVIDERS:
+                    self.assertNotIn("response_format", body)
+                    self.assertTrue(body["reasoning_split"])
+                    self.assertEqual(body["reasoning_effort"], "low")
                 return httpx.Response(200, json=response())
             with self.subTest(provider=provider):
                 self.assertTrue(deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler), config)["items"])
@@ -65,6 +69,21 @@ class ProviderTests(unittest.TestCase):
             return httpx.Response(200, json=response())
         self.assertTrue(deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler), config)["items"])
 
+    def test_minimax_accepts_one_json_fence_and_still_checks_stock_codes(self):
+        spec = model_providers.PROVIDERS["minimax"]
+        config = ai_settings.Credentials(SecretStr("sk-test-minimax"), spec["default_model"], "scope", "account",
+                                         provider="minimax", base_url=spec["base_url"], json_mode=spec["json_mode"],
+                                         token_field=spec["token_field"])
+        payload = response()
+        message = payload["choices"][0]["message"]
+        message["reasoning_content"] = "独立的思考字段"
+        message["content"] = "```json\n" + message["content"] + "\n```"
+        transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+        self.assertTrue(deepseek.analyze(SNAPSHOT, transport, config)["items"])
+        message["content"] = message["content"].replace(SNAPSHOT["items"][0]["code"], "999999")
+        with self.assertRaises(ValueError):
+            deepseek.analyze(SNAPSHOT, transport, config)
+
     def test_rejects_unsafe_and_wrong_provider_urls(self):
         for url in ("http://api.example.com/v1", "https://localhost/v1", "https://127.0.0.1/v1",
                     "https://169.254.169.254", "https://internal.local/v1", "https://user:pass@api.example.com/v1",
@@ -74,6 +93,8 @@ class ProviderTests(unittest.TestCase):
                 model_providers.normalize_base("custom", url)
         with self.assertRaises(ValueError):
             model_providers.normalize_base("openai", "https://other.example/v1")
+        with self.assertRaises(ValueError):
+            model_providers.normalize_base("minimax", "https://api.minimax.io/v1")
         self.assertEqual(model_providers.normalize_base("qwen", "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/"),
                          "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1")
 

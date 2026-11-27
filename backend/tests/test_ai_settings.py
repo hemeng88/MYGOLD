@@ -150,6 +150,32 @@ class AISettingsTests(unittest.TestCase):
             self.assertTrue(client.get("/api/settings/deepseek").json()["configured"])
             self.assertNotIn("encrypted_key", client.get("/api/settings/deepseek").text)
 
+    def test_api_presets_allow_saving_with_only_provider_and_key(self):
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        def session():
+            with Session(self.engine) as db:
+                yield db
+        app.dependency_overrides[get_db] = session
+        app.dependency_overrides[require_auth] = lambda: SimpleNamespace(id=1)
+        with TestClient(app) as client, patch.object(ai_settings.settings, "deepseek_model", "deepseek-v4-pro"):
+            path = "/api/settings/ai"
+            for provider, host in (("minimax", "api.minimax.cn"), ("minimax_global", "api.minimax.io")):
+                with self.subTest(provider=provider):
+                    key = "sk-test-" + provider
+                    saved = client.put(path, json={"provider": provider, "api_key": key})
+                    self.assertEqual(saved.status_code, 200)
+                    self.assertNotIn(key, saved.text)
+                    status = saved.json()
+                    self.assertEqual((status["base_url"], status["model"], status["json_mode"], status["token_field"]),
+                                     ("https://" + host + "/v1", "MiniMax-M3.1-Flash", "prompt", "max_completion_tokens"))
+                    preset = next(row for row in status["providers"] if row["id"] == provider)
+                    self.assertEqual(preset["json_mode"], "prompt")
+            self.assertEqual(client.put(path, json={"provider": "deepseek"}).status_code, 400)
+            saved = client.put(path, json={"provider": "deepseek", "api_key": "sk-test-deepseek"}).json()
+            self.assertEqual((saved["base_url"], saved["model"], saved["json_mode"], saved["token_field"]),
+                             ("https://api.deepseek.com", "deepseek-v4-pro", "json_object", "max_tokens"))
+
 
 if __name__ == "__main__":
     unittest.main()

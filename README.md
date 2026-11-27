@@ -171,8 +171,10 @@ python backend/scripts/check_recent_rules.py
 
 ### AI 模型配置与候选点评
 
-“配置 AI 模型”支持 DeepSeek、通义千问/百炼、智谱 GLM、OpenAI 预设，以及公网 HTTPS 的
-自定义 OpenAI Chat Completions 兼容接口。选择服务商后填模型名称和对应 Key，保存立即生效。
+在“配置 AI 模型”选择 DeepSeek、MiniMax 中国站或 MiniMax 国际站后，只需填写该服务商的 API Key。
+DeepSeek 默认采用服务器配置的模型（项目默认 `deepseek-flash`），MiniMax 默认采用 `MiniMax-M3.1-Flash`。
+MiniMax 的站点决定官方地址，使用提示词要求 JSON，并通过 `max_completion_tokens` 限制输出。
+展开“高级设置”可查看或调整模型和兼容参数。通义千问/百炼、智谱 GLM、OpenAI 及公网 HTTPS 自定义兼容接口也可选择。
 OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型填写；不代表所有模型都支持该协议。
 百炼默认地址仍有效，也可填写控制台提供的业务空间或地域专属地址。
 原生 Anthropic、Gemini 或只支持 Responses 的接口不能直接使用，需通过兼容网关或另行适配。
@@ -190,7 +192,9 @@ OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型�
 
 参考官方协议：[OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、
 [百炼兼容接口](https://help.aliyun.com/zh/model-studio/qwen-api-via-openai-chat-completions)、
-[智谱兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)。
+[智谱兼容接口](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)、
+[MiniMax 中国站](https://platform.minimax.cn/docs/api-reference/text-chat-openai)、
+[MiniMax 国际站](https://platform.minimax.io/docs/api-reference/text-chat-openai)。
 
 “测试连接”只检查 `/models`；若服务没有模型列表，不会直接判定 Key 无效。
 可单独点击“验证分析格式（少量费用）”，这会向已保存的服务发一次固定测试数据，
@@ -199,7 +203,7 @@ OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型�
 `POST /api/settings/ai/test-generation`，全部需要登录。旧 `/api/settings/deepseek` 接口作为兼容别名保留。
 旧数据库升级时补充服务商、地址、JSON及Token字段，原先加密保存的DeepSeek Key不重写。
 
-推荐在“全 A 股”页点击“配置 AI 模型”：填写 API Key 和模型名称，保存后立即生效，
+在“全 A 股 → 设置与说明 → 配置 AI 模型”保存后立即生效，
 无需编辑服务器文件或重启。密钥输入留空表示保留当前 Key；更换时填写新 Key。
 页面只显示启用状态和配置来源，保存后的原文不会返回浏览器，也不写入浏览器本地存储。
 请通过 HTTPS 站点填写，存储加密不能替代传输加密。

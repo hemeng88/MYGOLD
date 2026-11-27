@@ -48,9 +48,14 @@ def cipher():
     return Fernet(value)
 
 
+def _default_model(provider):
+    preset_model = model_providers.PROVIDERS[provider]["default_model"]
+    return (settings.deepseek_model.strip() or preset_model) if provider == "deepseek" else preset_model
+
+
 def resolve(db, user_id):
     row = db.get(DeepSeekAccountConfig, user_id)
-    model = row.model if row else settings.deepseek_model
+    model = row.model if row else _default_model("deepseek")
     updated = row.updated_at.isoformat() if row else None
     scope = "account:%d:%s" % (user_id, row.revision if row else "server")
     extra = dict(provider=(row.provider or "deepseek") if row else "deepseek",
@@ -75,10 +80,11 @@ def public_status(credentials):
             "source": credentials.source, "updated_at": credentials.updated_at, "error": credentials.error,
             "provider": credentials.provider, "base_url": credentials.base_url,
             "json_mode": credentials.json_mode, "token_field": credentials.token_field,
-            "providers": [dict(id=key, **value) for key, value in model_providers.PROVIDERS.items()]}
+            "providers": [dict(value, id=key, default_model=_default_model(key))
+                          for key, value in model_providers.PROVIDERS.items()]}
 
 
-def save(db, user_id, api_key, model, provider=None, base_url=None, json_mode=None, token_field=None):
+def save(db, user_id, api_key, model=None, provider=None, base_url=None, json_mode=None, token_field=None):
     # 空密钥表示保留现有配置，绝不把掩码当成密钥存储。
     key = api_key.get_secret_value().strip() if api_key is not None else ""
     if key and (len(key) < 8 or len(key) > 512 or any(char.isspace() or ord(char) < 32 for char in key)):
@@ -89,8 +95,12 @@ def save(db, user_id, api_key, model, provider=None, base_url=None, json_mode=No
     base_url = model_providers.normalize_base(provider, base_url if base_url is not None else (None if changed_provider else current.base_url))
     if not key and (changed_provider or base_url != current.base_url):
         raise ValueError("切换服务商或 API 地址时，请重新填写对应的 API Key。")
-    json_mode = json_mode or ("json_object" if changed_provider else current.json_mode)
-    token_field = token_field or (model_providers.PROVIDERS[provider]["token_field"] if changed_provider else current.token_field)
+    preset = model_providers.PROVIDERS[provider]
+    model = model if model is not None else (_default_model(provider) if changed_provider else current.model)
+    if not model:
+        raise ValueError("请填写此服务商支持的模型名称。")
+    json_mode = json_mode or (preset["json_mode"] if changed_provider else current.json_mode)
+    token_field = token_field or (preset["token_field"] if changed_provider else current.token_field)
     if json_mode not in {"json_object", "prompt"} or token_field not in {"max_tokens", "max_completion_tokens"}:
         raise ValueError("不支持该 JSON 或 Token 参数配置。")
     if not key and not current.key.get_secret_value():
@@ -119,7 +129,7 @@ def save(db, user_id, api_key, model, provider=None, base_url=None, json_mode=No
 def disable(db, user_id):
     row = db.get(DeepSeekAccountConfig, user_id)
     if row is None:
-        row = DeepSeekAccountConfig(user_id=user_id, model=settings.deepseek_model)
+        row = DeepSeekAccountConfig(user_id=user_id, model=_default_model("deepseek"))
         db.add(row)
     row.encrypted_key = None
     row.enabled = 0

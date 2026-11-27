@@ -6,12 +6,21 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+MINIMAX_PROVIDERS = {"minimax", "minimax_global"}
+_minimax = dict(default_model="MiniMax-M3.1-Flash", json_mode="prompt", token_field="max_completion_tokens")
 PROVIDERS = {
-    "deepseek": dict(label="DeepSeek", base_url="https://api.deepseek.com", default_model="deepseek-flash", token_field="max_tokens"),
-    "qwen": dict(label="通义千问 / 百炼", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", default_model="qwen-plus", token_field="max_tokens"),
-    "zhipu": dict(label="智谱 GLM", base_url="https://open.bigmodel.cn/api/paas/v4", default_model="glm-5.3", token_field="max_tokens"),
-    "openai": dict(label="OpenAI", base_url="https://api.openai.com/v1", default_model="", token_field="max_completion_tokens"),
-    "custom": dict(label="自定义兼容接口", base_url="", default_model="", token_field="max_tokens"),
+    "deepseek": dict(label="DeepSeek", base_url="https://api.deepseek.com", default_model="deepseek-flash",
+                     json_mode="json_object", token_field="max_tokens"),
+    "minimax": dict(label="MiniMax（中国站）", base_url="https://api.minimax.cn/v1", **_minimax),
+    "minimax_global": dict(label="MiniMax（国际站）", base_url="https://api.minimax.io/v1", **_minimax),
+    "qwen": dict(label="通义千问 / 百炼", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1", default_model="qwen-plus",
+                 json_mode="json_object", token_field="max_tokens"),
+    "zhipu": dict(label="智谱 GLM", base_url="https://open.bigmodel.cn/api/paas/v4", default_model="glm-5.3",
+                  json_mode="json_object", token_field="max_tokens"),
+    "openai": dict(label="OpenAI", base_url="https://api.openai.com/v1", default_model="",
+                   json_mode="json_object", token_field="max_completion_tokens"),
+    "custom": dict(label="自定义兼容接口", base_url="", default_model="",
+                   json_mode="json_object", token_field="max_tokens"),
 }
 
 
@@ -86,6 +95,10 @@ def configure_body(body, credentials):
         body["response_format"] = {"type": "json_object"}
     if credentials.provider == "deepseek":
         body["thinking"] = {"type": "disabled"}
+    elif credentials.provider in MINIMAX_PROVIDERS:
+        body["reasoning_split"] = True
+        if credentials.model.lower().startswith("minimax-m3.1-flash"):
+            body["reasoning_effort"] = "low"
     elif credentials.provider == "qwen" and credentials.model.lower().startswith("qwen"):
         body["enable_thinking"] = False
     return body

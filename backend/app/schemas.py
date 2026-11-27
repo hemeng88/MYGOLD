@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, SecretStr
 
 class DeepSeekConfigIn(BaseModel):
     api_key: Optional[SecretStr] = None
-    model: str = Field(default="deepseek-flash", min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_./:-]+$")
+    model: Optional[str] = Field(default=None, min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9_./:-]+$")
     provider: Optional[str] = Field(default=None, max_length=16)
     base_url: Optional[str] = Field(default=None, max_length=512)
     json_mode: Optional[str] = Field(default=None, max_length=16)
