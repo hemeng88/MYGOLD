@@ -349,6 +349,12 @@ export interface Exposure {
   message: string | null;
 }
 export interface StockSignal {
+  close_history?: {
+    appearances: number;
+    consecutive_archives: number;
+    records: { trade_date: string; price: number | null; change_pct: number | null;
+               amount: number | null; turnover_pct: number | null; strategies: string[] }[];
+  };
   technical_priority_eligible?: boolean;
   factors?: {
     passed: boolean;
@@ -369,6 +375,10 @@ export interface StockSignal {
   strategies?: string[];
   strategy_labels?: string[];
   historical_as_of?: string;
+  signal_close?: number;
+  ma20_gap_pct?: number;
+  return5_pct?: number;
+  return10_pct?: number;
   ma20?: number;
   ma60?: number;
   vol20_pct?: number;
@@ -391,6 +401,20 @@ export interface StockSignal {
 }
 
 export interface StockSignals {
+  snapshot_id?: string;
+  price_min?: number;
+  price_max?: number | null;
+  adaptive_applied?: boolean;
+  parameter_evaluation?: {
+    status: string; active: boolean; forward_days: number; required_forward_days: number;
+    history_days?: number; note: string; reason?: string;
+    strategies: { key: string; label: string; passed: boolean; tested_variants: number;
+      selected: { parameter: { max_extension: number | null; require_index_up: boolean }; train: EventMetrics; validation: EventMetrics; holdout: EventMetrics } }[];
+  };
+  history_context?: {
+    status: string; archive_days: number; dates: string[]; as_of?: string | null;
+    source?: string; note: string;
+  };
   mode?: "intraday" | "close";
   close_ready?: boolean;
   can_generate_close?: boolean;
@@ -457,6 +481,7 @@ export interface StockResearch {
   history_start: string | null;
   history_end: string | null;
   benchmark_available: boolean;
+  holding_comparison?: { missing_windows: number; periods: (EventMetrics & { hold_days: number })[] } | null;
   assumptions: string[];
   strategies: { key: string; label: string; rule: string; current_matches: number; train: EventMetrics; test: EventMetrics; status: string }[];
 }
@@ -465,8 +490,10 @@ export interface StockAI {
   provider_label?: string;
   configured: boolean;
   model: string;
-  status: "idle" | "running" | "ready" | "failed" | "waiting" | "unconfigured";
+  status: "idle" | "running" | "ready" | "failed" | "waiting" | "unconfigured" | "previous";
   snapshot_at: string | null;
+  reviewed_codes?: string[];
+  archived?: boolean;
   analyzed_at: string | null;
   summary: string | null;
   items: StockAIComment[];

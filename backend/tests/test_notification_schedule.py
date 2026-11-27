@@ -22,5 +22,6 @@ class NotificationScheduleTests(unittest.TestCase):
         self.assertCountEqual(job_ids, [
             "fund-quotes", "fund-navs", "fund-holdings", "fund-rankings",
             "mainboard-quotes", "mainboard-klines", "mainboard-bootstrap",
+            "stock-close-archive", "stock-scan", "stock-history-bootstrap",
         ])
         fake_scheduler.start.assert_called_once_with()

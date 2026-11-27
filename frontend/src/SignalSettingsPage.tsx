@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Group, MultiSelect, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Alert, Badge, Button, Group, MultiSelect, Paper, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { DeepSeekSettingsPanel } from "./DeepSeekSettingsPanel";
 import type { StockSignals } from "./types";
 
@@ -10,20 +10,40 @@ interface Props {
   data: StockSignals;
   savingBoards: boolean;
   analyzing: boolean;
+  canAnalyze: boolean;
+  analysisLabel: string;
   saveBoards: (boards: string[]) => Promise<void>;
   analyze: () => Promise<void>;
   reload: () => Promise<void>;
   onBack: () => void;
 }
 
-export function SignalSettingsPage({ data, savingBoards, analyzing, saveBoards, analyze, reload, onBack }: Props) {
+export function SignalSettingsPage({ data, savingBoards, analyzing, canAnalyze, analysisLabel, saveBoards, analyze, reload, onBack }: Props) {
+  const comparison = data.research?.holding_comparison;
   return <Stack gap="sm">
     <Group justify="space-between"><Text fw={600}>选股设置与研究依据</Text><Button variant="subtle" size="sm" onClick={onBack}>返回股票结果</Button></Group>
     <Paper className="stat-tile" p="sm">
       <Text size="sm" fw={600}>两种使用方式</Text>
-      <Text size="xs" mt={4}>盘中观察：采用上一完整交易日日线，配合本轮行情，每五分钟扫描。</Text>
-      <Text size="xs" mt={4}>收盘选股：交易日15:30后确认当日日线，生成并保存下一交易日观察池；第二天打开仍显示原有名单。日线未更新时保留上一份，不自动用旧日线代替。</Text>
+      <Text size="xs" mt={4}>盘中观察：采用上一完整交易日日线，配合本轮行情，每两分钟自动安排扫描，正在扫描时不重复启动。</Text>
+      <Text size="xs" mt={4}>收盘选股：交易日15:30后可手动生成，服务器工作日16:00自动归档，17:00重试未成功范围；不需要一直开着页面。日线未更新时保留上一份，不用旧日线代替。</Text>
       <Text size="xs" mt={4}>收盘池中的价格、财报和行业状态固定在生成时，次日请切换盘中模式确认；这里不承诺下一交易日成交价格，也不会自动下单或推送。</Text>
+    </Paper>
+    {data.parameter_evaluation ? <Paper className="stat-tile" p="sm">
+      <Text size="sm" fw={600}>参数滚动评估 · {data.adaptive_applied ? "本轮已采用通过验证的过滤参数" : "本轮采用原规则"}</Text>
+      <Text size="xs" mt={4}>已取得 {data.parameter_evaluation.history_days ?? 0} 根基准日线；真实新增归档 {data.parameter_evaluation.forward_days}/{data.parameter_evaluation.required_forward_days} 个日期。{data.parameter_evaluation.reason}</Text>
+      <Text size="xs" c="dimmed" mt={4}>{data.parameter_evaluation.note}</Text>
+      {data.parameter_evaluation.strategies.map((row) => <Paper key={row.key} className="stat-tile" p="xs" mt="xs">
+        <Text size="xs" fw={600}>{row.label} · 已比较 {row.tested_variants} 套小范围参数 · {row.passed ? "本轮验证门槛通过" : "证据不足"}</Text>
+        <Text size="xs" mt={4}>训练区选出的候选：{row.selected.parameter.max_extension == null ? "不另限均线乖离" : `高于20日均价不超过${row.selected.parameter.max_extension * 100}%`} · {row.selected.parameter.require_index_up ? "要求沪深300趋势向上" : "不加指数趋势限制"}</Text>
+        <Text size="xs" c="dimmed" mt={4}>验证区 {row.selected.validation.trades} 次 / 平均净收益 {percent(row.selected.validation.avg_net_pct)}；后段核验区 {row.selected.holdout.trades} 次 / 平均净收益 {percent(row.selected.holdout.avg_net_pct)}</Text>
+      </Paper>)}
+    </Paper> : null}
+    <Paper className="stat-tile" p="sm">
+      <Text size="sm" fw={600}>每日收盘归档 · AI历史依据</Text>
+      <Text size="xs" mt={4}>成功生成的收盘候选按日期长期保存；同一天重新生成更新同一份，不重复累加。AI读取本轮基准日前、相同板块范围近20次归档统计，以及每股最近5条入选记录，比较此前的行情、财报和行业状态；卡片详情可查看近20次归档中的全部入选记录。</Text>
+      <Text size="xs" mt={4}>本轮历史参考：{data.history_context?.archive_days ?? 0} 次归档 · {data.history_context?.status === "unavailable" ? "读取失败" : data.history_context?.archive_days ? "已提供给AI" : "等待积累"}</Text>
+      {data.history_context?.dates.length ? <Text size="xs" c="dimmed" mt={4}>已读取日期：{data.history_context.dates.join("、")}</Text> : null}
+      <Text size="xs" c="dimmed" mt={4}>{data.history_context?.note || "历史记录不会凭空补齐；服务器未运行、采集失败或当天未入选的股票可能没有记录。"}</Text>
     </Paper>
           <Paper className="stat-tile" p="sm">
             <MultiSelect
@@ -71,15 +91,15 @@ export function SignalSettingsPage({ data, savingBoards, analyzing, saveBoards, 
               <DeepSeekSettingsPanel onChanged={reload} />
               <Button size="compact-xs" variant="light" color="gold"
                 loading={analyzing || data.ai?.status === "running"}
-                disabled={!data.ai?.configured || data.running || !data.complete || !data.items.length || !!data.errors.length || (data.mode === "close" ? !data.close_ready : data.stale || !data.market_date_current)}
-                onClick={() => void analyze()}>分析本轮候选</Button>
+                disabled={!canAnalyze}
+                onClick={() => void analyze()}>{analysisLabel}</Button>
             </Group>
             {!data.ai?.configured ? (
               <Text size="xs" c="dimmed">AI 分析尚未启用。点击“配置 AI 模型”选择服务商、填写 Key 并保存即可使用。</Text>
             ) : (
               <Stack gap={4}>
                 <Text size="xs" c="dimmed">{data.ai.provider_label || "AI"} · {data.ai.model} · 比较最多20只候选、历史研究、已披露财报指标、行业当日强弱和大盘环境；未接入新闻、完整财报或账户资料。</Text>
-                <Text size="xs" c="dimmed">配置后有效扫描自动分析，会消耗对应服务商的 API 额度；手动分析至少间隔一分钟，页面轮询不重复调用。</Text>
+                <Text size="xs" c="dimmed">可在结果页勾选股票，按钮会显示将分析几只。成功点评和当时的依据会保存，同一批次和选项可复用。</Text>
                 {data.ai.status === "running" ? <Text size="sm">AI 正在比较本轮候选…</Text> : null}
                 {data.ai.error ? <Text size="xs" c={data.ai.status === "failed" ? "red" : "dimmed"}>{data.ai.error}</Text> : null}
                 {data.ai.summary ? <Text size="sm">{data.ai.summary}</Text> : null}
@@ -109,6 +129,23 @@ export function SignalSettingsPage({ data, savingBoards, analyzing, saveBoards, 
               </Stack>
               <Text size="xs" fw={600} mt="sm" mb={4}>验证口径与限制</Text>
               {data.research.assumptions.map((text) => <Text key={text} size="xs" c="dimmed" mb={4}>{text}</Text>)}
+            </Paper>
+          ) : null}
+          {comparison ? (
+            <Paper className="stat-tile" p="sm">
+              <Text fw={600} size="sm">同一批信号的持有期对照</Text>
+              <Text size="xs" c="dimmed" mt={4}>回放当前样本的历史技术信号，次日收盘模拟入场，统一扣除设定成本。同股按最长持有期去重。缺后续行情跳过 {comparison.missing_windows} 个信号。</Text>
+              <Table.ScrollContainer minWidth={380} mt="xs"><Table withRowBorders>
+                <Table.Thead><Table.Tr><Table.Th>持有期</Table.Th><Table.Th>事件数</Table.Th><Table.Th>净盈利占比</Table.Th><Table.Th>平均净收益</Table.Th><Table.Th>最差单笔</Table.Th></Table.Tr></Table.Thead>
+                <Table.Tbody>{comparison.periods.map((period) => (
+                  <Table.Tr key={period.hold_days}>
+                    <Table.Td>{period.hold_days} 日</Table.Td><Table.Td>{period.trades}</Table.Td>
+                    <Table.Td>{period.win_pct == null ? "—" : `${period.win_pct.toFixed(1)}%`}</Table.Td>
+                    <Table.Td>{percent(period.avg_net_pct)}</Table.Td><Table.Td>{percent(period.worst_trade_pct)}</Table.Td>
+                  </Table.Tr>
+                ))}</Table.Tbody>
+              </Table></Table.ScrollContainer>
+              <Text size="xs" c="dimmed" mt={4}>使用复权日线模拟收盘成交。涨跌停、实际委托和最低收费暂未纳入对照。</Text>
             </Paper>
           ) : null}
           {data.paper ? (

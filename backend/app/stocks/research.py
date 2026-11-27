@@ -9,6 +9,7 @@ from datetime import date, timedelta, time as clock_time
 import math
 import statistics
 import threading
+from copy import deepcopy
 
 import httpx
 
@@ -23,6 +24,7 @@ STRATEGIES = {
     "low_vol": {"label": "低波动观察", "rule": "20日收益波动率不高于2%，20日均价不低于60日均价，收盘距20日均价不超过3%"},
 }
 HOLD = 5
+COMPARE_HOLDS = (3, HOLD, 10)
 # 假设成本（非券商报价）：买卖各0.03%佣金、各0.05%滑点，卖出另计0.05%税费。
 BUY_COST = 0.0008
 SELL_COST = 0.0013
@@ -52,10 +54,11 @@ def history(symbol, transport=None, include_today=False):
     global _preferred_url
     moment = now_local()
     include_today = include_today and moment.time() >= clock_time(15, 30)
-    today = (moment.date() + timedelta(days=1 if include_today else 0)).isoformat()
+    cutoff = (moment.date() + timedelta(days=1 if include_today else 0)).isoformat()
+    expected_day = moment.date().isoformat() if include_today else None
     with _lock:
         cached = _cache.get(symbol)
-        if cached and cached[0] == today:
+        if cached and cached[0] == cutoff and (not expected_day or cached[1][-1][0] == expected_day):
             return cached[1]
     # 研究不能混用未复权新浪日线和前复权日线，避免除权被误判为暴跌。
     with _lock:
@@ -63,6 +66,7 @@ def history(symbol, transport=None, include_today=False):
     urls = list(dict.fromkeys([preferred or settings.fund_kline_tencent_url,
                               settings.fund_kline_tencent_url, TENCENT_MIRROR]))
     last_error = None
+    fallback = []
     with httpx.Client(timeout=settings.request_timeout_seconds, follow_redirects=True, transport=transport) as client:
         for url in urls:
             try:
@@ -71,14 +75,20 @@ def history(symbol, transport=None, include_today=False):
                 response.raise_for_status()
                 block = ((response.json() or {}).get("data") or {}).get(symbol) or {}
                 raw = block.get("day") if symbol == "sh000300" else block.get("qfqday")
-                bars = clean_bars([(str(row[0])[:10], row[2]) for row in (raw or []) if len(row) > 2], today)
+                bars = clean_bars([(str(row[0])[:10], row[2]) for row in (raw or []) if len(row) > 2], cutoff)
                 if bars:
+                    if expected_day and bars[-1][0] != expected_day:
+                        if not fallback or bars[-1][0] > fallback[-1][0]:
+                            fallback = bars
+                        continue
                     with _lock:
-                        _cache[symbol] = (today, bars)
+                        _cache[symbol] = (cutoff, bars)
                         _preferred_url = url
                     return bars
             except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
                 last_error = exc
+    if fallback:
+        return fallback
     if last_error:
         raise last_error
     return []
@@ -158,6 +168,42 @@ def summarize(events):
             "benchmark_trades": len(excess)}
 
 
+def compare_holding_periods(histories, benchmark, split_date):
+    """对同一批样本外信号计算不同持有期，按最长持有期去重。"""
+    if not benchmark or not split_date:
+        return None
+    dates = list(benchmark)
+    positions = {day: index for index, day in enumerate(dates)}
+    longest = max(COMPARE_HOLDS)
+    events = {hold: [] for hold in COMPARE_HOLDS}
+    missing = 0
+    for bars in histories:
+        prices = dict(bars)
+        next_free = 0
+        for index in range(59, len(bars)):
+            day = bars[index][0]
+            pos = positions.get(day)
+            if day < split_date or pos is None or pos < next_free or pos + 1 + longest >= len(dates):
+                continue
+            if not triggers(features(bars[index - 59:index + 1])):
+                continue
+            window = dates[pos + 1:pos + longest + 2]
+            if any(session not in prices for session in window):
+                missing += 1
+                continue
+            entry_day = window[0]
+            entry = prices[entry_day]
+            for hold in COMPARE_HOLDS:
+                exit_day = window[hold]
+                exit_price = prices[exit_day]
+                net = net_return(entry, exit_price)
+                events[hold].append({"net": net, "double_cost_net": net_return(entry, exit_price, 2),
+                                     "excess": net - (benchmark[exit_day] / benchmark[entry_day] - 1)})
+            next_free = pos + longest + 2
+    return {"missing_windows": missing,
+            "periods": [{"hold_days": hold, **summarize(events[hold])} for hold in COMPARE_HOLDS]}
+
+
 def evidence_status(metrics):
     if metrics["trades"] < 30:
         return "样本不足"
@@ -207,10 +253,18 @@ def balanced_candidates(groups, limit=20):
     return out
 
 
-def build_research(items, trade_date, loader=None, progress=None, extra_symbols=(), mode="intraday"):
+def build_research(items, trade_date, loader=None, progress=None, extra_symbols=(), mode="intraday", parameters=None):
     closing = mode == "close" and now_local().time() >= clock_time(15, 30)
     cutoff = (now_local().date() + timedelta(days=1 if closing else 0)).isoformat()
-    loader = loader or (lambda symbol: history(symbol, include_today=closing))
+    if loader is None:
+        from .learning import cached_history
+        expected_day = now_local().date().isoformat() if closing else None
+
+        def loader(symbol):
+            cached = cached_history(symbol, cutoff)
+            if cached and (not expected_day or cached[-1][0] == expected_day):
+                return cached
+            return history(symbol, include_today=closing)
     sample = stratified_sample(items, settings.stock_research_sample_size)
     histories, errors = {}, []
     pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="research-history")
@@ -239,6 +293,8 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
     studies = {key: {"train": [], "test": []} for key in STRATEGIES}
     usable = 0
     insufficient = 0
+    comparison_histories = []
+    signal_features = {}
     for item in sample:
         bars = histories.get(item["symbol"]) or []
         stats = features(bars)
@@ -246,6 +302,7 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
             insufficient += 1
             continue
         usable += 1
+        comparison_histories.append(bars)
         if split:
             for key in STRATEGIES:
                 result = event_study(bars, key, split, benchmark)
@@ -262,8 +319,11 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
         hits = triggers(stats)
         if not hits:
             continue
+        signal_features[item["symbol"]] = stats
         row = dict(item, strategies=hits, strategy_labels=[STRATEGIES[key]["label"] for key in hits],
                    historical_as_of=stats["as_of"], ma20=round(stats["ma20"], 3), ma60=round(stats["ma60"], 3),
+                   signal_close=stats["last"], ma20_gap_pct=round((stats["last"] / stats["ma20"] - 1) * 100, 3),
+                   return5_pct=round(stats["return5"] * 100, 3), return10_pct=round(stats["return10"] * 100, 3),
                    vol20_pct=round(stats["vol20"] * 100, 3), status="待前向验证",
                    reason=" / ".join(STRATEGIES[key]["label"] for key in hits) + "：基于最近完整交易日日线触发")
         for key in hits:
@@ -280,12 +340,24 @@ def build_research(items, trade_date, loader=None, progress=None, extra_symbols=
     if mode == "close":
         close_ready = close_ready and usable > 0 and not close_pending
     selected = balanced_candidates(groups)
+    baseline_items = deepcopy(selected)
+    if parameters:
+        from .learning import accepts
+        index_stats = features(histories.get("sh000300") or [])
+        for item in selected:
+            stats = signal_features[item["symbol"]]
+            item["strategies"] = [key for key in item["strategies"] if accepts(stats, parameters.get(key, {}), index_stats)]
+            item["strategy_labels"] = [STRATEGIES[key]["label"] for key in item["strategies"]]
+            item["reason"] = " / ".join(item["strategy_labels"]) + "：基于最近完整交易日日线触发"
+        selected = [item for item in selected if item["strategies"]]
     evidence = {row["key"]: row["status"] for row in reports}
     for item in selected:
         item["validation"] = [STRATEGIES[key]["label"] + "：" + evidence[key] for key in item["strategies"]]
         item["priority_eligible"] = any(evidence[key] == "待前向验证" for key in item["strategies"])
         item["status"] = "待前向验证" if item["priority_eligible"] else "验证证据不足"
     result = {"version": VERSION, "sample_requested": len(sample), "sample_usable": usable,
+              "_baseline_items": baseline_items,
+              "holding_comparison": compare_holding_periods(comparison_histories, benchmark, split),
               "close_ready": close_ready,
               "close_pending": len(close_pending),
               "history_failed": len(set(errors)), "history_insufficient": insufficient, "split_date": split,

@@ -244,6 +244,30 @@ class StockResearchPreference(Base):
     __tablename__ = "stock_research_preferences"
     user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     boards_json: Mapped[str] = mapped_column(Text, nullable=False)
+    price_min: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    price_max: Mapped[float] = mapped_column(Float().evaluates_none(), nullable=True, default=50)
+
+
+class StockHistorySnapshot(Base):
+    __tablename__ = "stock_history_snapshots"
+    __table_args__ = (UniqueConstraint("symbol", "as_of", name="uq_stock_history_snapshot"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    as_of: Mapped[str] = mapped_column(String(10), nullable=False)
+    bars_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StockRuleEvaluation(Base):
+    __tablename__ = "stock_rule_evaluations"
+    scope: Mapped[str] = mapped_column(String(128), primary_key=True)
+    as_of: Mapped[str] = mapped_column(String(10), nullable=False)
+    report_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StockMarketArchive(Base):
+    __tablename__ = "stock_market_archives"
+    trade_date: Mapped[str] = mapped_column(String(10), primary_key=True)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class StrategyObservation(Base):
@@ -272,6 +296,35 @@ class StockCloseWatchlist(Base):
     scope: Mapped[str] = mapped_column(String(128), primary_key=True)
     trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
     snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StockCloseArchive(Base):
+    """每日收盘候选原始快照；与最新观察池分开，供后续判断使用。"""
+
+    __tablename__ = "stock_close_archives"
+    __table_args__ = (UniqueConstraint("scope", "trade_date", name="uq_stock_close_archive"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope: Mapped[str] = mapped_column(String(128), nullable=False)
+    trade_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StockAIReview(Base):
+    """保存某个账号一次成功的手动点评及模型实际收到的公开数据。"""
+
+    __tablename__ = "stock_ai_reviews"
+    review_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    account_scope: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    scan_scope: Mapped[str] = mapped_column(String(128), nullable=False)
+    mode: Mapped[str] = mapped_column(String(12), nullable=False)
+    snapshot_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot_at: Mapped[str] = mapped_column(String(32), nullable=False)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    candidates_json: Mapped[str] = mapped_column(Text, nullable=False)
+    input_json: Mapped[str] = mapped_column(Text, nullable=False)
+    report_json: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class CountdownItem(Base):

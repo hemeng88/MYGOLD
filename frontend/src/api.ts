@@ -74,7 +74,11 @@ export const api = {
   testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
   stockSignals: (signal?: AbortSignal, mode = "intraday") => request<StockSignals>(`/api/stocks/signals?mode=${mode}`, { signal }),
   refreshStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/refresh?mode=${mode}`, { method: "POST" }),
-  analyzeStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/analyze?mode=${mode}`, { method: "POST" }),
+  analyzeStockSignals: (mode: "intraday" | "close", snapshotId: string, codes: string[]) =>
+    request<StockSignals>(`/api/stocks/signals/analyze?${new URLSearchParams({ mode, snapshot_id: snapshotId })}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ codes }),
+    }),
+  saveStockPrices: (price_min: number, price_max: number | null) => request<{ price_min: number; price_max: number | null }>("/api/stocks/signals/prices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ price_min, price_max }) }),
   saveStockBoards: (boards: string[]) => request<{ boards: string[] }>("/api/stocks/signals/preferences", {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ boards }),
   }),

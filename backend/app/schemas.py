@@ -17,6 +17,15 @@ class StockBoardPreferenceIn(BaseModel):
     boards: List[str] = Field(min_length=1, max_length=4)
 
 
+class StockPricePreferenceIn(BaseModel):
+    price_min: float = Field(default=0, ge=0, le=100000, allow_inf_nan=False)
+    price_max: Optional[float] = Field(default=50, gt=0, le=100000, allow_inf_nan=False)
+
+
+class StockAnalysisIn(BaseModel):
+    codes: List[str] = Field(min_length=1, max_length=20)
+
+
 class FundHoldingItem(BaseModel):
     secid: str
     code: str

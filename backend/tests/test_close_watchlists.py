@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from backend.app.database import Base
-from backend.app.stocks import research, signals, watchlists, deepseek, factors
+from backend.app.stocks import research, signals, watchlists, deepseek, factors, learning
 
 
 NOW = datetime(2026, 11, 26, 16, 0)
@@ -69,6 +69,52 @@ class CloseResearchTests(unittest.TestCase):
         self.assertEqual(morning[-1][0], "2026-11-25")
         self.assertEqual(close[-1][0], "2026-11-26")
 
+    def test_retry_refreshes_incomplete_disk_and_memory_caches(self):
+        series = bars()
+        item = {"code": "000823", "symbol": "sz000823", "board": "主板", "amount": 1000, "price": series[-1][1]}
+        cutoff = "2026-11-27"
+        disk = series[:-1]
+        memory = {symbol: (cutoff, disk) for symbol in ("sh000300", item["symbol"])}
+
+        def handler(request):
+            symbol = request.url.params["param"].split(",")[0]
+            field = "day" if symbol == "sh000300" else "qfqday"
+            rows = [[day, price, price] for day, price in series]
+            return httpx.Response(200, json={"data": {symbol: {field: rows}}})
+
+        transport = httpx.MockTransport(handler)
+        real_history = research.history
+        with patch.object(research, "now_local", return_value=NOW), patch.object(research, "_cache", memory), \
+                patch.object(learning, "cached_history", return_value=disk), \
+                patch.object(research, "history", side_effect=lambda symbol, **kwargs: real_history(symbol, transport, **kwargs)):
+            _, report, histories = research.build_research([item], "2026-11-26", mode="close")
+        self.assertTrue(report["close_ready"])
+        self.assertTrue(all(rows[-1][0] == "2026-11-26" for rows in histories.values()))
+
+    def test_intraday_quote_moves_do_not_change_daily_extension_filter(self):
+        series = bars()[:-1]
+        item = {"code": "000823", "symbol": "sz000823", "board": "主板", "amount": 1000}
+        params = {"trend": {"max_extension": .06}}
+        with patch.object(research, "now_local", return_value=NOW):
+            for multiplier in (1, 1.08):
+                quote = dict(item, price=series[-1][1] * multiplier)
+                picks, _, _ = research.build_research([quote], "2026-11-26", loader=lambda _: series, parameters=params)
+                self.assertIn("trend", picks[0]["strategies"])
+                self.assertEqual(picks[0]["signal_close"], series[-1][1])
+
+    def test_holding_period_comparison_uses_same_dates_and_skips_incomplete_windows(self):
+        series = bars()
+        entry = series[166][1]
+        comparison = research.compare_holding_periods([series], dict(series), series[165][0])
+        periods = comparison["periods"]
+        self.assertEqual([row["hold_days"] for row in periods], [3, 5, 10])
+        self.assertEqual([row["trades"] for row in periods], [1, 1, 1])
+        self.assertEqual([row["avg_net_pct"] for row in periods],
+                         [round(research.net_return(entry, series[166 + days][1]) * 100, 3) for days in (3, 5, 10)])
+        missing = research.compare_holding_periods([series[:170] + series[171:]], dict(series), series[165][0])
+        self.assertGreater(missing["missing_windows"], 0)
+        self.assertEqual([row["trades"] for row in missing["periods"]], [0, 0, 0])
+
     @patch.object(factors, "now_local", return_value=NOW)
     def test_close_market_factor_uses_same_day_index(self, _clock):
         rows = [{"change_pct": 1}] * 100
@@ -83,12 +129,14 @@ class WatchlistStorageTests(unittest.TestCase):
         with Session(engine) as db:
             watchlists.save(db, snapshot())
         with Session(engine) as db:
-            self.assertEqual(watchlists.load(db, ["主板"]), snapshot())
+            loaded = watchlists.load(db, ["主板"])
+            self.assertEqual(loaded["trade_date"], snapshot()["trade_date"])
+            self.assertEqual(loaded["items"][0]["price"], snapshot()["items"][0]["price"])
             self.assertIsNone(watchlists.load(db, ["创业板"]))
             for changes in ({"close_ready": False}, {"complete": False}):
                 with self.assertRaises(ValueError):
                     watchlists.save(db, dict(snapshot(), **changes))
-            self.assertEqual(watchlists.load(db, ["主板"]), snapshot())
+            self.assertEqual(watchlists.load(db, ["主板"])["items"][0]["price"], 10)
         engine.dispose()
 
     def test_failed_regeneration_keeps_saved_cards(self):

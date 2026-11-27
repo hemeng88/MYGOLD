@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from backend.app.auth import require_auth
 from backend.app.routers.api import router
 
-from backend.app.stocks.signals import candidate, scan_market
+from backend.app.stocks.signals import SnapshotChanged, candidate, scan_market
 
 
 def quote(code="000823", symbol="sz000823", **changes):
@@ -25,23 +25,31 @@ def research_stub(items, trade_date, **kwargs):
 
 class SignalsTests(unittest.TestCase):
     def test_authenticated_api_and_refresh_dispatch(self):
+        snapshot_id = "a" * 64
         app = FastAPI()
         app.include_router(router, prefix="/api")
         app.dependency_overrides[require_auth] = lambda: SimpleNamespace(id=1)
-        with TestClient(app) as client, patch("backend.app.routers.api.ai_settings.resolve", return_value=None), patch("backend.app.routers.api.load_boards", return_value=["主板"]), patch("backend.app.routers.api.get_signals", return_value={"running": True}) as get:
+        with TestClient(app) as client, patch("backend.app.routers.api.load_prices", return_value=(0,50)), patch("backend.app.routers.api.ai_settings.resolve", return_value=None), patch("backend.app.routers.api.load_boards", return_value=["主板"]), patch("backend.app.routers.api.get_signals", return_value={"running": True}) as get:
             self.assertEqual(client.get("/api/stocks/signals").json(), {"running": True})
-            get.assert_called_with(boards=["主板"], ai_config=None)
+            get.assert_called_with(boards=["主板"], ai_config=None, price_min=0, price_max=50)
             self.assertEqual(client.post("/api/stocks/signals/refresh").status_code, 200)
-            get.assert_called_with(refresh=True, boards=["主板"], ai_config=None)
-            self.assertEqual(client.post("/api/stocks/signals/analyze").status_code, 200)
-            get.assert_called_with(analyze=True, boards=["主板"], ai_config=None)
+            get.assert_called_with(refresh=True, boards=["主板"], ai_config=None, price_min=0, price_max=50)
+            self.assertEqual(client.post("/api/stocks/signals/analyze").status_code, 422)
+            self.assertEqual(client.post(f"/api/stocks/signals/analyze?snapshot_id={snapshot_id}").status_code, 200)
+            get.assert_called_with(analyze=True, requested_snapshot_id=snapshot_id, boards=["主板"], ai_config=None, price_min=0, price_max=50)
             self.assertEqual(client.get("/api/stocks/signals?mode=close").status_code, 200)
-            get.assert_called_with(mode="close", boards=["主板"], ai_config=None)
+            get.assert_called_with(mode="close", boards=["主板"], ai_config=None, price_min=0, price_max=50)
             self.assertEqual(client.post("/api/stocks/signals/refresh?mode=close").status_code, 200)
-            get.assert_called_with(refresh=True, mode="close", boards=["主板"], ai_config=None)
-            self.assertEqual(client.post("/api/stocks/signals/analyze?mode=close").status_code, 200)
-            get.assert_called_with(analyze=True, mode="close", boards=["主板"], ai_config=None)
+            get.assert_called_with(refresh=True, mode="close", boards=["主板"], ai_config=None, price_min=0, price_max=50)
+            close_path = f"/api/stocks/signals/analyze?mode=close&snapshot_id={snapshot_id}"
+            self.assertEqual(client.post(close_path).status_code, 200)
+            get.assert_called_with(analyze=True, requested_snapshot_id=snapshot_id, mode="close", boards=["主板"], ai_config=None, price_min=0, price_max=50)
+            self.assertEqual(client.post(close_path, json={"codes": ["000823"]}).status_code, 200)
+            get.assert_called_with(analyze=True, requested_snapshot_id=snapshot_id, requested_codes=["000823"], mode="close", boards=["主板"], ai_config=None, price_min=0, price_max=50)
+            self.assertEqual(client.post(close_path, json={"codes": []}).status_code, 422)
             self.assertEqual(client.get("/api/stocks/signals?mode=invalid").status_code, 422)
+            get.side_effect = SnapshotChanged("候选已更新")
+            self.assertEqual(client.post(close_path).status_code, 409)
 
     def test_prices_come_from_observed_data(self):
         item = candidate(quote())

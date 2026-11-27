@@ -10,9 +10,31 @@ from .market_session import should_poll_quotes
 from .stocks.collector import collect_quotes as collect_mainboard_quotes
 from .stocks.collector import collect_universe as collect_mainboard_universe
 from .stocks.collector import has_usable_rows
+from .stocks.signals import queue_close_archives, queue_scans
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
+
+
+async def job_stock_close_archive() -> None:
+    try:
+        logger.info("收盘候选自动归档：已安排 %d 个板块范围", queue_close_archives())
+    except Exception:
+        logger.exception("收盘候选自动归档安排失败")
+
+
+async def job_stock_scan() -> None:
+    try:
+        queue_scans()
+    except Exception:
+        logger.exception("后台股票扫描安排失败")
+
+
+async def job_stock_history_bootstrap() -> None:
+    try:
+        queue_scans(bootstrap=True)
+    except Exception:
+        logger.exception("股票历史初始化安排失败")
 
 
 async def job_fund_quotes() -> None:
@@ -199,6 +221,21 @@ def start_scheduler() -> None:
         replace_existing=True,
         max_instances=1,
     )
+    scheduler.add_job(
+        job_stock_close_archive,
+        "cron",
+        day_of_week="mon-fri",
+        hour="16,17",
+        minute=0,
+        id="stock-close-archive",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(job_stock_scan, "interval", seconds=120, id="stock-scan",
+                      replace_existing=True, max_instances=1, coalesce=True)
+    scheduler.add_job(job_stock_history_bootstrap, "date", id="stock-history-bootstrap",
+                      replace_existing=True, max_instances=1)
     scheduler.start()
     logger.info(
         "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，16:40 对季报持仓，16:50 重算主板均价，21:30 拉涨幅榜；未启用任何消息推送任务",

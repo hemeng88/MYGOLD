@@ -41,6 +41,8 @@ def _migrate_fund_favorites_to_users() -> None:
     之后由 users.claim_orphan_favorites 认领。重建后再次调用会因为已有 user_id 列而直接跳过。
     """
     inspector = inspect(engine)
+    _ensure_column(inspector, "stock_research_preferences", "price_min", "price_min FLOAT DEFAULT 0")
+    _ensure_column(inspector, "stock_research_preferences", "price_max", "price_max FLOAT DEFAULT 50")
     if "fund_favorites" not in inspector.get_table_names():
         return
     old_columns = {col["name"] for col in inspector.get_columns("fund_favorites")}

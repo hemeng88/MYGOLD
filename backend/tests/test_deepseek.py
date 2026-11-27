@@ -6,8 +6,13 @@ from unittest.mock import patch
 
 import httpx
 from pydantic import SecretStr
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
+from backend.app.database import Base
+from backend.app.models import StockAIReview
 from backend.app.stocks import deepseek
+from backend.app.stocks.ai_settings import Credentials
 
 NOW = datetime(2026, 11, 26, 10, 0)
 SNAPSHOT = {"fetched_at": NOW.isoformat(), "trade_date": "2026-11-26", "complete": True,
@@ -32,16 +37,26 @@ class DeepSeekTests(unittest.TestCase):
         return deepseek.analyze(SNAPSHOT, transport)
 
     def test_valid_json_and_request_shape(self):
+        snapshot = deepcopy(SNAPSHOT)
+        snapshot.update(price_min=5, price_max=40, parameter_evaluation={"status": "active", "parameters": {"trend": {}}})
+        snapshot["items"][0].update(signal_close=10.25, ma20_gap_pct=2.5, internal_note="仅保留在服务端")
+
         def handler(request):
             self.assertEqual(str(request.url), "https://api.deepseek.com/chat/completions")
             self.assertEqual(request.headers["Authorization"], "Bearer test-secret")
             body = json.loads(request.content)
             self.assertEqual(body["response_format"], {"type": "json_object"})
             public_input = json.loads(body["messages"][1]["content"])
-            self.assertEqual(set(public_input), {"source", "fetched_at", "trade_date", "items", "research", "allowed_boards", "factor_context", "mode"})
+            self.assertEqual(public_input["price_range"], {"min": 5, "max": 40})
+            self.assertEqual(public_input["items"][0]["price"], 10.5)
+            self.assertEqual(public_input["items"][0]["signal_close"], 10.25)
+            self.assertEqual(public_input["items"][0]["ma20_gap_pct"], 2.5)
+            self.assertNotIn("internal_note", public_input["items"][0])
+            self.assertEqual(public_input["parameter_evaluation"], {"status": "active"})
+            self.assertIsNone(public_input["applied_parameters"])
             return httpx.Response(200, json=response())
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")):
-            result = deepseek.analyze(SNAPSHOT, httpx.MockTransport(handler))
+            result = deepseek.analyze(snapshot, httpx.MockTransport(handler))
         self.assertEqual(result, REPORT)
 
     def test_factor_context_and_financials_are_sent_and_priority_gate_is_enforced(self):
@@ -114,21 +129,61 @@ class DeepSeekTests(unittest.TestCase):
         state = dict(status="idle", snapshot_at=None, analyzed_at=None, items=[], summary=None, error=None)
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")), \
                 patch.object(deepseek, "_state", state), patch.object(deepseek, "_last_attempt", 0), \
-                patch.object(deepseek.time, "monotonic", return_value=100), patch.object(deepseek._executor, "submit") as submit:
+                patch.object(deepseek.time, "monotonic", return_value=100) as clock, patch.object(deepseek._executor, "submit") as submit:
             deepseek.request_analysis(SNAPSHOT)
             self.assertEqual(submit.call_count, 1)
             state["status"] = "ready"
+            clock.return_value = 161
             deepseek.request_analysis(SNAPSHOT)
             deepseek.request_analysis(SNAPSHOT, retry=True)
             self.assertEqual(submit.call_count, 1)
+            state["status"] = "failed"
+            deepseek.request_analysis(SNAPSHOT, retry=True)
+            self.assertEqual(submit.call_count, 2)
+
+    def test_snapshot_id_tracks_evidence_but_ignores_scan_progress(self):
+        after = dict(SNAPSHOT, progress=99, factor_context={"market": {"status": "weak"}})
+        self.assertNotEqual(deepseek.snapshot_id(SNAPSHOT), deepseek.snapshot_id(after))
+        self.assertEqual(deepseek.snapshot_id(after), deepseek.snapshot_id(dict(after, progress=100)))
+
+    def test_saved_review_reuses_same_selection_after_restart_and_is_private(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        Base.metadata.create_all(engine)
+        credentials = Credentials(SecretStr("private-key"), "test-model", "account:1:server", "server")
+        other_account = Credentials(SecretStr("other-key"), "test-model", "account:2:server", "server")
+        first = dict(SNAPSHOT, snapshot_id=deepseek.snapshot_id(SNAPSHOT),
+                     review_candidates=[*SNAPSHOT["items"], {"code": "600519", "price": 52}])
+        second = dict(first, items=[{"code": "600519", "price": 52}])
+        with patch.object(deepseek, "SessionLocal", side_effect=lambda: Session(engine)), \
+                patch.object(deepseek, "_states", {}), patch.object(deepseek, "_attempts", {}), \
+                patch.object(deepseek, "analyze", return_value=REPORT), patch.object(deepseek._executor, "submit") as submit:
+            deepseek.request_analysis(first, credentials=credentials)
+            worker, *args = submit.call_args.args
+            worker(*args)
+            with Session(engine) as db:
+                row = db.scalar(select(StockAIReview))
+                self.assertEqual(row.account_scope, credentials.scope)
+                self.assertEqual([item["code"] for item in json.loads(row.input_json)["items"]], ["000823"])
+                self.assertEqual([item["code"] for item in json.loads(row.candidates_json)], ["000823", "600519"])
+                self.assertNotIn("private-key", row.input_json + row.report_json)
+            with patch.object(deepseek, "_states", {}), patch.object(deepseek, "_attempts", {}):
+                restored = deepseek.analysis_state(first, credentials=credentials)
+                self.assertEqual(restored["reviewed_codes"], ["000823"])
+                self.assertTrue(restored["archived"])
+                deepseek.request_analysis(first, credentials=credentials)
+                submit.assert_called_once()
+                self.assertEqual(deepseek.analysis_state(first, credentials=other_account)["items"], [])
+                deepseek.request_analysis(second, credentials=credentials)
+                self.assertEqual(submit.call_count, 2)
 
     def test_old_comment_is_not_attached_to_new_quote(self):
         state = dict(status="ready", snapshot_at="2026-11-26T09:55:00", analyzed_at=NOW.isoformat(), **REPORT, error=None)
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")), patch.object(deepseek, "_state", state):
             public = deepseek.analysis_state(SNAPSHOT)
-            self.assertEqual(public["status"], "waiting")
-            self.assertEqual(public["items"], [])
-            self.assertIsNone(public["summary"])
+            self.assertEqual(public["status"], "previous")
+            self.assertEqual(public["snapshot_at"], state["snapshot_at"])
+            self.assertEqual(public["summary"], REPORT["summary"])
 
     def test_timeout_is_reported_without_request_details(self):
         def handler(request):

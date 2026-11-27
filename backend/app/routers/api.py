@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -36,9 +36,11 @@ from ..schemas import (
 )
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
-from ..stocks.signals import get_signals
+from ..stocks.signals import SnapshotChanged, get_signals
 from ..stocks.preferences import load_boards, save_boards
 from ..schemas import StockBoardPreferenceIn
+from ..schemas import StockAnalysisIn, StockPricePreferenceIn
+from ..stocks.preferences import load_prices, save_prices
 from ..schemas import DeepSeekConfigIn
 from ..stocks import ai_settings
 from ..timeutil import now_local, trade_date_today
@@ -304,25 +306,49 @@ def fund(code: str, db: Session = Depends(get_db), user: User = Depends(require_
 @guarded.get("/stocks/signals")
 def stock_signals(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
     options = {"mode": mode} if mode != "intraday" else {}
+    low, high = load_prices(db, user.id)
+    options.update(price_min=low, price_max=high)
     return get_signals(boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/refresh")
 def stock_signals_refresh(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
     options = {"mode": mode} if mode != "intraday" else {}
+    low, high = load_prices(db, user.id)
+    options.update(price_min=low, price_max=high)
     return get_signals(refresh=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/analyze")
-def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depends(get_db), mode: Literal["intraday", "close"] = "intraday"):
+def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depends(get_db),
+                          mode: Literal["intraday", "close"] = "intraday", snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                          selection: Optional[StockAnalysisIn] = None):
     options = {"mode": mode} if mode != "intraday" else {}
-    return get_signals(analyze=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
+    low, high = load_prices(db, user.id)
+    options.update(price_min=low, price_max=high)
+    if selection is not None:
+        options["requested_codes"] = selection.codes
+    try:
+        return get_signals(analyze=True, requested_snapshot_id=snapshot_id, boards=load_boards(db, user.id),
+                           ai_config=ai_settings.resolve(db, user.id), **options)
+    except SnapshotChanged as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @guarded.put("/stocks/signals/preferences")
 def stock_signals_preferences(payload: StockBoardPreferenceIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
         return {"boards": save_boards(db, user.id, payload.boards)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.put("/stocks/signals/prices")
+def stock_signal_prices(payload: StockPricePreferenceIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        return save_prices(db, user.id, payload.price_min, payload.price_max)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
