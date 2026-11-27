@@ -15,7 +15,7 @@ from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
 from . import deepseek
-from . import research, paper, factors, watchlists, learning
+from . import research, paper, factors, watchlists, learning, simulator
 from ..database import SessionLocal
 from ..models import StockResearchPreference, StockCloseWatchlist
 from .preferences import normalize_boards, price_range, scope_key, parse_scope
@@ -87,6 +87,8 @@ def queue_scans(mode="intraday", bootstrap=False):
                 scopes.add(scope_key(normalize_boards(json.loads(row.boards_json)), row.price_min, row.price_max))
             except (ValueError, TypeError):
                 continue
+        if mode == "close":
+            scopes.update(simulator.entry_scopes(db))
         done = {row.scope for row in db.scalars(select(StockCloseWatchlist)).all()
                 if row.trade_date == moment.date().isoformat()} if mode == "close" else set()
     queued = 0

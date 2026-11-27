@@ -286,13 +286,11 @@ body {
     max-width: 100%;
   }
 
-  .app-shell-mobile .fund-row-main,
-  .app-shell-mobile .exposure-row-main {
+  .app-shell-mobile .fund-row-main {
     gap: 6px;
   }
 
-  .app-shell-mobile .fund-row-main > :first-child,
-  .app-shell-mobile .exposure-row-main > :first-child {
+  .app-shell-mobile .fund-row-main > :first-child {
     min-width: 0;
     flex: 1 1 auto;
   }
@@ -302,8 +300,7 @@ body {
     gap: 2px;
   }
 
-  .app-shell-mobile .fund-row-actions .mantine-Text-root,
-  .app-shell-mobile .exposure-row-main > :last-child {
+  .app-shell-mobile .fund-row-actions .mantine-Text-root {
     white-space: nowrap;
   }
 

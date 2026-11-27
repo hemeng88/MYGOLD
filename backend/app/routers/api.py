@@ -3,7 +3,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from ..analysis.fund_estimate import exposure, fund_detail, list_funds
+from ..analysis.fund_estimate import fund_detail, list_funds
 from ..auth import login as auth_login
 from ..auth import require_auth
 from ..misc import countdowns as misc_countdowns
@@ -11,19 +11,15 @@ from ..models import User
 from ..database import get_db
 from ..funds import favorites as fund_favorites
 from ..funds.collector import prune_stock_quotes, refresh_funds, sync_fund
-from ..funds.rankings import DEFAULT_PERIOD, collect_rankings, list_rankings
 from ..funds.sources import search_assets, search_stocks
 from ..schemas import (
     CountdownIn,
     CountdownOut,
-    ExposureResponse,
     FundDetailResponse,
     FundFavoriteIn,
     FundFavoriteOut,
     FundListResponse,
     FundPositionIn,
-    FundRankRefreshResult,
-    FundRankResponse,
     FundRefreshResult,
     FundSearchItem,
     LoginIn,
@@ -37,10 +33,10 @@ from ..schemas import (
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..stocks.signals import SnapshotChanged, get_signals
-from ..stocks import single_stock, portfolio
+from ..stocks import single_stock, portfolio, simulator
 from ..stocks.preferences import load_boards, save_boards
 from ..schemas import StockBoardPreferenceIn
-from ..schemas import StockAnalysisIn, StockPortfolioIn, StockPricePreferenceIn
+from ..schemas import StockAnalysisIn, StockPortfolioIn, StockPricePreferenceIn, StockSimConfig, StockSimRunIn
 from ..stocks.preferences import load_prices, save_prices
 from ..schemas import DeepSeekConfigIn
 from ..stocks import ai_settings
@@ -79,12 +75,6 @@ def funds(db: Session = Depends(get_db), user: User = Depends(require_auth)):
     return list_funds(db, user.id)
 
 
-@guarded.get("/funds/exposure", response_model=ExposureResponse)
-def fund_exposure(db: Session = Depends(get_db), user: User = Depends(require_auth)):
-    """把基金持仓穿透成每只股票对应多少钱，同一只股票跨基金合并。"""
-    return exposure(db, user.id)
-
-
 @guarded.get("/funds/search", response_model=List[FundSearchItem])
 def fund_search(
     q: str = Query(min_length=1, max_length=32, description="基金代码或名称关键字"),
@@ -98,33 +88,6 @@ def fund_search(
         raise HTTPException(status_code=502, detail="基金搜索失败：%s" % exc) from exc
     owned = set(fund_favorites.list_codes_of(db, user.id))
     return [dict(row, favorited=row["code"] in owned) for row in rows]
-
-
-@guarded.get("/funds/rankings", response_model=FundRankResponse)
-def fund_rankings(
-    period: str = Query(default=DEFAULT_PERIOD, description="周期键，见返回里的 periods"),
-    stock_limit: int = Query(default=12, ge=1, le=40),
-    holder_limit: int = Query(default=5, ge=1, le=10, description="押注最重的基金取前几名"),
-    fund_limit: int = Query(default=10, ge=1, le=50, description="涨幅榜列前几名，计算仍用全部"),
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_auth),
-):
-    return list_rankings(
-        db,
-        period=period,
-        stock_limit=stock_limit,
-        holder_limit=holder_limit,
-        fund_limit=fund_limit,
-    )
-
-
-@guarded.post("/funds/rankings/refresh", response_model=FundRankRefreshResult)
-def fund_rankings_refresh(db: Session = Depends(get_db), _user: User = Depends(require_auth)):
-    try:
-        return collect_rankings(db)
-    except Exception as exc:
-        db.rollback()
-        return {"ok": False, "periods": 0, "funds": 0, "message": "榜单刷新中断：%s" % exc}
 
 
 @guarded.get("/funds/favorites", response_model=List[FundFavoriteOut])
@@ -341,6 +304,30 @@ def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depe
 @guarded.get("/stocks/portfolio-study")
 def stock_portfolio_status(user: User = Depends(require_auth)):
     return portfolio.status(user.id)
+
+
+@guarded.get("/stocks/simulator")
+def stock_simulator(period: Literal["7", "30", "90", "all"] = "30",
+                    user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return simulator.view(db, user.id, period)
+
+
+@guarded.put("/stocks/simulator/config")
+def configure_stock_simulator(payload: StockSimConfig, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        simulator.save_config(db, user.id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@guarded.put("/stocks/simulator/run")
+def toggle_stock_simulator(payload: StockSimRunIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        simulator.set_running(db, user.id, payload.running)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"ok": True}
 
 
 @guarded.post("/stocks/portfolio-study", status_code=202)

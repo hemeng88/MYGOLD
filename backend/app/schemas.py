@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -33,6 +33,21 @@ class StockPortfolioIn(BaseModel):
     commission_pct: float = Field(default=0.03, ge=0, le=1)
     min_commission: float = Field(default=5, ge=0, le=100)
     slippage_pct: float = Field(default=0.05, ge=0, le=2)
+
+
+class StockSimConfig(StockPortfolioIn):
+    strategies: List[Literal["trend", "pullback", "low_vol"]] = Field(default_factory=lambda: ["trend", "pullback", "low_vol"], min_length=1, max_length=3)
+    price_min: float = Field(default=0, ge=0, lt=100000)
+    price_max: Optional[float] = Field(default=50, gt=0, le=100000)
+    hold_days: int = Field(default=5, ge=1, le=60)
+    stop_loss_pct: float = Field(default=5, ge=0, le=50)
+    take_profit_pct: float = Field(default=10, ge=0, le=100)
+    max_drawdown_pct: float = Field(default=15, ge=0, le=100)
+    require_factors: bool = False
+
+
+class StockSimRunIn(BaseModel):
+    running: bool
 
 
 class FundHoldingItem(BaseModel):
@@ -147,74 +162,6 @@ class FundRefreshResult(BaseModel):
     message: str
 
 
-class FundRankPeriod(BaseModel):
-    key: str
-    label: str
-
-
-class FundRankFund(BaseModel):
-    rank: int
-    code: str
-    name: str
-    return_pct: float
-    nav: Optional[float] = None
-    nav_date: Optional[str] = None
-    estimate_pct: Optional[float] = None
-    covered_pct: Optional[float] = None
-    quoted_count: int = 0
-    holdings_count: int = 0
-
-
-class FundRankStockItem(BaseModel):
-    code: str
-    name: Optional[str] = None
-    fund_count: int
-    weight_sum: float
-
-
-class FundRankHolderItem(BaseModel):
-    rank: int
-    code: str
-    name: Optional[str] = None
-    fund_type: Optional[str] = None
-    # 该基金净值里有多少比例压在这条主线的代表股上，百分数
-    theme_pct: float
-    hit_count: int
-    theme_stock_count: int
-    # 命中股票被多少只榜单基金重仓的累计数
-    consensus_hits: int
-    # 同门份额（A/C 类），已合并到本行
-    alt_codes: List[str] = Field(default_factory=list)
-    # 按该基金披露重仓股当前涨跌推算的日内涨幅（较昨收）
-    estimate_pct: Optional[float] = None
-
-
-class FundRankResponse(BaseModel):
-    period: str
-    period_label: Optional[str] = None
-    periods: List[FundRankPeriod] = Field(default_factory=list)
-    as_of: Optional[datetime] = None
-    funds: List[FundRankFund] = Field(default_factory=list)
-    hot_stocks: List[FundRankStockItem] = Field(default_factory=list)
-    # 该周期实际采集了多少只基金（展示的 funds 可能只是前几名）
-    board_size: int = 0
-    # 被两只以上榜单基金共同重仓的股票数，说明这条主线有多集中
-    theme_stock_count: int = 0
-    # 这条主线用了几只代表股去做全市场反查
-    theme_stock_n: int = 0
-    # 反查用的报告期
-    holder_report_date: Optional[str] = None
-    top_holders: List[FundRankHolderItem] = Field(default_factory=list)
-    message: Optional[str] = None
-
-
-class FundRankRefreshResult(BaseModel):
-    ok: bool
-    periods: int = 0
-    funds: int = 0
-    message: str
-
-
 class LoginIn(BaseModel):
     username: str
     password: str
@@ -227,50 +174,6 @@ class LoginOut(BaseModel):
 
 class MeOut(BaseModel):
     username: str
-
-
-class ExposureFundItem(BaseModel):
-    """某只股票的持仓金额来自哪只基金。"""
-
-    code: str
-    name: Optional[str] = None
-    # 该股占这只基金净值的比例，百分数
-    weight_pct: float
-    value: float
-
-
-class ExposureItem(BaseModel):
-    code: str
-    name: Optional[str] = None
-    market: Optional[str] = None
-    # 穿透后你在这只股票上对应多少钱
-    value: float
-    # 占你全部基金市值的比例
-    pct_of_total: Optional[float] = None
-    change_pct: Optional[float] = None
-    # 今天这只股票给你带来的盈亏金额
-    today_pnl: Optional[float] = None
-    cumulative_pnl: Optional[float] = None
-    cumulative_pct: Optional[float] = None
-    fund_count: int = 0
-    funds: List[ExposureFundItem] = Field(default_factory=list)
-
-
-class ExposureResponse(BaseModel):
-    session: str
-    as_of: Optional[datetime] = None
-    fund_count: int = 0
-    total_value: Optional[float] = None
-    # 能穿透到个股的金额，和总市值的差额是未公示仓位加债券现金
-    disclosed_value: Optional[float] = None
-    coverage_pct: Optional[float] = None
-    today_pnl: Optional[float] = None
-    # 所有基金的最新净值都已结算上一个交易日，今日盈亏要等开盘
-    settled: bool = False
-    stock_count: int = 0
-    items: List[ExposureItem] = Field(default_factory=list)
-    ready: bool = False
-    message: Optional[str] = None
 
 
 class MainboardSearchItem(BaseModel):

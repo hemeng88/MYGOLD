@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Alert, Button, Group, NumberInput, Paper, SimpleGrid, Stack, Text } from "@mantine/core";
 import { api } from "./api";
-import type { StockPortfolioConfig, StockPortfolioResult, StockSignals } from "./types";
+import { EquityCurve } from "./EquityCurve";
+import type { StockPortfolioConfig, StockSignals } from "./types";
 import { usePolling } from "./usePolling";
 
 const fields = {
@@ -18,43 +19,6 @@ const defaults: StockPortfolioConfig = {
   commission_pct: 0.03, min_commission: 5, slippage_pct: 0.05,
 };
 const money = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" });
-
-function EquityCurve({ result }: { result: StockPortfolioResult }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const element = canvas.current;
-    const ctx = element?.getContext("2d");
-    if (!element || !ctx || result.curve.length < 2) return;
-    const values = result.curve.map((row) => row.equity);
-    const low = Math.min(result.starting_cash, ...values);
-    const range = Math.max(1, Math.max(result.starting_cash, ...values) - low);
-    const width = element.width, height = element.height, padding = 12;
-    const y = (value: number) => height - padding - (value - low) / range * (height - 2 * padding);
-    ctx.clearRect(0, 0, width, height);
-    ctx.beginPath();
-    ctx.strokeStyle = "#8491a2";
-    ctx.setLineDash([8, 5]);
-    ctx.moveTo(padding, y(result.starting_cash));
-    ctx.lineTo(width - padding, y(result.starting_cash));
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.setLineDash([]);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#c89839";
-    values.forEach((value, i) => {
-      const x = padding + i * (width - 2 * padding) / (values.length - 1);
-      if (i === 0) ctx.moveTo(x, y(value));
-      else ctx.lineTo(x, y(value));
-    });
-    ctx.stroke();
-  }, [result]);
-  return <div>
-    <Text size="xs" c="dimmed">每日模拟资产 · 虚线为起始资金</Text>
-    <canvas ref={canvas} width={740} height={168} style={{ width: "100%", display: "block" }}
-      role="img" aria-label={`从${money.format(result.starting_cash)}到${money.format(result.end_equity)}的模拟资产走势，最大回撤${result.max_drawdown_pct}%`} />
-    <Group justify="space-between"><Text size="xs" c="dimmed">{result.start_date}</Text><Text size="xs" c="dimmed">{result.end_date}</Text></Group>
-  </div>;
-}
 
 export function PortfolioStudyPanel({ data }: { data: StockSignals }) {
   const [inputs, setInputs] = useState<Record<keyof StockPortfolioConfig, number | string>>(defaults);
@@ -107,7 +71,7 @@ export function PortfolioStudyPanel({ data }: { data: StockSignals }) {
           <div><Text size="xs" c="dimmed">最大回撤</Text><Text fw={600}>{result.max_drawdown_pct.toFixed(2)}%</Text></div>
           <div><Text size="xs" c="dimmed">已平仓交易胜率</Text><Text fw={600}>{result.win_pct == null ? "—" : `${result.win_pct.toFixed(2)}%`}</Text></div>
         </SimpleGrid>
-        <EquityCurve result={result} />
+        <EquityCurve points={result.curve} baseline={result.starting_cash} />
         <Text size="xs">平仓 {result.closed_trades} 笔 · 期末持仓 {result.open_positions} 只 · 模拟总成本 {money.format(result.cost_total)}</Text>
         <Text size="xs" c="dimmed">买入无可用成交价 {result.skipped.no_buy_fill} 次 · 超出股价范围 {result.skipped.outside_price_range} 次 · 预算不足 {result.skipped.insufficient_budget} 次 · 持仓已满 {result.skipped.position_limit} 次 · 卖出延迟累计 {result.skipped.delayed_exit_days} 个持仓交易日</Text>
       </> : null}

@@ -5,12 +5,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from .config import settings
 from .database import SessionLocal
 from .funds.collector import collect_fund_holdings, collect_fund_navs, collect_fund_quotes
-from .funds.rankings import collect_rankings
 from .market_session import should_poll_quotes
 from .stocks.collector import collect_quotes as collect_mainboard_quotes
 from .stocks.collector import collect_universe as collect_mainboard_universe
 from .stocks.collector import has_usable_rows
 from .stocks.signals import queue_close_archives, queue_scans
+from .stocks.simulator import run_cycle as run_stock_simulator
 
 logger = logging.getLogger("mygold.scheduler")
 scheduler = AsyncIOScheduler(timezone=settings.timezone)
@@ -21,6 +21,13 @@ async def job_stock_close_archive() -> None:
         logger.info("收盘候选自动归档：已安排 %d 个板块范围", queue_close_archives())
     except Exception:
         logger.exception("收盘候选自动归档安排失败")
+
+
+def job_stock_simulator() -> None:
+    try:
+        run_stock_simulator()
+    except Exception:
+        logger.exception("模拟盘行情检查失败")
 
 
 async def job_stock_scan() -> None:
@@ -65,19 +72,6 @@ async def job_fund_navs() -> None:
         logger.info("基金净值（开盘前）：%s", result["message"])
     except Exception:
         logger.exception("开盘前基金净值刷新失败")
-        db.rollback()
-    finally:
-        db.close()
-
-
-async def job_fund_rankings() -> None:
-    """涨幅榜基于 T-1 净值，一天变一次，收盘后跑一遍就够。"""
-    db = SessionLocal()
-    try:
-        result = collect_rankings(db)
-        logger.info("基金涨幅榜：%s", result["message"])
-    except Exception:
-        logger.exception("基金涨幅榜采集失败")
         db.rollback()
     finally:
         db.close()
@@ -184,17 +178,6 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
-    # 榜单要等当日净值出齐，放晚一点
-    scheduler.add_job(
-        job_fund_rankings,
-        "cron",
-        hour=21,
-        minute=30,
-        id="fund-rankings",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
     scheduler.add_job(
         job_mainboard_quotes,
         "interval",
@@ -236,9 +219,11 @@ def start_scheduler() -> None:
                       replace_existing=True, max_instances=1, coalesce=True)
     scheduler.add_job(job_stock_history_bootstrap, "date", id="stock-history-bootstrap",
                       replace_existing=True, max_instances=1)
+    scheduler.add_job(job_stock_simulator, "interval", seconds=60, id="stock-simulator",
+                      replace_existing=True, max_instances=1, coalesce=True)
     scheduler.start()
     logger.info(
-        "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，16:40 对季报持仓，16:50 重算主板均价，21:30 拉涨幅榜；未启用任何消息推送任务",
+        "调度已启动：A股盘中每 %ss 刷持仓股和主板现价，16:40 对季报持仓，16:50 重算主板均价",
         settings.fund_quote_interval_seconds,
     )
 

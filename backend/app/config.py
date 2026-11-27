@@ -19,9 +19,6 @@ class Settings(BaseSettings):
     fund_holdings_url: str = "https://fundf10.eastmoney.com/FundArchivesDatas.aspx"
     fund_info_url: str = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo"
     fund_search_url: str = "https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx"
-    fund_rank_url: str = "https://fund.eastmoney.com/data/rankhandler.aspx"
-    # 股票反查基金：RPT_MAIN_ORGHOLDDETAIL + ORG_TYPE=01，能拿到全市场持有该股的基金
-    fund_stock_holder_url: str = "https://datacenter-web.eastmoney.com/api/data/v1/get"
     fund_stock_quote_url: str = "https://push2.eastmoney.com/api/qt/ulist.np/get"
     # push2 请求密了会直接断连，留一个镜像和新浪兜底，别让覆盖率忽高忽低
     fund_stock_quote_fallback_url: str = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
@@ -48,19 +45,6 @@ class Settings(BaseSettings):
     fund_report_stale_days: int = 150
     # 公示股票仓位低于这个比例就不给估算了：债券基金这类穿透出来的数没有意义
     fund_min_coverage_pct: float = 20.0
-    # 涨幅榜每个周期取前几名，再穿透看它们重仓的是什么方向。
-    # 榜单列表本身几乎不花时间，成本在逐只拉持仓（约 0.28s/只），
-    # 30 只/周期去重后约 100 只，整轮采集半分钟出头，够用也不至于太慢。
-    fund_rank_top_n: int = 30
-    # 主线股票的判定：该周期榜单里至少这么多只基金共同重仓，才算这条主线的成分。
-    # 不能用「聚合出的全部股票」——那样榜单基金自己的持仓全在集合里，
-    # 命中权重≈它的披露总仓位，这个榜会退化成涨幅榜本身。
-    fund_rank_theme_min_funds: int = 2
-    # 每个周期取前几只重仓股当这条主线的代表股，再拿去全市场反查。
-    # 反查一只股票约 0.5s，跨周期去重后总量可控。
-    fund_theme_stock_n: int = 15
-    # 全市场持有榜每个周期最多存几名
-    fund_theme_holder_top_n: int = 20
 
     # 账号密码存在数据库 users 表里。下面两个只在「库里一个账号都没有」时用来建初始账号，
     # 之后改了密码不会被启动流程覆盖回去。

@@ -20,8 +20,8 @@ class NotificationScheduleTests(unittest.TestCase):
 
         job_ids = [call.kwargs["id"] for call in fake_scheduler.add_job.call_args_list]
         self.assertCountEqual(job_ids, [
-            "fund-quotes", "fund-navs", "fund-holdings", "fund-rankings",
+            "fund-quotes", "fund-navs", "fund-holdings",
             "mainboard-quotes", "mainboard-klines", "mainboard-bootstrap",
-            "stock-close-archive", "stock-scan", "stock-history-bootstrap",
+            "stock-close-archive", "stock-scan", "stock-history-bootstrap", "stock-simulator",
         ])
         fake_scheduler.start.assert_called_once_with()

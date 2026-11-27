@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
-import type { SingleStockReview, StockSignals, DeepSeekSettings, StockPortfolioConfig, StockPortfolioJob } from "./types";
+import type { SingleStockReview, StockSignals, DeepSeekSettings, StockPortfolioConfig, StockPortfolioJob, StockSimConfig, StockSimPeriod, StockSimView } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
-import type { Exposure, FundDetail, FundFavorite, FundList, FundRank, FundRankRefreshResult, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
+import type { FundDetail, FundFavorite, FundList, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
 const STORAGE_KEY = "mygold-api-base";
 const NATIVE_DEFAULT = "http://49.232.222.121";
@@ -74,6 +74,16 @@ export const api = {
   testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
   stockSignals: (signal?: AbortSignal, mode = "intraday") => request<StockSignals>(`/api/stocks/signals?mode=${mode}`, { signal }),
   stockPortfolioStatus: (signal: AbortSignal) => request<StockPortfolioJob>("/api/stocks/portfolio-study", { signal }),
+  stockSimulator: (period: StockSimPeriod, signal: AbortSignal) =>
+    request<StockSimView>(`/api/stocks/simulator?period=${period}`, { signal }),
+  saveStockSimulator: (config: StockSimConfig) =>
+    request<{ ok: boolean }>("/api/stocks/simulator/config", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
+    }),
+  setStockSimulatorRunning: (running: boolean) =>
+    request<{ ok: boolean }>("/api/stocks/simulator/run", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ running }),
+    }),
   startStockPortfolio: (mode: "intraday" | "close", config: StockPortfolioConfig) =>
     request<StockPortfolioJob>(`/api/stocks/portfolio-study?mode=${mode}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
@@ -109,7 +119,6 @@ export const api = {
   me: () => request<Me>("/api/auth/me"),
   logout: () => clearToken(),
   funds: (signal?: AbortSignal) => request<FundList>("/api/funds", { signal }),
-  exposure: (signal?: AbortSignal) => request<Exposure>("/api/funds/exposure", { signal }),
   fund: (code: string, signal?: AbortSignal) => request<FundDetail>(`/api/funds/${code}`, { signal }),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
   addFund: (code: string) =>
@@ -127,10 +136,6 @@ export const api = {
     }),
   refreshFunds: (includeHoldings = false) =>
     request<FundRefreshResult>(`/api/funds/refresh?include_holdings=${includeHoldings}`, { method: "POST" }),
-  fundRankings: (period?: string, signal?: AbortSignal) =>
-    request<FundRank>(period ? `/api/funds/rankings?period=${period}` : "/api/funds/rankings", { signal }),
-  refreshFundRankings: () =>
-    request<FundRankRefreshResult>("/api/funds/rankings/refresh", { method: "POST" }),
   mainboard: (period: MainboardPeriod, signal?: AbortSignal) =>
     request<MainboardList>(`/api/stocks/mainboard?period=${period}`, { signal }),
   searchStocks: (q: string, signal?: AbortSignal) =>

@@ -102,21 +102,6 @@ def ensure_schema():
             "UPDATE fund_favorites SET code = secid "
             "WHERE asset_type = 'stock' AND secid IS NOT NULL AND code <> secid"
         ))
-    _drop_legacy_rank_holders()
-
-
-def _drop_legacy_rank_holders() -> None:
-    """旧的 fund_rank_holders 已被 fund_theme_holders 取代，直接丢掉。
-
-    那张表是采集结果的缓存，口径换过两次（前十截断、共识度加权），
-    现在换成全市场反查，列和含义都不一样了，留着只会占地方。
-    """
-    inspector = inspect(engine)
-    if "fund_rank_holders" not in inspector.get_table_names():
-        return
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE fund_rank_holders"))
-    logger.info("已删除旧表 fund_rank_holders，改用全市场反查的 fund_theme_holders")
 
 
 def get_db():

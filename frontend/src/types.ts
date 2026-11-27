@@ -98,67 +98,6 @@ export interface FundRefreshResult {
 }
 
 
-export interface FundRankPeriod {
-  key: string;
-  label: string;
-}
-
-export interface FundRankFund {
-  rank: number;
-  code: string;
-  name: string;
-  return_pct: number;
-  nav: number | null;
-  nav_date: string | null;
-  estimate_pct?: number | null;
-  covered_pct?: number | null;
-  quoted_count?: number;
-  holdings_count?: number;
-}
-
-export interface FundRankStockItem {
-  code: string;
-  name: string | null;
-  fund_count: number;
-  weight_sum: number;
-}
-
-export interface FundRankHolderItem {
-  rank: number;
-  code: string;
-  name: string | null;
-  fund_type: string | null;
-  theme_pct: number;
-  hit_count: number;
-  theme_stock_count: number;
-  consensus_hits: number;
-  alt_codes: string[];
-  estimate_pct: number | null;
-}
-
-export interface FundRank {
-  period: string;
-  period_label: string | null;
-  periods: FundRankPeriod[];
-  as_of: string | null;
-  funds: FundRankFund[];
-  hot_stocks: FundRankStockItem[];
-  board_size: number;
-  theme_stock_count: number;
-  theme_stock_n: number;
-  holder_report_date: string | null;
-  top_holders: FundRankHolderItem[];
-  message: string | null;
-}
-
-export interface FundRankRefreshResult {
-  ok: boolean;
-  periods: number;
-  funds: number;
-  message: string;
-}
-
-
 export interface LoginResult {
   token: string;
   username: string;
@@ -168,27 +107,6 @@ export interface Me {
   username: string;
 }
 
-
-export interface ExposureFundItem {
-  code: string;
-  name: string | null;
-  weight_pct: number;
-  value: number;
-}
-
-export interface ExposureItem {
-  code: string;
-  name: string | null;
-  market: string | null;
-  value: number;
-  pct_of_total: number | null;
-  change_pct: number | null;
-  today_pnl: number | null;
-  cumulative_pnl: number | null;
-  cumulative_pct: number | null;
-  fund_count: number;
-  funds: ExposureFundItem[];
-}
 
 export interface MainboardSearchItem {
   code: string;
@@ -334,20 +252,6 @@ export interface CountdownPayload {
   minute: number | null;
 }
 
-export interface Exposure {
-  session: string;
-  as_of: string | null;
-  fund_count: number;
-  total_value: number | null;
-  disclosed_value: number | null;
-  coverage_pct: number | null;
-  today_pnl: number | null;
-  settled: boolean;
-  stock_count: number;
-  items: ExposureItem[];
-  ready: boolean;
-  message: string | null;
-}
 export type LiquidityBand = "high" | "upper_mid" | "mid";
 
 export interface StockSignal {
@@ -500,6 +404,79 @@ export interface StockPortfolioConfig {
   min_commission: number;
   slippage_pct: number;
 }
+
+export type StockSimStrategy = "trend" | "pullback" | "low_vol";
+export type StockSimPeriod = "7" | "30" | "90" | "all";
+
+export interface StockSimConfig extends StockPortfolioConfig {
+  strategies: StockSimStrategy[];
+  price_min: number;
+  price_max: number | null;
+  hold_days: number;
+  stop_loss_pct: number;
+  take_profit_pct: number;
+  max_drawdown_pct: number;
+  require_factors: boolean;
+}
+
+export interface StockSimAccount {
+  running: boolean;
+  config: StockSimConfig;
+  created_at: string;
+  checked_at: string | null;
+  entry_day: string | null;
+  message: string | null;
+  cash: number;
+  equity: number;
+  market_value: number;
+  return_pct: number;
+  max_drawdown_pct: number;
+}
+
+export interface StockSimPosition {
+  symbol: string;
+  code: string;
+  name: string;
+  shares: number;
+  avg_cost: number;
+  price: number;
+  market_value: number;
+  pnl: number;
+  marked_at: string;
+  opened_at: string;
+  exit_reason: string | null;
+}
+
+export interface StockSimTrade {
+  id: number;
+  code: string;
+  name: string;
+  side: "buy" | "sell";
+  shares: number;
+  price: number;
+  fees: number;
+  realized: number | null;
+  reason: string;
+  signal_day: string | null;
+  filled_at: string;
+  quoted_at: string;
+}
+
+export type StockSimView = { account: null } | {
+  account: StockSimAccount;
+  positions: StockSimPosition[];
+  curve: { date: string; equity: number; stale_positions: number; final_mark: boolean }[];
+  trades: StockSimTrade[];
+  period: {
+    base_equity: number;
+    trade_count: number;
+    fees: number;
+    realized: number;
+    return_pct: number | null;
+    max_drawdown_pct: number | null;
+    benchmark_pct: number | null;
+  };
+};
 
 export interface StockPortfolioResult {
   start_date: string;
