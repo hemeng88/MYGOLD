@@ -42,7 +42,8 @@ def _dated_quote(symbol):
         volume = factors.number(fields[8])
         if fields[0] and price and price > 0:
             return {"name": fields[0], "price": price, "prev_close": prev,
-                    "volume": volume, "at": at, "source": "新浪公开报价", "status": fields[32] if len(fields) > 32 else None}
+                    "volume": volume, "at": at, "source": "新浪公开报价", "status": fields[32] if len(fields) > 32 else None,
+                    "bid": factors.number(fields[11]), "bid_size": factors.number(fields[10])}
     return None
 
 
@@ -58,12 +59,12 @@ def _try(fetch, *args):
         return None
 
 
-def _pullback_plan(raw, daily, stats):
-    """用未复权价格给出可读的价位，技术均线用复权比例换算。"""
-    if len(raw) < 20 or not stats or raw[-1][0] != stats["as_of"]:
+def price_window(raw, daily):
+    """把前复权均线、波幅和高低点换到最近一个有效收盘的未复权口径。"""
+    if len(raw) < 20 or not daily or raw[-1][0] != daily[-1][0]:
         return None
     adjusted = dict(daily)
-    scale = raw[-1][1] / stats["last"]
+    scale = raw[-1][1] / daily[-1][1]
     window = []
     for day, close, high, low in raw[-20:]:
         if day not in adjusted:
@@ -74,7 +75,17 @@ def _pullback_plan(raw, daily, stats):
                for (_, prev_close, _, _), (_, _, high, low) in zip(window[-15:-1], window[-14:]))
     if not atr or atr < 0.01:
         return None
-    center = raw[-1][1] * stats["ma20"] / stats["last"]
+    return window, atr, scale
+
+
+def _pullback_plan(raw, daily, stats):
+    if not stats:
+        return None
+    reference = price_window(raw, daily)
+    if not reference:
+        return None
+    window, atr, scale = reference
+    center = stats["ma20"] * scale
     low = round(center - .25 * atr, 2)
     high = round(center + .25 * atr, 2)
     stop = round(low - atr, 2)
@@ -115,7 +126,7 @@ def _evaluate(moment, market_date, quote, raw, stats, plan, board, name, allowed
     return "符合条件，可考虑买入", "已进入观察区，趋势与预设的收益风险条件均满足。"
 
 
-def build_snapshot(code, allowed_boards, price_min, price_max):
+def load_market(code):
     if not _code.fullmatch(code):
         raise LookupError("请输入有效的六位 A 股股票代码。")
     symbol, secid = universe.sina_symbol(code), universe.secid_of(code)
@@ -147,6 +158,16 @@ def build_snapshot(code, allowed_boards, price_min, price_max):
     board = universe.board_of(code)
     if quote and (quote["at"] > moment or quote["at"].date().isoformat() != market_date):
         quote = None
+    return {"symbol": symbol, "secid": secid, "name": name, "board": board, "moment": moment,
+            "market_date": market_date, "completed_today": completed_today, "raw": raw, "daily": daily,
+            "quote": quote, "stats": stats, "financial": financial}
+
+
+def build_snapshot(code, allowed_boards, price_min, price_max):
+    market = load_market(code)
+    symbol, secid, name, board = (market[key] for key in ("symbol", "secid", "name", "board"))
+    moment, market_date, completed_today = (market[key] for key in ("moment", "market_date", "completed_today"))
+    raw, daily, quote, stats, financial = (market[key] for key in ("raw", "daily", "quote", "stats", "financial"))
     last_day = raw[-1][0] if raw else None
     plan = _pullback_plan(raw, daily, stats)
     decision, reason = _evaluate(moment, market_date, quote, raw, stats, plan, board, name,
@@ -181,10 +202,13 @@ def create_preview(user_id, code, boards, price_min, price_max):
     now = monotonic()
     with _lock:
         for (owner, _), (created, snapshot) in reversed(_snapshots.items()):
-            if (owner == user_id and snapshot["single"]["code"] == code and now - created < 10
+            if (owner == user_id and snapshot["mode"] == "single" and snapshot["single"]["code"] == code and now - created < 10
                     and (snapshot["allowed_boards"], snapshot["price_min"], snapshot["price_max"]) == (boards, price_min, price_max)):
                 return snapshot
-    snapshot = build_snapshot(code, boards, price_min, price_max)
+    return store_preview(user_id, build_snapshot(code, boards, price_min, price_max))
+
+
+def store_preview(user_id, snapshot):
     with _lock:
         _snapshots[user_id, snapshot["snapshot_id"]] = (monotonic(), snapshot)
         while len(_snapshots) > 128:
@@ -192,11 +216,13 @@ def create_preview(user_id, code, boards, price_min, price_max):
     return snapshot
 
 
-def saved_preview(user_id, code, snapshot_id):
+def saved_preview(user_id, code, snapshot_id, mode="single"):
     with _lock:
         match = _snapshots.get((user_id, snapshot_id))
-        if match and monotonic() - match[0] <= 900 and match[1]["single"]["code"] == code:
-            return match[1]
+        if match and monotonic() - match[0] <= 900:
+            snapshot = match[1]
+            if snapshot["mode"] == mode and snapshot[mode]["code"] == code:
+                return snapshot
     raise LookupError("这份行情已失效，请重新查询股票。")
 
 

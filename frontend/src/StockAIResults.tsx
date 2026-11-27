@@ -54,7 +54,7 @@ export function StockAIResults({ results, code, priceCondition }: {
         </Group>
         {comment ? <>
           <Group gap="xs">
-            <Badge size="xs" color={comment.view === "优先观察" ? "teal" : "gray"}>{comment.view}</Badge>
+            <Badge size="xs" color={comment.view === "止损关注" ? "orange" : comment.view === "止盈关注" || comment.view === "优先观察" ? "teal" : "gray"}>{comment.view}</Badge>
             <Text size="xs">{comment.trigger}</Text>
           </Group>
           <Text size="sm">{comment.reason}</Text>

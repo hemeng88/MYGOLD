@@ -363,10 +363,10 @@ export interface StockSignals {
 
 export interface StockAIComment {
   code: string;
-  view: "优先观察" | "等待确认" | "暂不考虑";
+  view: "优先观察" | "等待确认" | "暂不考虑" | "止损关注" | "止盈关注" | "继续观察" | "等待核实";
   reason: string;
   risk: string;
-  trigger: "回踩观察" | "突破观察" | "等待";
+  trigger: "回踩观察" | "突破观察" | "止损参考" | "止盈参考" | "等待";
 }
 
 export interface EventMetrics {
@@ -556,6 +556,36 @@ export interface SingleStockReview {
   can_analyze: boolean;
   analysis_issue: string | null;
   ai: StockAI;
+  ai_results: StockAIProfileResult[];
+}
+
+export interface HoldingPriceReference {
+  price: number;
+  pnl: number;
+  pnl_pct: number;
+}
+
+export interface HoldingAnalysis {
+  code: string;
+  secid: string;
+  name: string;
+  shares: number;
+  cost_price: number;
+  price: number | null;
+  price_date: string | null;
+  price_source: string | null;
+  quote_at: string | null;
+  basis_date: string | null;
+  current: boolean;
+  visible_buy_shares: number | null;
+  signal: "stop_hit" | "target_hit" | "between" | "reference";
+  signal_note: string;
+  pnl: HoldingPriceReference | null;
+  plan: { stop: HoldingPriceReference; take_profit: HoldingPriceReference; atr14: number | null; recent_high: number | null;
+    cost_loss_pct: number; cost_profit_pct: number; atr_multiple: number | null };
+  snapshot_id: string;
+  can_analyze: boolean;
+  analysis_issue: string | null;
   ai_results: StockAIProfileResult[];
 }
 

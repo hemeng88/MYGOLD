@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { AIProfile, AIProfileInput, AIProfileSettings, SingleStockReview, StockSignals, StockPortfolioConfig, StockPortfolioJob, StockSimConfig, StockSimPeriod, StockSimView } from "./types";
+import type { AIProfile, AIProfileInput, AIProfileSettings, HoldingAnalysis, SingleStockReview, StockSignals, StockPortfolioConfig, StockPortfolioJob, StockSimConfig, StockSimPeriod, StockSimView } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
 import type { FundDetail, FundFavorite, FundList, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
@@ -121,6 +121,14 @@ export const api = {
   me: () => request<Me>("/api/auth/me"),
   logout: () => clearToken(),
   funds: (signal?: AbortSignal) => request<FundList>("/api/funds", { signal }),
+  holdingPreview: (code: string, signal: AbortSignal) =>
+    request<HoldingAnalysis>(`/api/funds/favorites/${encodeURIComponent(code)}/holding-analysis`, { signal }),
+  holdingAnalysisStatus: (code: string, snapshotId: string, signal: AbortSignal) =>
+    request<HoldingAnalysis>(`/api/funds/favorites/${encodeURIComponent(code)}/holding-analysis/status?${new URLSearchParams({ snapshot_id: snapshotId })}`, { signal }),
+  analyzeHolding: (code: string, snapshotId: string, profileIds: string[]) =>
+    request<HoldingAnalysis>(`/api/funds/favorites/${encodeURIComponent(code)}/holding-analysis/analyze?${new URLSearchParams({ snapshot_id: snapshotId })}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_ids: profileIds }),
+    }),
   fund: (code: string, signal?: AbortSignal) => request<FundDetail>(`/api/funds/${code}`, { signal }),
   searchFunds: (q: string) => request<FundSearchItem[]>(`/api/funds/search?q=${encodeURIComponent(q)}`),
   addFund: (code: string) =>

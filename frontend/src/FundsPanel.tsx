@@ -17,6 +17,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { IconPlus, IconRefresh, IconSearch, IconTrash } from "@tabler/icons-react";
 import { api } from "./api";
+import { HoldingAnalysisPanel } from "./HoldingAnalysisPanel";
 import { FUNDS_CHANGED_EVENT, usePolling } from "./usePolling";
 import type { FundDetail, FundItem, FundSearchItem } from "./types";
 
@@ -530,6 +531,8 @@ export function FundsPanel() {
       {picked && !detailError && detail?.fund?.code !== picked ? <Skeleton mt="md" height={100} /> : null}
       {picked && detail?.fund?.code === picked ? (
         <Stack gap="sm" mt="md">
+          {detail.fund.asset_type === "stock" ? <HoldingAnalysisPanel key={`${picked}:${detail.fund.shares}:${detail.fund.cost_price}`} code={picked}
+            shares={detail.fund.shares} costPrice={detail.fund.cost_price} edit={() => setEditingCode(picked)} /> : null}
           <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
             <Paper className="stat-tile" p="xs">
               <Text size="xs" c="dimmed">

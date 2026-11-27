@@ -33,7 +33,7 @@ from ..schemas import (
 from ..stocks import universe as stock_universe
 from ..stocks.collector import list_mainboard, mainboard_detail, refresh_mainboard
 from ..stocks.signals import SnapshotChanged, get_signals
-from ..stocks import single_stock, portfolio, simulator
+from ..stocks import holding_analysis, single_stock, portfolio, simulator
 from ..stocks.preferences import load_boards, save_boards
 from ..schemas import StockBoardPreferenceIn
 from ..schemas import StockAIProfileIn, StockAnalysisIn, StockSingleAnalysisIn, StockPortfolioIn, StockPricePreferenceIn, StockSimConfig, StockSimRunIn
@@ -265,6 +265,52 @@ def fund(code: str, db: Session = Depends(get_db), user: User = Depends(require_
     if not fund_favorites.get_favorite(db, user.id, code):
         raise HTTPException(status_code=404, detail="这只基金还没收藏")
     return fund_detail(db, user.id, code)
+
+
+def _holding_favorite(db, user_id, code):
+    row = fund_favorites.get_favorite(db, user_id, code)
+    if row is None:
+        raise HTTPException(status_code=404, detail="没有找到这只收藏的股票。")
+    return row
+
+
+def _holding_snapshot(db, user_id, code, snapshot_id):
+    row = _holding_favorite(db, user_id, code)
+    try:
+        return holding_analysis.saved_preview(user_id, row, snapshot_id)
+    except (LookupError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@guarded.get("/funds/favorites/{code}/holding-analysis")
+def holding_preview(code: str, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    row = _holding_favorite(db, user.id, code)
+    try:
+        snapshot = holding_analysis.create_preview(user.id, row)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return holding_analysis.view(snapshot, ai_settings.analysis_configs(db, user.id)["ai_profiles"])
+
+
+@guarded.get("/funds/favorites/{code}/holding-analysis/status")
+def holding_status(code: str, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                   user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    snapshot = _holding_snapshot(db, user.id, code, snapshot_id)
+    return holding_analysis.view(snapshot, ai_settings.analysis_configs(db, user.id)["ai_profiles"])
+
+
+@guarded.post("/funds/favorites/{code}/holding-analysis/analyze")
+def review_holding(code: str, selection: StockSingleAnalysisIn, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                   user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    snapshot = _holding_snapshot(db, user.id, code, snapshot_id)
+    profiles = ai_settings.analysis_configs(db, user.id)["ai_profiles"]
+    try:
+        selected = ai_settings.select_profiles(profiles, selection.profile_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return holding_analysis.view(snapshot, profiles, selected)
 
 
 @guarded.get("/stocks/signals")
