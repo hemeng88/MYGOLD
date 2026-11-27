@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Badge, Button, Group, Modal, Paper, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
 import { api } from "./api";
+import { AIModelPicker, StockAIResults, useAISelection } from "./StockAIResults";
 import type { SingleStockReview } from "./types";
 
 function price(value: number) {
@@ -15,7 +16,11 @@ export function SingleStockAnalysisModal({ opened, onClose }: { opened: boolean;
   const match = result?.code === code.trim();
   const stock = match ? result : null;
   const snapshotId = stock?.snapshot_id;
-  const running = stock?.ai.status === "running";
+  const results = stock?.ai_results ?? [];
+  const models = useAISelection(results);
+  const running = results.some((model) => model.status === "running");
+  const selectedRunning = models.selected.some((model) => model.status === "running");
+  const pending = models.selected.filter((model) => model.status !== "ready" || !model.items.some((item) => item.code === stock?.code));
   const track = running || stock?.can_analyze;
 
   useEffect(() => {
@@ -28,14 +33,14 @@ export function SingleStockAnalysisModal({ opened, onClose }: { opened: boolean;
         const next = await api.singleStockStatus(target, snapshotId, controller.signal);
         if (controller.signal.aborted) return;
         setResult((current) => current?.snapshot_id === snapshotId ? next : current);
-        if (next.ai.status === "running" || next.can_analyze) {
-          timer = window.setTimeout(poll, next.ai.status === "running" ? 2200 : 20000);
+        const nextRunning = next.ai_results?.some((model) => model.status === "running");
+        if (nextRunning || next.can_analyze) {
+          timer = window.setTimeout(poll, nextRunning ? 2200 : 20000);
         }
       } catch (err) {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : "读取 AI 分析状态失败。");
-        setResult((current) => current?.snapshot_id === snapshotId
-          ? { ...current, ai: { ...current.ai, status: "waiting" } } : current);
+        timer = window.setTimeout(poll, 8000);
       }
     };
     timer = window.setTimeout(poll, running ? 1800 : 20000);
@@ -58,11 +63,14 @@ export function SingleStockAnalysisModal({ opened, onClose }: { opened: boolean;
   }
 
   async function analyze() {
-    if (!stock || busy || running) return;
+    if (!stock || busy || selectedRunning || !stock.can_analyze || !pending.length) return;
     setBusy("ai");
     setError(null);
     try {
-      setResult(await api.singleStockAnalysis(stock.code, stock.snapshot_id));
+      const next = await api.singleStockAnalysis(stock.code, stock.snapshot_id, pending.map((model) => model.profile_id));
+      setResult(next);
+      const failures = next.ai_results.filter((model) => model.request_error).map((model) => `${model.name} · ${model.request_error}`);
+      if (failures.length) setError(failures.join("；"));
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI 分析请求失败。");
     } finally {
@@ -70,9 +78,6 @@ export function SingleStockAnalysisModal({ opened, onClose }: { opened: boolean;
     }
   }
 
-  const comment = stock?.ai.status === "ready" ? stock.ai.items.find((item) => item.code === stock.code) : undefined;
-  const aiDecision = comment?.view === "优先观察" && stock?.decision === "符合条件，可考虑买入" ? "符合条件，可考虑买入"
-    : comment?.view === "暂不考虑" || stock?.decision === "暂不买入" ? "暂不买入" : "等待确认";
   return (
     <Modal opened={opened} onClose={onClose} title="按代码分析 A 股" size="lg">
       <Stack gap="md">
@@ -108,20 +113,15 @@ export function SingleStockAnalysisModal({ opened, onClose }: { opened: boolean;
               <Text size="xs" c="dimmed" mt={4}>{stock.plan.method} 开盘跳空或停牌时需重新核实可成交价。</Text>
             </> : null}
           </Paper>
-          <Group justify="space-between">
-            <Text size="sm" fw={600}>AI 单股点评</Text>
-            <Button variant="light" color="teal" onClick={() => void analyze()} loading={busy === "ai" || running}
-              disabled={busy === "lookup" || !stock.ai.configured || !stock.can_analyze || !!comment}>分析这只股票</Button>
+          <Group align="end" justify="space-between">
+            <div style={{ flex: "1 1 210px" }}><AIModelPicker models={models.available} value={models.ids} onChange={models.setChoices} disabled={!!busy} /></div>
+            {models.available.length ? <Button variant="light" color="teal" onClick={() => void analyze()} loading={busy === "ai" || selectedRunning}
+              disabled={busy === "lookup" || !stock.can_analyze || !pending.length}>
+              {models.ids.length && !pending.length ? "所选模型已分析" : `分析这只股票 · ${pending.length} 个模型`}
+            </Button> : null}
           </Group>
-          {!stock.ai.configured ? <Text size="sm" c="dimmed">请到选股页的「设置与说明」配置 AI 模型。</Text> : null}
-          {stock.ai.error && (stock.ai.status === "failed" || stock.ai.status === "waiting")
-            ? <Text size="sm" c="dimmed">{stock.ai.error}</Text> : null}
           {stock.analysis_issue ? <Text size="sm" c="dimmed">{stock.analysis_issue}</Text> : null}
-          {comment ? <Paper p="sm" withBorder>
-            <Text size="sm" fw={600}>{aiDecision}</Text>
-            <Text size="sm" mt={4}>{comment.reason}</Text>
-            <Text size="sm" mt={4} c="dimmed">风险 · {comment.risk}</Text>
-          </Paper> : null}
+          <StockAIResults results={results} code={stock.code} />
         </> : null}
       </Stack>
     </Modal>

@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..analysis.fund_estimate import fund_detail, list_funds
@@ -36,7 +36,7 @@ from ..stocks.signals import SnapshotChanged, get_signals
 from ..stocks import single_stock, portfolio, simulator
 from ..stocks.preferences import load_boards, save_boards
 from ..schemas import StockBoardPreferenceIn
-from ..schemas import StockAnalysisIn, StockPortfolioIn, StockPricePreferenceIn, StockSimConfig, StockSimRunIn
+from ..schemas import StockAIProfileIn, StockAnalysisIn, StockSingleAnalysisIn, StockPortfolioIn, StockPricePreferenceIn, StockSimConfig, StockSimRunIn
 from ..stocks.preferences import load_prices, save_prices
 from ..schemas import DeepSeekConfigIn
 from ..stocks import ai_settings
@@ -272,7 +272,7 @@ def stock_signals(user: User = Depends(require_auth), db: Session = Depends(get_
     options = {"mode": mode} if mode != "intraday" else {}
     low, high = load_prices(db, user.id)
     options.update(price_min=low, price_max=high)
-    return get_signals(boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
+    return get_signals(boards=load_boards(db, user.id), **ai_settings.analysis_configs(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/refresh")
@@ -280,7 +280,7 @@ def stock_signals_refresh(user: User = Depends(require_auth), db: Session = Depe
     options = {"mode": mode} if mode != "intraday" else {}
     low, high = load_prices(db, user.id)
     options.update(price_min=low, price_max=high)
-    return get_signals(refresh=True, boards=load_boards(db, user.id), ai_config=ai_settings.resolve(db, user.id), **options)
+    return get_signals(refresh=True, boards=load_boards(db, user.id), **ai_settings.analysis_configs(db, user.id), **options)
 
 
 @guarded.post("/stocks/signals/analyze")
@@ -292,9 +292,11 @@ def stock_signals_analyze(user: User = Depends(require_auth), db: Session = Depe
     options.update(price_min=low, price_max=high)
     if selection is not None:
         options["requested_codes"] = selection.codes
+        if selection.profile_ids is not None:
+            options["requested_profile_ids"] = selection.profile_ids
     try:
         return get_signals(analyze=True, requested_snapshot_id=snapshot_id, boards=load_boards(db, user.id),
-                           ai_config=ai_settings.resolve(db, user.id), **options)
+                           **ai_settings.analysis_configs(db, user.id), **options)
     except SnapshotChanged as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
@@ -351,23 +353,40 @@ def single_stock_preview(code: str, user: User = Depends(require_auth), db: Sess
         snapshot = single_stock.create_preview(user.id, code, load_boards(db, user.id), low, high)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return single_stock.view(snapshot, ai_settings.resolve(db, user.id))
+    options = ai_settings.analysis_configs(db, user.id)
+    return single_stock.view(snapshot, options["ai_config"], profiles=options["ai_profiles"])
+
+
+def _single_stock_snapshot(user_id, code, snapshot_id):
+    try:
+        return single_stock.saved_preview(user_id, code, snapshot_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @guarded.get("/stocks/single-analysis/{code}/status")
-@guarded.post("/stocks/single-analysis/{code}/analyze")
-def single_stock_review(code: str, request: Request, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+def single_stock_status(code: str, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
                         user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    snapshot = _single_stock_snapshot(user.id, code, snapshot_id)
+    options = ai_settings.analysis_configs(db, user.id)
+    return single_stock.view(snapshot, options["ai_config"], profiles=options["ai_profiles"])
+
+
+@guarded.post("/stocks/single-analysis/{code}/analyze")
+def single_stock_review(code: str, snapshot_id: str = Query(pattern=r"^[a-f0-9]{64}$"),
+                        selection: Optional[StockSingleAnalysisIn] = None,
+                        user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    snapshot = _single_stock_snapshot(user.id, code, snapshot_id)
+    low, high = load_prices(db, user.id)
+    if (snapshot["allowed_boards"], snapshot["price_min"], snapshot["price_max"]) != (load_boards(db, user.id), low, high):
+        raise HTTPException(status_code=409, detail="选股范围已变化，请重新查询股票。")
+    options = ai_settings.analysis_configs(db, user.id)
+    profiles = options["ai_profiles"]
     try:
-        snapshot = single_stock.saved_preview(user.id, code, snapshot_id)
-    except LookupError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    analyze = request.method == "POST"
-    if analyze:
-        low, high = load_prices(db, user.id)
-        if (snapshot["allowed_boards"], snapshot["price_min"], snapshot["price_max"]) != (load_boards(db, user.id), low, high):
-            raise HTTPException(status_code=409, detail="选股范围已变化，请重新查询股票。")
-    return single_stock.view(snapshot, ai_settings.resolve(db, user.id), analyze=analyze)
+        selected = ai_settings.select_profiles(profiles, selection.profile_ids if selection else None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return single_stock.view(snapshot, options["ai_config"], profiles=profiles, selected=selected)
 
 
 @guarded.put("/stocks/signals/preferences")
@@ -422,6 +441,55 @@ def deepseek_config_test(user: User = Depends(require_auth), db: Session = Depen
 def model_config_generation_test(user: User = Depends(require_auth), db: Session = Depends(get_db)):
     try:
         return ai_settings.test_generation(ai_settings.resolve(db, user.id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.get("/settings/ai/profiles")
+def list_ai_profiles(user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    options = ai_settings.analysis_configs(db, user.id)
+    return {"providers": ai_settings.provider_presets(),
+            "profiles": [ai_settings.profile_status(profile) for profile in options["ai_profiles"]]}
+
+
+def _write_ai_profile(db, user_id, payload, profile_id=None):
+    try:
+        return ai_settings.save_profile(db, user_id, payload, profile_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@guarded.post("/settings/ai/profiles", status_code=201)
+def create_ai_profile(payload: StockAIProfileIn, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return _write_ai_profile(db, user.id, payload)
+
+
+@guarded.put("/settings/ai/profiles/{profile_id}")
+def update_ai_profile(profile_id: str, payload: StockAIProfileIn,
+                      user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    return _write_ai_profile(db, user.id, payload, profile_id)
+
+
+@guarded.delete("/settings/ai/profiles/{profile_id}")
+def remove_ai_profile(profile_id: str, user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        ai_settings.delete_profile(db, user.id, profile_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@guarded.post("/settings/ai/profiles/{profile_id}/{action}")
+def test_ai_profile(profile_id: str, action: Literal["test", "test-generation"],
+                    user: User = Depends(require_auth), db: Session = Depends(get_db)):
+    try:
+        profile = ai_settings.get_profile(db, user.id, profile_id)
+        return ai_settings.test_connection(profile, user.id) if action == "test" else ai_settings.test_generation(profile)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

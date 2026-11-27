@@ -13,6 +13,10 @@ class DeepSeekConfigIn(BaseModel):
     token_field: Optional[str] = Field(default=None, max_length=32)
 
 
+class StockAIProfileIn(DeepSeekConfigIn):
+    name: Optional[str] = Field(default=None, max_length=48)
+
+
 class StockBoardPreferenceIn(BaseModel):
     boards: List[str] = Field(min_length=1, max_length=4)
 
@@ -24,6 +28,11 @@ class StockPricePreferenceIn(BaseModel):
 
 class StockAnalysisIn(BaseModel):
     codes: List[str] = Field(min_length=1, max_length=20)
+    profile_ids: Optional[List[str]] = Field(default=None, min_length=1, max_length=32)
+
+
+class StockSingleAnalysisIn(BaseModel):
+    profile_ids: List[str] = Field(min_length=1, max_length=32)
 
 
 class StockPortfolioIn(BaseModel):

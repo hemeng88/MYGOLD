@@ -177,6 +177,35 @@ class DeepSeekTests(unittest.TestCase):
                 deepseek.request_analysis(second, credentials=credentials)
                 self.assertEqual(submit.call_count, 2)
 
+    def test_model_card_reviews_keep_separate_symbols_and_require_explicit_selection(self):
+        engine = create_engine("sqlite://")
+        self.addCleanup(engine.dispose)
+        Base.metadata.create_all(engine)
+        first = Credentials(SecretStr("key-first"), "test-first", "account:1:first", "account", profile_id="first")
+        second = Credentials(SecretStr("key-second"), "test-second", "account:1:second", "account", profile_id="second")
+        other = Credentials(SecretStr("key-other"), "test-first", "account:2:first", "account", profile_id="first")
+        both = dict(SNAPSHOT, items=[*SNAPSHOT["items"], {"code": "600519", "price": 80}])
+        full = dict(both, snapshot_id=deepseek.snapshot_id(both))
+        original = dict(full, items=both["items"][:1])
+        later = dict(full, items=both["items"][1:])
+        later_report = dict(REPORT, items=[dict(REPORT["items"][0], code="600519")])
+        second_report = dict(REPORT, items=[dict(REPORT["items"][0], view="暂不考虑")])
+        with patch.object(deepseek, "SessionLocal", side_effect=lambda: Session(engine)), \
+                patch.object(deepseek, "_states", {}), patch.object(deepseek, "request_analysis") as request:
+            deepseek._save_review(original, first, REPORT, NOW)
+            deepseek._save_review(later, first, later_report, NOW + timedelta(seconds=5))
+            deepseek._save_review(original, second, second_report, NOW)
+            one, two = deepseek.profile_results(full, [first, second], include_cards=True)
+            request.assert_not_called()
+            self.assertEqual(set(one["card_reviews"]), {"000823", "600519"})
+            self.assertEqual(one["card_reviews"]["000823"]["view"], "等待确认")
+            self.assertEqual(two["card_reviews"]["000823"]["view"], "暂不考虑")
+            self.assertEqual(deepseek.profile_results(full, [other], include_cards=True)[0]["card_reviews"], {})
+            changed = dict(full, snapshot_id="new-snapshot")
+            states = deepseek.profile_results(changed, [first, second], [second], original, include_cards=True)
+            request.assert_called_once_with(original, retry=True, credentials=second)
+            self.assertTrue(states[0]["card_reviews"]["600519"]["previous"])
+
     def test_old_comment_is_not_attached_to_new_quote(self):
         state = dict(status="ready", snapshot_at="2026-11-26T09:55:00", analyzed_at=NOW.isoformat(), **REPORT, error=None)
         with patch.object(deepseek.settings, "deepseek_api_key", SecretStr("test-secret")), patch.object(deepseek, "_state", state):

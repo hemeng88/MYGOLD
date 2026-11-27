@@ -19,7 +19,7 @@ from sqlalchemy import select
 from ..config import settings
 from ..database import SessionLocal
 from ..market_session import session_label
-from ..models import StockAIReview
+from ..models import StockAIReview, StockAIReviewLatest
 from ..timeutil import now_local
 from . import model_providers
 from .preferences import scope_key
@@ -180,7 +180,7 @@ def analyze(snapshot, transport=None, credentials=None):
 
 
 _lock = threading.Lock()
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="deepseek-analysis")
+_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="stock-ai-analysis")
 _last_attempt = 0.0
 _state = {"status": "idle", "snapshot_at": None, "analyzed_at": None,
           "summary": None, "items": [], "error": None}
@@ -249,14 +249,22 @@ def _saved_review(snapshot, credentials, review_id=None):
 def _save_review(snapshot, credentials, report, analyzed_at):
     with SessionLocal() as db:
         review_id = _review_id(snapshot, credentials)
+        scope = _scan_scope(snapshot)
+        mode = snapshot.get("mode", "intraday")
         if db.get(StockAIReview, review_id) is None:
             db.add(StockAIReview(review_id=review_id, account_scope=credentials.scope,
-                scan_scope=_scan_scope(snapshot),
-                mode=snapshot.get("mode", "intraday"), snapshot_id=snapshot["snapshot_id"], snapshot_at=snapshot["fetched_at"],
+                scan_scope=scope, mode=mode, snapshot_id=snapshot["snapshot_id"], snapshot_at=snapshot["fetched_at"],
                 analyzed_at=analyzed_at, provider=credentials.provider, model=credentials.model,
                 candidates_json=json.dumps([_pick(item, "code", "symbol", "price", "strategies", "priority_eligible")
                     for item in snapshot.get("review_candidates", snapshot["items"])], ensure_ascii=False, allow_nan=False),
                 input_json=_analysis_json(snapshot), report_json=json.dumps(report, ensure_ascii=False, allow_nan=False)))
+            for comment in report["items"]:
+                key = (credentials.scope, scope, mode, comment["code"])
+                latest = db.get(StockAIReviewLatest, key)
+                if latest is None:
+                    latest = StockAIReviewLatest(account_scope=credentials.scope, scan_scope=scope, mode=mode, code=comment["code"])
+                    db.add(latest)
+                latest.review_id = review_id
             db.commit()
 
 
@@ -377,3 +385,47 @@ def analysis_state(snapshot, credentials=None):
         elif result["status"] not in ("running", "ready", "failed") or (issue and result["status"] == "failed"):
             result.update(status="waiting", items=[], summary=None, error=issue or "等待本轮候选分析。")
     return result
+
+
+def card_reviews(snapshot, credentials, state):
+    codes = {item["code"] for item in snapshot["items"]}
+    current = snapshot["snapshot_id"]
+    comments = {item["code"]: {**item, "snapshot_at": state["snapshot_at"], "analyzed_at": state["analyzed_at"],
+                               "previous": state.get("snapshot_id") != current, "archived": state.get("archived")}
+                for item in state["items"] if item["code"] in codes}
+    missing = codes - comments.keys()
+    if missing and state["configured"]:
+        try:
+            with SessionLocal() as db:
+                rows = db.execute(select(StockAIReviewLatest.code, StockAIReview.report_json, StockAIReview.snapshot_id,
+                                         StockAIReview.snapshot_at, StockAIReview.analyzed_at)
+                    .join(StockAIReview, StockAIReview.review_id == StockAIReviewLatest.review_id)
+                    .where(StockAIReviewLatest.account_scope == credentials.scope,
+                           StockAIReviewLatest.scan_scope == _scan_scope(snapshot),
+                           StockAIReviewLatest.mode == snapshot.get("mode", "intraday"),
+                           StockAIReviewLatest.code.in_(missing)))
+                for code, report, review_snapshot, at, analyzed in rows:
+                    item = next((item for item in json.loads(report)["items"] if item["code"] == code), None)
+                    if item is not None:
+                        comments[code] = {**item, "snapshot_at": at, "analyzed_at": analyzed.isoformat(),
+                                          "previous": review_snapshot != current, "archived": True}
+        except Exception:
+            logger.warning("读取股票卡片的 AI 点评失败", exc_info=True)
+    return comments
+
+
+def profile_results(snapshot, profiles, selected=(), analysis_snapshot=None, *, include_cards=False):
+    requested = {profile.profile_id for profile in selected}
+    states = []
+    for profile in profiles:
+        error = (request_analysis(analysis_snapshot, retry=True, credentials=profile)
+                 if profile.profile_id in requested else None)
+        state = analysis_state(snapshot, profile)
+        state.update(profile_id=profile.profile_id, name=profile.name or state["provider_label"])
+        if error:
+            state["error"] = error
+            state["request_error"] = error
+        if include_cards:
+            state["card_reviews"] = card_reviews(snapshot, profile, state)
+        states.append(state)
+    return states

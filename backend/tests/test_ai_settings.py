@@ -176,6 +176,49 @@ class AISettingsTests(unittest.TestCase):
             self.assertEqual((saved["base_url"], saved["model"], saved["json_mode"], saved["token_field"]),
                              ("https://api.deepseek.com", "deepseek-v4-pro", "json_object", "max_tokens"))
 
+    def test_multiple_profiles_coexist_and_only_the_owner_can_change_or_use_them(self):
+        app = FastAPI()
+        app.include_router(router, prefix="/api")
+        def session():
+            with Session(self.engine) as db:
+                yield db
+        app.dependency_overrides[get_db] = session
+        user = SimpleNamespace(id=1)
+        app.dependency_overrides[require_auth] = lambda: user
+        with Session(self.engine) as db:
+            ai_settings.save(db, 1, SecretStr("sk-existing-deepseek"), "deepseek-flash")
+            original = ai_settings.resolve(db, 1)
+        with TestClient(app) as client:
+            path = "/api/settings/ai/profiles"
+            first = client.post(path, json={"provider": "minimax", "api_key": "sk-first-minimax"})
+            second = client.post(path, json={"provider": "minimax", "api_key": "sk-second-minimax"})
+            self.assertEqual((first.status_code, second.status_code), (201, 201))
+            row1, row2 = first.json(), second.json()
+            self.assertNotEqual(row1["name"], row2["name"])
+            public = client.get(path)
+            self.assertEqual(len(public.json()["profiles"]), 3)
+            self.assertNotIn("sk-first-minimax", public.text)
+            first_path = f"{path}/{row1['id']}"
+            user.id = 2
+            self.assertEqual(client.get(path).json()["profiles"], [])
+            self.assertEqual(client.put(first_path, json={"name": "越权测试"}).status_code, 404)
+            self.assertEqual(client.delete(first_path).status_code, 404)
+            self.assertEqual(client.post(first_path + "/test").status_code, 404)
+            user.id = 1
+            self.assertEqual(client.put(first_path, json={"name": "日常点评"}).status_code, 200)
+            self.assertEqual(client.put(first_path, json={"provider": "minimax_global"}).status_code, 400)
+            with Session(self.engine) as db:
+                legacy = ai_settings.resolve(db, 1)
+                self.assertEqual(legacy, original)
+                available = ai_settings.profiles(db, 1, legacy)
+                chosen = ai_settings.select_profiles(available, [row2["id"], row1["id"]])
+                self.assertEqual([item.key.get_secret_value() for item in chosen], ["sk-second-minimax", "sk-first-minimax"])
+                self.assertEqual(chosen[1].name, "日常点评")
+                with self.assertRaises(ValueError):
+                    ai_settings.select_profiles(available, [row1["id"], row1["id"]])
+            self.assertEqual(client.delete(first_path).status_code, 200)
+            self.assertEqual(len(client.get(path).json()["profiles"]), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

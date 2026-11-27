@@ -340,6 +340,7 @@ export interface StockSignals {
   research?: StockResearch;
   paper?: { recorded: number; completed: number; pending: number; avg_net_pct: number | null; note: string };
   ai: StockAI;
+  ai_results: StockAIProfileResult[];
   running: boolean;
   fetched_at: string | null;
   trade_date: string | null;
@@ -521,6 +522,20 @@ export interface StockAI {
   error: string | null;
 }
 
+export interface StockAICardReview extends StockAIComment {
+  snapshot_at: string | null;
+  analyzed_at: string | null;
+  previous: boolean;
+  archived?: boolean;
+}
+
+export interface StockAIProfileResult extends StockAI {
+  profile_id: string;
+  name: string;
+  request_error?: string;
+  card_reviews?: Record<string, StockAICardReview>;
+}
+
 export interface SingleStockReview {
   code: string;
   secid: string;
@@ -541,17 +556,44 @@ export interface SingleStockReview {
   can_analyze: boolean;
   analysis_issue: string | null;
   ai: StockAI;
+  ai_results: StockAIProfileResult[];
 }
 
-export interface DeepSeekSettings {
-  provider: string;
+export interface AIProviderPreset {
+  id: string;
+  label: string;
+  default_model: string;
   base_url: string;
   json_mode: string;
   token_field: string;
-  providers: { id: string; label: string; base_url: string; default_model: string; json_mode: string; token_field: string }[];
+}
+
+export interface AIProfile {
+  id: string;
+  name: string;
+  provider: string;
+  provider_label: string;
+  base_url: string;
+  json_mode: string;
+  token_field: string;
   configured: boolean;
   model: string;
   source: "account" | "server" | "disabled" | "none";
   updated_at: string | null;
   error: string | null;
+}
+
+export interface AIProfileSettings {
+  providers: AIProviderPreset[];
+  profiles: AIProfile[];
+}
+
+export interface AIProfileInput {
+  name?: string;
+  api_key: string | null;
+  model: string;
+  provider: string;
+  base_url: string;
+  json_mode: string;
+  token_field: string;
 }

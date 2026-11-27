@@ -1,5 +1,4 @@
 import { Alert, Badge, Button, Group, MultiSelect, Paper, SimpleGrid, Stack, Table, Text } from "@mantine/core";
-import { DeepSeekSettingsPanel } from "./DeepSeekSettingsPanel";
 import { PortfolioStudyPanel } from "./PortfolioStudyPanel";
 import { liquidityBands } from "./liquidityBands";
 import type { LiquidityBand, StockSignals } from "./types";
@@ -11,16 +10,11 @@ function percent(value: number | null | undefined) {
 interface Props {
   data: StockSignals;
   savingBoards: boolean;
-  analyzing: boolean;
-  canAnalyze: boolean;
-  analysisLabel: string;
   saveBoards: (boards: string[]) => Promise<void>;
-  analyze: () => Promise<void>;
-  reload: () => Promise<void>;
   onBack: () => void;
 }
 
-export function SignalSettingsPage({ data, savingBoards, analyzing, canAnalyze, analysisLabel, saveBoards, analyze, reload, onBack }: Props) {
+export function SignalSettingsPage({ data, savingBoards, saveBoards, onBack }: Props) {
   const comparison = data.research?.holding_comparison;
   return <Stack gap="sm">
     <Group justify="space-between"><Text fw={600}>选股设置与研究依据</Text><Button variant="subtle" size="sm" onClick={onBack}>返回股票结果</Button></Group>
@@ -88,28 +82,6 @@ export function SignalSettingsPage({ data, savingBoards, analyzing, canAnalyze, 
               <Text size="xs" c="dimmed" mt={4}>{data.factor_context.market.source}；公开行情延迟与个股报价日期仍需核实。</Text>
             </Paper>
           ) : null}
-          <Paper className="stat-tile" p="sm">
-            <Group justify="space-between" mb="xs">
-              <Text fw={600} size="sm">AI 候选点评</Text>
-              <DeepSeekSettingsPanel onChanged={reload} />
-              <Button size="compact-xs" variant="light" color="gold"
-                loading={analyzing || data.ai?.status === "running"}
-                disabled={!canAnalyze}
-                onClick={() => void analyze()}>{analysisLabel}</Button>
-            </Group>
-            {!data.ai?.configured ? (
-              <Text size="xs" c="dimmed">AI 分析尚未启用。点击“配置 AI 模型”选择服务商、填写 Key 并保存即可使用。</Text>
-            ) : (
-              <Stack gap={4}>
-                <Text size="xs" c="dimmed">{data.ai.provider_label || "AI"} · {data.ai.model} · 比较最多20只候选、历史研究、已披露财报指标、行业当日强弱和大盘环境；未接入新闻、完整财报或账户资料。</Text>
-                <Text size="xs" c="dimmed">可在结果页勾选股票，按钮会显示将分析几只。成功点评和当时的依据会保存，同一批次和选项可复用。</Text>
-                {data.ai.status === "running" ? <Text size="sm">AI 正在比较本轮候选…</Text> : null}
-                {data.ai.error ? <Text size="xs" c={data.ai.status === "failed" ? "red" : "dimmed"}>{data.ai.error}</Text> : null}
-                {data.ai.summary ? <Text size="sm">{data.ai.summary}</Text> : null}
-                {data.ai.status === "ready" && data.ai.analyzed_at ? <Text size="xs" c="dimmed">分析完成：{data.ai.analyzed_at.replace("T", " ").slice(0, 19)} · 基于本页同一行情快照</Text> : null}
-              </Stack>
-            )}
-          </Paper>
           {data.research ? (
             <Paper className="stat-tile" p="sm">
               <Text fw={600} size="sm" mb={4}>策略对照 · 样本外验证</Text>

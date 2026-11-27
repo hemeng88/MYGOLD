@@ -171,7 +171,7 @@ python backend/scripts/check_recent_rules.py
 
 ### AI 模型配置与候选点评
 
-在“配置 AI 模型”选择 DeepSeek、MiniMax 中国站或 MiniMax 国际站后，只需填写该服务商的 API Key。
+从页面右上角打开独立的“AI 配置”，可同时添加并维护多套 API。选择 DeepSeek、MiniMax 中国站或 MiniMax 国际站时，只需填写该服务商的 API Key。
 DeepSeek 默认采用服务器配置的模型（项目默认 `deepseek-flash`），MiniMax 默认采用 `MiniMax-M3.1-Flash`。
 MiniMax 的站点决定官方地址，使用提示词要求 JSON，并通过 `max_completion_tokens` 限制输出。
 展开“高级设置”可查看或调整模型和兼容参数。通义千问/百炼、智谱 GLM、OpenAI 及公网 HTTPS 自定义兼容接口也可选择。
@@ -182,7 +182,7 @@ OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型�
 切换服务商或 Base URL 必须重新填入 Key，避免将旧服务商密钥误发给新地址；
 服务商与地址不变时可留空保留 Key。自定义地址不允许 HTTP、内网、本机、URL 账号密码或查询参数；
 请求前核查所有 DNS 地址并固定本次连接 IP，保留域名作 TLS 校验且不跟随重定向。
-配置只保存一个当前使用的服务；更换后缓存和任务以新配置版本隔离。
+原先保存的 Key 会显示为现有配置，并沿用其已归档的点评。每套配置的密钥、任务、缓存及归档按账号和配置版本隔离。
 
 “JSON 输出方式”可在接口 JSON 模式和提示词兼容模式间选择；后者不发送 `response_format`，
 但仍对模型最终 JSON 严格校验。Token 上限字段可选 `max_tokens` 或 `max_completion_tokens`，
@@ -199,19 +199,22 @@ OpenAI 和自定义服务不预填模型名，按你的账号实际可用模型�
 “测试连接”只检查 `/models`；若服务没有模型列表，不会直接判定 Key 无效。
 可单独点击“验证分析格式（少量费用）”，这会向已保存的服务发一次固定测试数据，
 通过真实分析的同一 JSON 校验流程；不会上传账户持仓，也不自动重试。
-通用接口为 `GET/PUT/DELETE /api/settings/ai`、`POST /api/settings/ai/test`、
-`POST /api/settings/ai/test-generation`，全部需要登录。旧 `/api/settings/deepseek` 接口作为兼容别名保留。
+多套配置通过 `/api/settings/ai/profiles` 及其条目接口管理和验证，全部需要登录。
+旧 `/api/settings/ai` 和 `/api/settings/deepseek` 接口继续管理原有配置。
 旧数据库升级时补充服务商、地址、JSON及Token字段，原先加密保存的DeepSeek Key不重写。
 
-在“全 A 股 → 设置与说明 → 配置 AI 模型”保存后立即生效，
+在“AI 配置”保存后立即生效，
 无需编辑服务器文件或重启。密钥输入留空表示保留当前 Key；更换时填写新 Key。
 页面只显示启用状态和配置来源，保存后的原文不会返回浏览器，也不写入浏览器本地存储。
 请通过 HTTPS 站点填写，存储加密不能替代传输加密。
 
 “测试连接”读取所选服务商的 `/models`，验证已保存 Key 的鉴权及所选模型是否存在，
 不会调用聊天生成，也不证明余额充足或股票分析一定成功。测试间隔至少十秒。
-“删除并停用”会清除当前账号的个人密钥、停止后续分析，并抑制该账号对服务器环境 Key 的回退，
-不会影响其他账号。重新填写并保存即可启用。
+删除配置会清除这一项保存的密钥，其他配置可继续调用。删除原有服务器配置时，该账号会停止使用服务器环境 Key。
+
+在股票页手动选择本次要调用的模型，默认选一个。可以同时选择多个模型或只点评勾选的股票。
+每张股票卡片按模型展示结论、理由与风险，按代码发起的单股分析也支持这一选择。
+后续点评其他股票时，已保存的点评仍可在对应卡片查看。行情更新后，旧点评标明原行情时间。
 
 个人配置存入 `deepseek_account_configs`，密钥使用 Fernet 认证加密；加密主密钥保存在持久化数据目录
 `backend/data/api_key_secret`（容器中 `/app/backend/data/api_key_secret`），权限0600并已加入Git忽略。

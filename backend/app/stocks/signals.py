@@ -14,7 +14,7 @@ from ..funds.sources import _num, fetch_market_trade_date
 from ..market_session import session_label, should_poll_quotes
 from ..timeutil import now_local
 from . import universe
-from . import deepseek
+from . import ai_settings, deepseek
 from . import research, paper, factors, watchlists, learning, simulator
 from ..database import SessionLocal
 from ..models import StockResearchPreference, StockCloseWatchlist
@@ -286,7 +286,8 @@ def _run(boards, mode="intraday", price_min=0, price_max=None):
 
 
 def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode="intraday", price_min=0, price_max=None,
-                requested_snapshot_id=None, requested_codes=None, for_portfolio=False):
+                requested_snapshot_id=None, requested_codes=None, for_portfolio=False, ai_profiles=None,
+                requested_profile_ids=None):
     global _last_attempt
     selected_boards = normalize_boards(boards)
     if mode not in ("intraday", "close"):
@@ -341,7 +342,7 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode=
     # 规则快照共享，AI 请求按当前账号的密钥和配置版本隔离。
     if analyze and requested_snapshot_id != result["snapshot_id"]:
         raise SnapshotChanged("候选或分析依据已更新。请查看刷新后的名单，再点击 AI 分析。")
-    request_error = None
+    analysis_snapshot = None
     if analyze and not result.get("errors"):
         analysis_snapshot = result
         if requested_codes is not None:
@@ -351,9 +352,16 @@ def get_signals(refresh=False, analyze=False, boards=None, ai_config=None, mode=
                 raise ValueError("请选择当前候选名单中的股票，每只股票只能选择一次。")
             analysis_snapshot = dict(result, review_candidates=result["items"],
                                      items=[item for item in result["items"] if item["code"] in codes])
-        request_error = deepseek.request_analysis(analysis_snapshot, retry=True, credentials=ai_config)
-    result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
-    if request_error:
-        result["ai"]["error"] = request_error
-    result["engine"] = "技术策略 + 财报/行业/大盘 · %s 候选点评" % result["ai"]["provider_label"] if result["ai"]["configured"] else "技术策略 + 财报/行业/大盘（AI 未配置）"
+    if ai_profiles is None:
+        error = (deepseek.request_analysis(analysis_snapshot, retry=True, credentials=ai_config)
+                 if analysis_snapshot is not None else None)
+        result["ai"] = deepseek.analysis_state(result, credentials=ai_config)
+        if error:
+            result["ai"]["error"] = error
+    else:
+        selected = ai_settings.select_profiles(ai_profiles, requested_profile_ids) if analysis_snapshot is not None else []
+        states = deepseek.profile_results(result, ai_profiles, selected, analysis_snapshot, include_cards=True)
+        result["ai_results"] = states
+        result["ai"] = next((state for state in states if state["configured"]), None) or deepseek.analysis_state(result, ai_config)
+    result["engine"] = "技术策略 + 财报/行业/大盘"
     return result

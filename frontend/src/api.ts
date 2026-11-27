@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import type { SingleStockReview, StockSignals, DeepSeekSettings, StockPortfolioConfig, StockPortfolioJob, StockSimConfig, StockSimPeriod, StockSimView } from "./types";
+import type { AIProfile, AIProfileInput, AIProfileSettings, SingleStockReview, StockSignals, StockPortfolioConfig, StockPortfolioJob, StockSimConfig, StockSimPeriod, StockSimView } from "./types";
 import { UNAUTHORIZED_EVENT, clearToken, getToken, setToken } from "./auth";
 import type { FundDetail, FundFavorite, FundList, FundRefreshResult, FundSearchItem, CountdownItem, CountdownPayload, LoginResult, MainboardDetail, MainboardList, MainboardPeriod, MainboardRefreshResult, MainboardSearchItem, Me } from "./types";
 
@@ -64,14 +64,14 @@ async function request<T>(path: string, init?: RequestInit, isLogin = false): Pr
 }
 
 export const api = {
-  deepSeekSettings: () => request<DeepSeekSettings>("/api/settings/ai"),
-  saveDeepSeekSettings: (apiKey: string, model: string, provider: string, baseUrl: string, jsonMode: string, tokenField: string) => request<DeepSeekSettings>("/api/settings/ai", {
-    method: "PUT", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: apiKey || null, model, provider, base_url: baseUrl, json_mode: jsonMode, token_field: tokenField }),
-  }),
-  deleteDeepSeekSettings: () => request<DeepSeekSettings>("/api/settings/ai", { method: "DELETE" }),
-  testDeepSeekSettings: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test", { method: "POST" }),
-  testModelGeneration: () => request<{ ok: boolean; message: string }>("/api/settings/ai/test-generation", { method: "POST" }),
+  aiProfiles: (signal?: AbortSignal) => request<AIProfileSettings>("/api/settings/ai/profiles", { signal }),
+  saveAIProfile: (config: AIProfileInput, id?: string) =>
+    request<AIProfile>(`/api/settings/ai/profiles${id ? "/" + encodeURIComponent(id) : ""}`, {
+      method: id ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config),
+    }),
+  deleteAIProfile: (id: string) => request<{ ok: boolean }>(`/api/settings/ai/profiles/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  testAIProfile: (id: string, action: "test" | "test-generation") =>
+    request<{ ok: boolean; message: string }>(`/api/settings/ai/profiles/${encodeURIComponent(id)}/${action}`, { method: "POST" }),
   stockSignals: (signal?: AbortSignal, mode = "intraday") => request<StockSignals>(`/api/stocks/signals?mode=${mode}`, { signal }),
   stockPortfolioStatus: (signal: AbortSignal) => request<StockPortfolioJob>("/api/stocks/portfolio-study", { signal }),
   stockSimulator: (period: StockSimPeriod, signal: AbortSignal) =>
@@ -90,14 +90,16 @@ export const api = {
     }),
   singleStockPreview: (code: string) =>
     request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}`),
-  singleStockAnalysis: (code: string, snapshotId: string) =>
-    request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}/analyze?${new URLSearchParams({ snapshot_id: snapshotId })}`, { method: "POST" }),
+  singleStockAnalysis: (code: string, snapshotId: string, profileIds: string[]) =>
+    request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}/analyze?${new URLSearchParams({ snapshot_id: snapshotId })}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile_ids: profileIds }),
+    }),
   singleStockStatus: (code: string, snapshotId: string, signal: AbortSignal) =>
     request<SingleStockReview>(`/api/stocks/single-analysis/${encodeURIComponent(code)}/status?${new URLSearchParams({ snapshot_id: snapshotId })}`, { signal }),
   refreshStockSignals: (mode = "intraday") => request<StockSignals>(`/api/stocks/signals/refresh?mode=${mode}`, { method: "POST" }),
-  analyzeStockSignals: (mode: "intraday" | "close", snapshotId: string, codes: string[]) =>
+  analyzeStockSignals: (mode: "intraday" | "close", snapshotId: string, codes: string[], profileIds: string[]) =>
     request<StockSignals>(`/api/stocks/signals/analyze?${new URLSearchParams({ mode, snapshot_id: snapshotId })}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ codes }),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ codes, profile_ids: profileIds }),
     }),
   saveStockPrices: (price_min: number, price_max: number | null) => request<{ price_min: number; price_max: number | null }>("/api/stocks/signals/prices", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ price_min, price_max }) }),
   saveStockBoards: (boards: string[]) => request<{ boards: string[] }>("/api/stocks/signals/preferences", {

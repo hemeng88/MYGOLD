@@ -171,6 +171,21 @@ class DeepSeekAccountConfig(Base):
     token_field: Mapped[str] = mapped_column(String(32), nullable=False, default="max_tokens")
 
 
+class StockAIProfile(Base):
+    __tablename__ = "stock_ai_profiles"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    encrypted_key: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    model: Mapped[str] = mapped_column(String(64), nullable=False)
+    json_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    token_field: Mapped[str] = mapped_column(String(32), nullable=False)
+    revision: Mapped[str] = mapped_column(String(36), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
 class StockResearchPreference(Base):
     __tablename__ = "stock_research_preferences"
     user_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -316,6 +331,16 @@ class StockAIReview(Base):
     candidates_json: Mapped[str] = mapped_column(Text, nullable=False)
     input_json: Mapped[str] = mapped_column(Text, nullable=False)
     report_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class StockAIReviewLatest(Base):
+    """每条配置在某个行情范围内对每只股票最新的已归档点评。"""
+    __tablename__ = "stock_ai_review_latest"
+    account_scope: Mapped[str] = mapped_column(String(80), primary_key=True)
+    scan_scope: Mapped[str] = mapped_column(String(128), primary_key=True)
+    mode: Mapped[str] = mapped_column(String(12), primary_key=True)
+    code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    review_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class CountdownItem(Base):

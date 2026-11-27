@@ -98,8 +98,8 @@ class SingleStockTests(unittest.TestCase):
                 patch.object(single_stock, "build_snapshot", return_value=snapshot), \
                 patch("backend.app.routers.api.load_boards", return_value=["主板"]), \
                 patch("backend.app.routers.api.load_prices", return_value=(0, 50)), \
-                patch("backend.app.routers.api.ai_settings.resolve", return_value=CREDS), \
-                patch.object(deepseek, "analysis_state", return_value={"status": "waiting"}), \
+                patch("backend.app.routers.api.ai_settings.analysis_configs", return_value={"ai_config": CREDS, "ai_profiles": [CREDS]}), \
+                patch.object(deepseek, "analysis_state", side_effect=lambda *args: {"status": "waiting", "configured": True, "provider_label": "DeepSeek"}), \
                 patch.object(deepseek, "request_analysis") as analyze:
             self.assertEqual(client.get(base).json()["snapshot_id"], snapshot["snapshot_id"])
             self.assertEqual(client.get(base + "/status" + query).status_code, 200)
@@ -108,5 +108,7 @@ class SingleStockTests(unittest.TestCase):
             self.assertEqual(client.post(base + "/analyze" + query).status_code, 409)
             analyze.assert_not_called()
             user.id = 1
-            self.assertEqual(client.post(base + "/analyze" + query).status_code, 200)
+            self.assertEqual(client.post(base + "/analyze" + query, json={"profile_ids": ["missing"]}).status_code, 400)
+            analyze.assert_not_called()
+            self.assertEqual(client.post(base + "/analyze" + query, json={"profile_ids": ["default"]}).status_code, 200)
             self.assertEqual(analyze.call_args.args[0]["snapshot_id"], snapshot["snapshot_id"])

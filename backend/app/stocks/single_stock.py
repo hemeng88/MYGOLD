@@ -200,20 +200,32 @@ def saved_preview(user_id, code, snapshot_id):
     raise LookupError("这份行情已失效，请重新查询股票。")
 
 
-def view(snapshot, credentials, analyze=False):
-    error = deepseek.request_analysis(snapshot, retry=True, credentials=credentials) if analyze else None
-    ai = deepseek.analysis_state(snapshot, credentials)
-    if error:
-        ai["error"] = error
+def _current_review(snapshot, ai):
     # 只显示当前这份行情的点评，避免沿用其他价位的建议。
     if ai["status"] == "previous":
-        ai.update(status="waiting", summary=None, items=[], error=error)
+        ai.update(status="waiting", summary=None, items=[], error=ai.get("request_error"))
     elif ai["status"] in ("failed", "running") and ai.get("snapshot_id") != snapshot["snapshot_id"]:
-        ai.update(status="waiting", summary=None, items=[], error=error)
+        ai.update(status="waiting", summary=None, items=[], error=ai.get("request_error"))
+    return ai
+
+
+def view(snapshot, credentials, analyze=False, profiles=None, selected=()):
+    if profiles is None:
+        error = deepseek.request_analysis(snapshot, retry=True, credentials=credentials) if analyze else None
+        ai = deepseek.analysis_state(snapshot, credentials)
+        if error:
+            ai.update(error=error, request_error=error)
+        states = []
+    else:
+        states = [_current_review(snapshot, state) for state in
+                  deepseek.profile_results(snapshot, profiles, selected, snapshot)]
+        ai = next((state for state in states if state["configured"]), None) or deepseek.analysis_state(snapshot, credentials)
+    ai = _current_review(snapshot, ai)
     issue = deepseek.snapshot_issue(snapshot)
     stock = dict(snapshot["single"])
     if issue and snapshot["items"][0].get("priority_eligible"):
         stock.update(decision="等待确认", decision_reason=issue)
     return {**stock, "snapshot_id": snapshot["snapshot_id"], "fetched_at": snapshot["fetched_at"],
             "allowed_boards": snapshot["allowed_boards"], "price_min": snapshot["price_min"], "price_max": snapshot["price_max"],
-            "strategy_labels": snapshot["items"][0]["strategy_labels"], "can_analyze": not issue, "analysis_issue": issue, "ai": ai}
+            "strategy_labels": snapshot["items"][0]["strategy_labels"], "can_analyze": not issue, "analysis_issue": issue,
+            "ai": ai, "ai_results": states}

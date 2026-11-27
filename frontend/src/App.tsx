@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ActionIcon, Box, Center, Group, Loader, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, Box, Button, Center, Group, Loader, Stack, Tabs, Text, Title, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { Capacitor } from "@capacitor/core";
 import { IconBuildingBank, IconCalendarEvent, IconChartLine, IconLogout, IconRobot, IconWallet } from "@tabler/icons-react";
@@ -13,6 +13,7 @@ import { StockSimulatorPanel } from "./StockSimulatorPanel";
 import { MiscPanel } from "./MiscPanel";
 import { InstallHint } from "./InstallHint";
 import { LoginScreen } from "./LoginScreen";
+import { AISettingsPage } from "./AISettingsPage";
 
 export default function App() {
   const isNarrow = useMediaQuery("(max-width: 52em)") ?? true;
@@ -20,6 +21,7 @@ export default function App() {
   // checking: 本地有令牌，正在问后端还有效没
   const [state, setState] = useState<"checking" | "in" | "out">(getToken() ? "checking" : "out");
   const [activeTab, setActiveTab] = useState<string | null>("funds");
+  const [showAISettings, setShowAISettings] = useState(false);
 
   const check = useCallback(async () => {
     if (!getToken()) {
@@ -88,26 +90,36 @@ export default function App() {
             基金实时估值 · 可买主板三月均价
           </Text>
         </div>
-        <Tooltip label="退出登录">
-          <ActionIcon
-            variant="default"
-            size={40}
-            radius="xl"
-            aria-label="退出登录"
-            onClick={() => {
-              api.logout();
-              setState("out");
-            }}
-          >
-            <IconLogout size={18} />
-          </ActionIcon>
-        </Tooltip>
+        <Group gap="xs" wrap="nowrap">
+          <Button size="compact-sm" variant="subtle" onClick={() => {
+            setShowAISettings(true);
+            window.scrollTo({ top: 0 });
+          }}>AI 配置</Button>
+          <Tooltip label="退出登录">
+            <ActionIcon
+              variant="default"
+              size={40}
+              radius="xl"
+              aria-label="退出登录"
+              onClick={() => {
+                api.logout();
+                setShowAISettings(false);
+                setState("out");
+              }}
+            >
+              <IconLogout size={18} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
       </Group>
 
       <div className="app-main">
         <Stack gap="sm">
           <InstallHint />
-          <Tabs
+          {showAISettings ? <AISettingsPage onBack={() => {
+            setShowAISettings(false);
+            window.scrollTo({ top: 0 });
+          }} /> : <Tabs
             value={activeTab}
             onChange={(value) => {
               setActiveTab(value);
@@ -150,7 +162,7 @@ export default function App() {
                 杂项
               </Tabs.Tab>
             </Tabs.List>
-          </Tabs>
+          </Tabs>}
         </Stack>
       </div>
     </Box>

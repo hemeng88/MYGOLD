@@ -5,6 +5,7 @@ import { usePolling } from "./usePolling";
 import { SignalSettingsPage } from "./SignalSettingsPage";
 import { SingleStockAnalysisModal } from "./SingleStockAnalysisModal";
 import { liquidityBands } from "./liquidityBands";
+import { AIModelPicker, StockAIResults, useAISelection } from "./StockAIResults";
 
 function percent(value: number | null | undefined) {
   return value == null ? "—" : `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -39,12 +40,20 @@ export function SignalsPanel() {
   const availableCodes = data?.items.map((item) => item.code) ?? [];
   const checkedCodes = availableCodes.filter((code) => selectedCodes.includes(code));
   const reviewCodes = selectedCodes.length ? checkedCodes : availableCodes;
-  const reviewed = data?.ai?.reviewed_codes ?? [];
-  const sameReview = data?.ai?.status === "ready" && reviewed.length === reviewCodes.length
-    && reviewCodes.every((code) => reviewed.includes(code));
-  const analysisLabel = sameReview ? `这 ${reviewCodes.length} 只已分析`
-    : selectedCodes.length ? `AI 分析所选 ${checkedCodes.length} 只` : `AI 分析全部 ${availableCodes.length} 只`;
-  const canAnalyze = !!(data?.snapshot_id && data.ai?.configured && !sameReview
+  const aiResults = data?.ai_results ?? [];
+  const models = useAISelection(aiResults);
+  const pendingModels = models.selected.filter((model) =>
+    !reviewCodes.every((code) => model.card_reviews?.[code] && !model.card_reviews[code].previous));
+  const selectedRunning = models.selected.some((model) => model.status === "running");
+  const anyRunning = aiResults.some((model) => model.status === "running");
+  useEffect(() => {
+    if (!anyRunning) return;
+    const timer = window.setInterval(() => void reload(), 2500);
+    return () => window.clearInterval(timer);
+  }, [anyRunning, reload]);
+  const analysisLabel = models.ids.length && reviewCodes.length && !pendingModels.length ? "所选模型已完成本轮分析"
+    : `AI 分析 ${reviewCodes.length} 只 · ${pendingModels.length} 个模型`;
+  const canAnalyze = !!(data?.snapshot_id && pendingModels.length && !selectedRunning
     && data.complete && !data.errors.length && reviewCodes.length
     && (mode === "close" ? data.close_ready : !data.stale && data.market_date_current));
   const saveBoards = async (boards: string[]) => {
@@ -68,10 +77,9 @@ export function SignalsPanel() {
     setAnalyzing(true);
     setRefreshError(null);
     try {
-      const result = await api.analyzeStockSignals(mode, data.snapshot_id, reviewCodes);
-      if (result.ai.status !== "running" && result.ai.status !== "ready" && result.ai.error) {
-        setRefreshError(result.ai.error);
-      }
+      const result = await api.analyzeStockSignals(mode, data.snapshot_id, reviewCodes, pendingModels.map((model) => model.profile_id));
+      const failures = result.ai_results.filter((model) => model.request_error).map((model) => `${model.name} · ${model.request_error}`);
+      if (failures.length) setRefreshError(failures.join("；"));
       await reload();
     } catch (err) {
       setRefreshError(err instanceof Error ? err.message : "AI 分析启动失败");
@@ -93,7 +101,7 @@ export function SignalsPanel() {
     }
   };
   if (page === "settings" && data) {
-    return <Paper className="glass" p="md"><SignalSettingsPage data={data} savingBoards={savingBoards} analyzing={analyzing} canAnalyze={canAnalyze} analysisLabel={analysisLabel} saveBoards={saveBoards} analyze={analyze} reload={reload} onBack={() => setPage("results")} />{refreshError ? <Alert color="red" mt="sm">{refreshError}</Alert> : null}</Paper>;
+    return <Paper className="glass" p="md"><SignalSettingsPage data={data} savingBoards={savingBoards} saveBoards={saveBoards} onBack={() => setPage("results")} />{refreshError ? <Alert color="red" mt="sm">{refreshError}</Alert> : null}</Paper>;
   }
   return (
     <Paper className="glass" p="md">
@@ -105,9 +113,6 @@ export function SignalsPanel() {
         </div>
         <Group gap="xs">
           <Button size="sm" variant="light" color="gold" onClick={() => setSingleOpen(true)}>单股分析</Button>
-          <Button size="sm" variant="light" color="teal" loading={analyzing || data?.ai?.status === "running"} disabled={!canAnalyze} onClick={() => void analyze()}>
-            {analysisLabel}
-          </Button>
           {selectedCodes.length > 0 ? <Button variant="subtle" size="sm" onClick={() => setSelectedCodes([])}>清除勾选</Button> : null}
           <Button variant="subtle" size="sm" disabled={!data} onClick={() => setPage("settings")}>设置与说明</Button>
           <Button color="gold" variant="light" size="sm" loading={busy || data?.running} disabled={mode === "close" && !data?.can_generate_close} onClick={() => void refresh()}>{mode === "close" ? "生成收盘观察池" : "刷新筛选"}</Button>
@@ -123,21 +128,22 @@ export function SignalsPanel() {
       {data?.errors.map((message) => <Alert key={message} color="yellow" mb="sm">{message}</Alert>)}
       {mode !== "close" && data?.stale && data.fetched_at ? <Text size="xs" c="yellow" mb="sm">行情已过期，刷新后再查看。</Text> : null}
       {mode === "intraday" && data?.running ? <Text size="xs" c="dimmed" mb="sm">正在扫描与研究：已读取 {data.progress} 只…</Text> : null}
-      {data?.ai?.status === "running" ? <Text size="xs" c="dimmed" mb="sm">AI 正在点评已提交的候选…</Text> : null}
-      {data?.ai?.status === "failed" ? <Text size="xs" c="red" mb="sm">{data.ai.error}</Text> : null}
-      {data?.ai?.status === "ready" && data.ai.archived === false ? <Text size="xs" c="yellow" mb="sm">AI 点评已完成，但保存到数据库失败。</Text> : null}
+      {data?.items.length ? <Group align="end" mb="sm" gap="xs">
+        <div style={{ flex: "1 1 210px" }}><AIModelPicker models={models.available} value={models.ids} onChange={models.setChoices} disabled={analyzing} /></div>
+        {models.available.length ? <Button size="sm" variant="light" color="teal" loading={analyzing || selectedRunning}
+          disabled={!canAnalyze} onClick={() => void analyze()}>{analysisLabel}</Button> : null}
+      </Group> : null}
       {error || refreshError ? <Alert color="red" mb="sm">{error || refreshError}<Button variant="subtle" size="compact-xs" onClick={() => void reload()}>重试</Button></Alert> : null}
       {(loading || !data) && !error ? <Loader color="gold" size="sm" /> : null}
       {data ? (
         <Stack gap="sm">
           {!data.items.length && !data.running ? <Text size="sm" c="dimmed" ta="center" py="sm">{data.fetched_at ? "本轮没有技术候选。" : mode === "close" ? "尚无收盘观察池，请在交易日15:30后生成。" : "尚未取得可用行情，请启动扫描或稍后重试。"}</Text> : null}
           {data.items.map((item) => {
-            const comment = data.ai?.items.find((row) => row.code === item.code);
             return (
             <Paper className="day-card" p="sm" key={item.code}>
               <Group justify="space-between" mb="xs">
                 <Group gap="xs" wrap="nowrap">
-                  <Checkbox size="xs" disabled={!data.ai?.configured} aria-label={`选择 ${item.name} 供 AI 分析`} checked={checkedCodes.includes(item.code)}
+                  <Checkbox size="xs" disabled={!models.available.length} aria-label={`选择 ${item.name} 供 AI 分析`} checked={checkedCodes.includes(item.code)}
                     onChange={(event) => {
                       const checked = event.currentTarget.checked;
                       setSelectedCodes((codes) => checked ? [...codes.filter((code) => code !== item.code), item.code] : codes.filter((code) => code !== item.code));
@@ -177,14 +183,10 @@ export function SignalsPanel() {
               ) : null}
               {item.validation?.length ? <Text size="xs" c={item.priority_eligible ? "dimmed" : "yellow"} mt={4}>{item.validation.join(" · ")}{item.priority_eligible ? "" : "；AI 仅可等待或暂不考虑。"}</Text> : null}
               </details>
-              {comment ? (
-                <Stack gap={4} mt="xs">
-                  <Group gap="xs"><Badge size="sm" color={comment.view === "优先观察" ? "teal" : "gray"}>AI · {comment.view}{data.ai.status === "previous" ? "（上次分析）" : ""}</Badge><Text size="xs">{comment.trigger}</Text></Group>
-                  <Text size="sm">{comment.reason}</Text>
-                  <Text size="xs" c="yellow">风险：{comment.risk}</Text>
-                  <Text size="xs" c="dimmed">{data.ai.status === "previous" ? `基于 ${data.ai.snapshot_at?.replace("T", " ").slice(0, 19) || "此前"} 的行情；点击AI按钮可重新分析。` : comment.trigger === "回踩观察" ? `价格条件：回到 ${item.watch_low.toFixed(2)}～${item.watch_high.toFixed(2)} 元观察，跌破 ${item.invalidation_price.toFixed(2)} 元则本轮条件失效。` : comment.trigger === "突破观察" ? `价格条件：观察能否突破 ${item.breakout_price.toFixed(2)} 元；这是${mode === "close" ? "基准日" : "当日"}高点参考，不保证突破有效。` : "价格条件：等待，无新增买入触发条件。"}</Text>
-                </Stack>
-              ) : null}
+              <StockAIResults results={aiResults} code={item.code} priceCondition={(trigger) =>
+                trigger === "回踩观察" ? `回到 ${item.watch_low.toFixed(2)}～${item.watch_high.toFixed(2)} 元时观察，跌破 ${item.invalidation_price.toFixed(2)} 元时条件失效。`
+                  : trigger === "突破观察" ? `观察能否突破${mode === "close" ? "基准日" : "当日"}高点 ${item.breakout_price.toFixed(2)} 元。`
+                    : "等待价格条件确认。"} />
             </Paper>
             );
           })}
